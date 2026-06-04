@@ -1,0 +1,544 @@
+:root {
+  --bg: #0d1117;
+  --bg-elev: #11161e;
+  --bg-elev2: #161c26;
+  --border: #232b38;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --accent: #22c5a4;
+  --add: #2ea043;
+  --del: #f7768e;
+  --row-h: 48px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ---------- toolbar ---------- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  padding: 0 12px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  margin-right: 6px;
+}
+.brand-mark {
+  color: var(--accent);
+}
+.toolbar-spacer {
+  flex: 1;
+}
+.repo-label {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-left: 6px;
+}
+.repo-name {
+  font-weight: 600;
+}
+.repo-head {
+  color: var(--accent);
+  font-size: 12px;
+}
+.tool-btn {
+  background: var(--bg-elev2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+.tool-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.tool-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---------- layout ---------- */
+.main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.sidebar {
+  width: 220px;
+  flex: 0 0 auto;
+  background: var(--bg-elev);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.center {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+.right {
+  width: 440px;
+  flex: 0 0 auto;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-elev);
+}
+
+/* ---------- sidebar ---------- */
+.sidebar-group {
+  margin-bottom: 14px;
+}
+.sidebar-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  padding: 4px 14px;
+}
+.branch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 14px;
+  cursor: pointer;
+  gap: 6px;
+}
+.branch-row:hover {
+  background: var(--bg-elev2);
+}
+.branch-row.head {
+  cursor: default;
+}
+.branch-row.head .branch-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+.branch-row.head .branch-name::before {
+  content: "● ";
+  font-size: 9px;
+  vertical-align: middle;
+}
+.branch-row.remote {
+  cursor: default;
+  color: var(--text-dim);
+}
+.branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ab {
+  font-size: 11px;
+  display: flex;
+  gap: 4px;
+}
+.ahead {
+  color: var(--add);
+}
+.behind {
+  color: var(--del);
+}
+
+/* ---------- commit graph ---------- */
+.graph {
+  display: flex;
+  align-items: flex-start;
+  min-height: 100%;
+}
+.graph-svg {
+  flex: 0 0 auto;
+  display: block;
+}
+.graph-rows {
+  flex: 1;
+  min-width: 0;
+}
+.commit-row {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(35, 43, 56, 0.4);
+  cursor: pointer;
+  overflow: hidden;
+}
+.commit-row:hover {
+  background: var(--bg-elev);
+}
+.commit-row.selected {
+  background: var(--bg-elev2);
+}
+.commit-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+.commit-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.commit-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+.ref-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  color: var(--text);
+  background: rgba(34, 197, 164, 0.08);
+  white-space: nowrap;
+}
+.ref-chip.remote {
+  opacity: 0.75;
+}
+
+/* ---------- right panel ---------- */
+.right-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.right-tabs button {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 9px 0;
+  border-bottom: 2px solid transparent;
+}
+.right-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.right-tabs button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.right-top {
+  flex: 1 1 50%;
+  min-height: 0;
+  overflow: auto;
+  border-bottom: 1px solid var(--border);
+}
+.right-bottom {
+  flex: 1 1 50%;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* ---------- staging ---------- */
+.staging {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.staging-section {
+  flex: 1 1 auto;
+  min-height: 60px;
+  overflow: auto;
+}
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+}
+.file-list {
+  padding-bottom: 4px;
+}
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.file-row:hover {
+  background: var(--bg-elev2);
+}
+.file-row.selected {
+  background: var(--bg-elev2);
+}
+.file-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.status-glyph {
+  width: 16px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 11px;
+}
+.s-new {
+  color: var(--add);
+}
+.s-modified {
+  color: var(--accent);
+}
+.s-deleted {
+  color: var(--del);
+}
+.s-renamed,
+.s-typechange {
+  color: #e0af68;
+}
+.s-conflicted {
+  color: #ff9e64;
+}
+.mini-btn {
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-dim);
+  padding: 2px 8px;
+  font-size: 11px;
+}
+.mini-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.mini-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.commit-box {
+  flex: 0 0 auto;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+.commit-box textarea {
+  width: 100%;
+  height: 64px;
+  resize: none;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: inherit;
+  font-size: 12px;
+}
+.commit-box textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.primary-btn {
+  margin-top: 6px;
+  width: 100%;
+  background: var(--accent);
+  color: #06231d;
+  border: none;
+  border-radius: 6px;
+  padding: 8px;
+  font-weight: 600;
+}
+.primary-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------- commit file list ---------- */
+.commit-files {
+  padding: 4px 0;
+}
+
+/* ---------- diff ---------- */
+.diff {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.diff-path {
+  padding: 6px 12px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-elev);
+}
+.diff-hunk-header {
+  color: #6ea8fe;
+  background: rgba(110, 168, 254, 0.08);
+  padding: 2px 12px;
+}
+.diff-line {
+  display: flex;
+  white-space: pre;
+}
+.diff-line .ln {
+  width: 42px;
+  flex: 0 0 auto;
+  text-align: right;
+  padding-right: 8px;
+  color: var(--text-dim);
+  opacity: 0.6;
+  user-select: none;
+}
+.diff-line .sign {
+  width: 14px;
+  flex: 0 0 auto;
+  text-align: center;
+}
+.diff-line .code {
+  flex: 1;
+  padding-right: 12px;
+}
+.diff-line.add {
+  background: rgba(46, 160, 67, 0.15);
+}
+.diff-line.add .sign {
+  color: var(--add);
+}
+.diff-line.del {
+  background: rgba(247, 118, 142, 0.13);
+}
+.diff-line.del .sign {
+  color: var(--del);
+}
+
+/* ---------- misc ---------- */
+.empty-hint {
+  color: var(--text-dim);
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+}
+.empty-hint.small {
+  padding: 4px 14px;
+  text-align: left;
+}
+.welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.welcome h1 {
+  margin: 0;
+  font-size: 32px;
+}
+.welcome h1::before {
+  content: "⌥ ";
+  color: var(--accent);
+}
+.welcome p {
+  color: var(--text-dim);
+  margin: 0 0 8px;
+}
+.welcome .primary-btn {
+  width: auto;
+  padding: 10px 20px;
+}
+.toast {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 16px;
+  max-width: 70%;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+}
+
+/* ---------- modal ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+  width: 320px;
+}
+.modal h3 {
+  margin: 0 0 12px;
+}
+.modal input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: inherit;
+}
+.modal input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.modal-actions button {
+  background: var(--bg-elev2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 14px;
+}
+.modal-actions .primary-btn {
+  width: auto;
+  margin: 0;
+}
