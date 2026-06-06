@@ -17,7 +17,11 @@ tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
-git2 = "0.20"
+# Local reads only (status/graph/diff/commit); all network ops shell out to the
+# git CLI. Dropping default features removes the libgit2 ssh/https transports and
+# their openssl-sys dependency - which otherwise fails to cross-compile for the
+# x86_64 half of the universal macOS build.
+git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
