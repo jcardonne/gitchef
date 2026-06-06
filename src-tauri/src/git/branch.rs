@@ -1,7 +1,14 @@
-use super::run_git;
+use super::{run_git, workdir};
 use crate::error::{AppError, AppResult};
-use git2::{BranchType, Repository};
+use git2::{BranchType, Oid, Repository};
 use serde::Serialize;
+
+#[derive(Serialize)]
+pub struct TagInfo {
+    pub name: String,
+    /// SHA of the commit the tag ultimately points at (annotated tags peeled).
+    pub target: String,
+}
 
 #[derive(Serialize)]
 pub struct BranchInfo {
@@ -51,9 +58,21 @@ pub fn list_branches(repo: &Repository) -> AppResult<Vec<BranchInfo>> {
     Ok(out)
 }
 
-fn workdir(repo: &Repository) -> AppResult<&std::path::Path> {
-    repo.workdir()
-        .ok_or_else(|| AppError::Msg("bare repository has no working directory".into()))
+pub fn list_tags(repo: &Repository) -> AppResult<Vec<TagInfo>> {
+    let mut out = Vec::new();
+    for name in repo.tag_names(None)?.iter().flatten() {
+        if let Ok(obj) = repo.revparse_single(&format!("refs/tags/{name}")) {
+            // Lightweight tags resolve straight to a commit; annotated tags peel.
+            let target = obj
+                .peel(git2::ObjectType::Commit)
+                .ok()
+                .and_then(|o| o.into_commit().ok())
+                .map(|c| c.id())
+                .unwrap_or_else(|| obj.id());
+            out.push(TagInfo { name: name.to_string(), target: target.to_string() });
+        }
+    }
+    Ok(out)
 }
 
 /// Switch branches via the git CLI so all of git's working-tree safety checks
@@ -68,6 +87,45 @@ pub fn create_branch(repo: &Repository, name: &str, checkout_it: bool) -> AppRes
     repo.branch(name, &head, false)?;
     if checkout_it {
         run_git(workdir(repo)?, &["checkout", name])?;
+    }
+    Ok(())
+}
+
+fn parse_oid(sha: &str) -> AppResult<Oid> {
+    Oid::from_str(sha).map_err(|e| AppError::Msg(format!("invalid commit id: {e}")))
+}
+
+/// Create a branch at a specific commit, optionally checking it out.
+pub fn create_branch_at(
+    repo: &Repository,
+    name: &str,
+    sha: &str,
+    checkout_it: bool,
+) -> AppResult<()> {
+    let commit = repo.find_commit(parse_oid(sha)?)?;
+    repo.branch(name, &commit, false)?;
+    if checkout_it {
+        run_git(workdir(repo)?, &["checkout", name])?;
+    }
+    Ok(())
+}
+
+/// Create a tag (lightweight or annotated) at a specific commit.
+pub fn create_tag_at(
+    repo: &Repository,
+    name: &str,
+    sha: &str,
+    annotated: bool,
+    message: Option<String>,
+) -> AppResult<()> {
+    let obj = repo.find_object(parse_oid(sha)?, None)?;
+    if annotated {
+        let sig = repo
+            .signature()
+            .map_err(|_| AppError::Msg("set git user.name and user.email first".into()))?;
+        repo.tag(name, &obj, &sig, message.as_deref().unwrap_or(name), false)?;
+    } else {
+        repo.tag_lightweight(name, &obj, false)?;
     }
     Ok(())
 }

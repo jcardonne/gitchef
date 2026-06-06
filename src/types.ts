@@ -6,9 +6,23 @@ export interface RepoInfo {
   head: string | null;
 }
 
+/// An open repository tab (path doubles as its stable id).
+export interface Tab {
+  path: string;
+  name: string;
+}
+
+export type FileStatusKind =
+  | "new"
+  | "modified"
+  | "deleted"
+  | "renamed"
+  | "typechange"
+  | "conflicted";
+
 export interface FileStatus {
   path: string;
-  status: string; // new | modified | deleted | renamed | typechange | conflicted
+  status: FileStatusKind;
   staged: boolean;
 }
 
@@ -17,15 +31,29 @@ export interface StatusResult {
   unstaged: FileStatus[];
 }
 
+export interface WorkStats {
+  files: number;
+  insertions: number;
+  deletions: number;
+}
+
+export type RefKind = "head" | "branch" | "remote" | "tag" | "stash";
+
+export interface RefLabel {
+  name: string;
+  kind: RefKind;
+}
+
 export interface CommitNode {
   id: string;
   short_id: string;
   summary: string;
+  message: string;
   author: string;
   email: string;
   time: number;
   parents: string[];
-  refs: string[];
+  refs: RefLabel[];
   lane: number;
   color: number;
 }
@@ -40,8 +68,17 @@ export interface BranchInfo {
   target: string | null;
 }
 
+export interface TagInfo {
+  name: string;
+  target: string; // commit SHA the tag points at
+}
+
+// Origin char from libgit2: context, added, removed, the eof-newline markers,
+// and the file/hunk headers (filtered out before reaching DiffViewer).
+export type DiffLineOrigin = " " | "+" | "-" | ">" | "<" | "F" | "H";
+
 export interface DiffLine {
-  origin: string; // ' ' | '+' | '-' | '>' | '<'
+  origin: DiffLineOrigin;
   content: string;
   old_lineno: number | null;
   new_lineno: number | null;
@@ -56,4 +93,5 @@ export interface FileDiff {
   path: string;
   binary: boolean;
   hunks: DiffHunk[];
+  truncated: boolean;
 }

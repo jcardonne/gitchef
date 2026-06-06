@@ -1,295 +1,152 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "./api";
-import type {
-  BranchInfo,
-  CommitNode,
-  FileDiff,
-  RepoInfo,
-  StatusResult,
-} from "./types";
-import Toolbar from "./components/Toolbar";
-import Sidebar from "./components/Sidebar";
-import GraphView from "./components/GraphView";
-import StagingPanel from "./components/StagingPanel";
-import DiffViewer from "./components/DiffViewer";
+import type { RepoInfo, Tab } from "./types";
+import * as store from "./storage";
+import TabBar from "./components/TabBar";
+import Home from "./components/Home";
+import RepoView from "./components/RepoView";
+import UpdateToast from "./components/UpdateToast";
+import { runSilentUpdate, type UpdateStatus } from "./updater";
 
-const EMPTY_STATUS: StatusResult = { staged: [], unstaged: [] };
-
+/// App shell: owns the open tabs + recents, routes between the Home tab and one
+/// mounted RepoView per open repository. All repo state lives inside RepoView.
 export default function App() {
-  const [repo, setRepo] = useState<RepoInfo | null>(null);
-  const [nodes, setNodes] = useState<CommitNode[]>([]);
-  const [branches, setBranches] = useState<BranchInfo[]>([]);
-  const [status, setStatus] = useState<StatusResult>(EMPTY_STATUS);
+  // Restore last session synchronously as initial state, so the persist effect
+  // below always sees the real tabs (no first-render empty-state clobber).
+  const session = store.getSession();
+  const [tabs, setTabs] = useState<Tab[]>(() =>
+    session.paths.map((p) => ({ path: p, name: store.basename(p) }))
+  );
+  const [activePath, setActivePath] = useState<string | null>(session.activePath);
+  const [recents, setRecents] = useState(store.getRecents());
+  const closedTabs = useRef<string[]>([]); // stack of recently closed tab paths
 
-  const [rightTab, setRightTab] = useState<"changes" | "commit">("changes");
-  const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
-  const [commitFiles, setCommitFiles] = useState<FileDiff[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [diff, setDiff] = useState<FileDiff | null>(null);
-
-  const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const [newBranchName, setNewBranchName] = useState<string | null>(null);
-
-  const notify = (msg: string) => {
-    setToast(msg);
-    window.setTimeout(() => setToast(null), 4000);
-  };
-
-  /// Wrap any backend action: flips `busy`, surfaces errors as a toast.
-  const run = useCallback(async (fn: () => Promise<void>) => {
-    setBusy(true);
-    try {
-      await fn();
-    } catch (e) {
-      notify(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  const refresh = useCallback(async () => {
-    const [s, g, b] = await Promise.all([
-      api.repoStatus(),
-      api.commitGraph(),
-      api.listBranches(),
-    ]);
-    setStatus(s);
-    setNodes(g);
-    setBranches(b);
-  }, []);
-
-  const openRepo = () =>
-    run(async () => {
-      const path = await api.pickRepoFolder();
-      if (!path) return;
-      const info = await api.openRepo(path);
-      setRepo(info);
-      setSelectedCommit(null);
-      setSelectedPath(null);
-      setDiff(null);
-      setCommitFiles([]);
-      setRightTab("changes");
-      await refresh();
-    });
-
-  // --- commit graph selection ---
-  const selectCommit = (id: string) =>
-    run(async () => {
-      setSelectedCommit(id);
-      setRightTab("commit");
-      setSelectedPath(null);
-      setDiff(null);
-      setCommitFiles(await api.commitDiff(id));
-    });
-
-  // --- working-change selection ---
-  const selectWorkingFile = (path: string, staged: boolean) =>
-    run(async () => {
-      setSelectedPath(path);
-      setDiff(await api.fileDiff(path, staged));
-    });
-
-  const selectCommitFile = (file: FileDiff) => {
-    setSelectedPath(file.path);
-    setDiff(file);
-  };
-
-  // --- staging actions (refresh status + graph afterwards) ---
-  const afterMutation = async () => {
-    await refresh();
-  };
-
-  const onStage = (p: string) => run(async () => (await api.stage(p), afterMutation()));
-  const onUnstage = (p: string) => run(async () => (await api.unstage(p), afterMutation()));
-  const onStageAll = () => run(async () => (await api.stageAll(), afterMutation()));
-  const onUnstageAll = () => run(async () => (await api.unstageAll(), afterMutation()));
-  const onCommit = (message: string) =>
-    run(async () => {
-      const sha = await api.commit(message);
-      notify(`Committed ${sha.slice(0, 7)}`);
-      setRightTab("changes");
-      await refresh();
-    });
-
-  const onCheckout = (name: string) =>
-    run(async () => {
-      await api.checkout(name);
-      const info = await api.openRepo(repo!.path); // refresh HEAD label
-      setRepo(info);
-      await refresh();
-    });
-
-  const onCreateBranch = (name: string) =>
-    run(async () => {
-      await api.createBranch(name, true);
-      const info = await api.openRepo(repo!.path);
-      setRepo(info);
-      await refresh();
-      notify(`Created and switched to ${name}`);
-    });
-
-  const onFetch = () =>
-    run(async () => {
-      await api.fetch();
-      notify("Fetched from remotes");
-      await refresh();
-    });
-  const onPull = () =>
-    run(async () => {
-      const out = await api.pull();
-      notify(out.trim() || "Pulled");
-      const info = await api.openRepo(repo!.path);
-      setRepo(info);
-      await refresh();
-    });
-  const onPush = () =>
-    run(async () => {
-      await api.push();
-      notify("Pushed");
-      await refresh();
-    });
-
-  // keyboard: nothing fancy yet, just clear toast on Escape
+  // Check Cloudflare for a newer signed build once, on launch (prod only).
+  // Progress surfaces in a small toast; on success the app relaunches itself.
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   useEffect(() => {
-    const h = (e: KeyboardEvent) => e.key === "Escape" && setToast(null);
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
+    void runSilentUpdate(setUpdateStatus);
   }, []);
 
-  if (!repo) {
-    return (
-      <div className="app">
-        <Toolbar
-          repo={null}
-          busy={busy}
-          onOpen={openRepo}
-          onFetch={onFetch}
-          onPull={onPull}
-          onPush={onPush}
-          onNewBranch={() => {}}
-        />
-        <div className="welcome">
-          <h1>GitChef</h1>
-          <p>Open-source visual Git client.</p>
-          <button className="primary-btn" onClick={openRepo}>
-            Open a repository
-          </button>
-        </div>
-        {toast && <div className="toast">{toast}</div>}
-      </div>
+  // Persist the session whenever tabs or focus change.
+  useEffect(() => {
+    store.saveSession({ paths: tabs.map((t) => t.path), activePath });
+  }, [tabs, activePath]);
+
+  const refreshRecents = () => setRecents(store.getRecents());
+
+  const openTab = (path: string) => {
+    setTabs((prev) =>
+      prev.some((t) => t.path === path) ? prev : [...prev, { path, name: store.basename(path) }]
     );
-  }
+    setActivePath(path);
+  };
+
+  const pickAndOpen = async () => {
+    const p = await api.pickRepoFolder();
+    if (p) openTab(p);
+  };
+
+  const closeTab = (path: string) => {
+    const idx = tabs.findIndex((t) => t.path === path);
+    closedTabs.current.push(path); // remember for restore (Cmd/Ctrl+Shift+T)
+    const next = tabs.filter((t) => t.path !== path);
+    setTabs(next);
+    if (activePath === path) {
+      setActivePath(next.length ? next[Math.min(idx, next.length - 1)].path : null);
+    }
+  };
+
+  const restoreTab = () => {
+    const last = closedTabs.current.pop();
+    if (last) openTab(last);
+  };
+
+  // Cycle focus across [Home, ...tabs]; dir +1 = next, -1 = previous.
+  const cycleTab = (dir: 1 | -1) => {
+    const order: (string | null)[] = [null, ...tabs.map((t) => t.path)];
+    const cur = order.indexOf(activePath);
+    setActivePath(order[(cur + dir + order.length) % order.length]);
+  };
+
+  // Tab keyboard shortcuts (Cmd on macOS / Ctrl elsewhere).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      if (e.ctrlKey && e.key === "Tab") {
+        e.preventDefault();
+        cycleTab(e.shiftKey ? -1 : 1);
+      } else if (mod && e.shiftKey && key === "t") {
+        e.preventDefault();
+        restoreTab();
+      } else if (mod && key === "t") {
+        e.preventDefault();
+        void pickAndOpen();
+      } else if (mod && key === "w") {
+        e.preventDefault();
+        if (activePath) closeTab(activePath);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabs, activePath]);
+
+  const reorder = (from: number, to: number) =>
+    setTabs((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+
+  // RepoView reports the real repo name once libgit2 opens it; refine the tab
+  // label (was a path basename) and record the repo in recents.
+  const onRepoLoaded = (path: string, info: RepoInfo) => {
+    setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, name: info.name } : t)));
+    store.addRecent({ path, name: info.name });
+    refreshRecents();
+  };
+
+  const onRemoveRecent = (path: string) => {
+    store.removeRecent(path);
+    refreshRecents();
+  };
 
   return (
     <div className="app">
-      <Toolbar
-        repo={repo}
-        busy={busy}
-        onOpen={openRepo}
-        onFetch={onFetch}
-        onPull={onPull}
-        onPush={onPush}
-        onNewBranch={() => setNewBranchName("")}
+      <TabBar
+        tabs={tabs}
+        activePath={activePath}
+        onActivate={setActivePath}
+        onClose={closeTab}
+        onReorder={reorder}
+        onOpen={pickAndOpen}
       />
 
-      <div className="main">
-        <Sidebar branches={branches} onCheckout={onCheckout} />
-
-        <div className="center">
-          <GraphView nodes={nodes} selectedId={selectedCommit} onSelect={selectCommit} />
+      <div className="app-body">
+        <div className="repo-host" style={{ display: activePath === null ? "flex" : "none" }}>
+          <Home
+            recents={recents}
+            onOpen={pickAndOpen}
+            onOpenRecent={openTab}
+            onRemoveRecent={onRemoveRecent}
+          />
         </div>
 
-        <div className="right">
-          <div className="right-tabs">
-            <button
-              className={rightTab === "changes" ? "active" : ""}
-              onClick={() => setRightTab("changes")}
-            >
-              Changes ({status.staged.length + status.unstaged.length})
-            </button>
-            <button
-              className={rightTab === "commit" ? "active" : ""}
-              disabled={!selectedCommit}
-              onClick={() => setRightTab("commit")}
-            >
-              Commit
-            </button>
+        {tabs.map((t) => (
+          <div
+            key={t.path}
+            className="repo-host"
+            style={{ display: t.path === activePath ? "flex" : "none" }}
+          >
+            <RepoView path={t.path} isActive={t.path === activePath} onLoaded={onRepoLoaded} />
           </div>
-
-          <div className="right-top">
-            {rightTab === "changes" ? (
-              <StagingPanel
-                status={status}
-                selectedPath={selectedPath}
-                onSelectFile={selectWorkingFile}
-                onStage={onStage}
-                onUnstage={onUnstage}
-                onStageAll={onStageAll}
-                onUnstageAll={onUnstageAll}
-                onCommit={onCommit}
-                busy={busy}
-              />
-            ) : (
-              <div className="commit-files">
-                {commitFiles.length === 0 && (
-                  <div className="empty-hint">No file changes.</div>
-                )}
-                {commitFiles.map((f) => (
-                  <div
-                    key={f.path}
-                    className={`file-row${selectedPath === f.path ? " selected" : ""}`}
-                    onClick={() => selectCommitFile(f)}
-                  >
-                    <span className="file-path">{f.path}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="right-bottom">
-            <DiffViewer diff={diff} />
-          </div>
-        </div>
+        ))}
       </div>
 
-      {toast && <div className="toast">{toast}</div>}
-
-      {newBranchName !== null && (
-        <div className="modal-overlay" onClick={() => setNewBranchName(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>New branch</h3>
-            <input
-              autoFocus
-              placeholder="branch-name"
-              value={newBranchName}
-              onChange={(e) => setNewBranchName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && newBranchName.trim()) {
-                  const name = newBranchName.trim();
-                  setNewBranchName(null);
-                  onCreateBranch(name);
-                }
-              }}
-            />
-            <div className="modal-actions">
-              <button onClick={() => setNewBranchName(null)}>Cancel</button>
-              <button
-                className="primary-btn"
-                disabled={!newBranchName.trim()}
-                onClick={() => {
-                  const name = newBranchName.trim();
-                  setNewBranchName(null);
-                  onCreateBranch(name);
-                }}
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <UpdateToast status={updateStatus} />
     </div>
   );
 }

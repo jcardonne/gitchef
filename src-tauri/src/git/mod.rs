@@ -1,11 +1,23 @@
 pub mod branch;
 pub mod diff;
+pub mod files;
 pub mod graph;
 pub mod ops;
 pub mod repo;
 
 use crate::error::{AppError, AppResult};
 use std::path::Path;
+
+/// Working directory of a repo (errors for bare repos).
+pub fn workdir(repo: &git2::Repository) -> AppResult<&Path> {
+    repo.workdir()
+        .ok_or_else(|| AppError::Msg("bare repository has no working directory".into()))
+}
+
+/// First 7 hex chars of an object id, for display.
+pub fn short_oid(oid: git2::Oid) -> String {
+    oid.to_string().chars().take(7).collect()
+}
 
 /// Run the system `git` binary inside `dir`. Used for operations where shelling
 /// out is more robust than libgit2: network + auth (push/pull/fetch), merge,

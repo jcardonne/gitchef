@@ -1,0 +1,142 @@
+name: release
+
+# Cut a release by pushing a version tag:  git tag v0.2.0 && git push --tags
+# Builds signed bundles on each native OS, assembles latest.json, and uploads
+# everything to the Cloudflare R2 bucket the app's updater points at.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            target: ""
+            rust-targets: ""
+          - platform: windows-latest
+            target: ""
+            rust-targets: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Inject updater endpoint
+        shell: bash
+        env:
+          R2_PUBLIC_URL: ${{ vars.R2_PUBLIC_URL }}
+        run: |
+          if [ -z "$R2_PUBLIC_URL" ]; then
+            echo "::error::Set the R2_PUBLIC_URL repo variable (e.g. https://pub-xxxx.r2.dev) before releasing."
+            exit 1
+          fi
+          # Bake the real r2.dev endpoint into the shipped binary (the repo keeps
+          # only the placeholder, so the URL has a single source of truth).
+          sed -i.bak "s|https://REPLACE_WITH_R2_DEV_URL.r2.dev|${R2_PUBLIC_URL%/}|" \
+            src-tauri/tauri.conf.json
+          rm -f src-tauri/tauri.conf.json.bak
+
+      - name: Install Linux build deps
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev libssl-dev build-essential libxdo-dev file
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build + sign bundles
+        uses: tauri-apps/tauri-action@v0
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          args: ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+
+      - name: Gather updater artifacts
+        shell: bash
+        run: |
+          mkdir -p dist-updater
+          # Updater binaries + their .sig, wherever the bundler placed them.
+          find src-tauri/target -type f \( \
+            -name '*.app.tar.gz' -o -name '*.app.tar.gz.sig' \
+            -o -name '*-setup.exe' -o -name '*-setup.exe.sig' \
+            -o -name '*.msi' -o -name '*.msi.sig' \
+            -o -name '*.AppImage' -o -name '*.AppImage.sig' \
+          \) -exec cp {} dist-updater/ \;
+          ls -la dist-updater
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: updater-${{ matrix.platform }}
+          path: dist-updater/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download all updater artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: updater-*
+          path: dist-updater
+          merge-multiple: true
+
+      - name: Build latest.json
+        env:
+          VERSION: ${{ github.ref_name }}
+          R2_PUBLIC_URL: ${{ vars.R2_PUBLIC_URL }}
+          DIST_DIR: dist-updater
+        run: node scripts/build-manifest.mjs
+
+      - name: Upload bundles + manifest to R2 (wrangler)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
+          BUCKET: ${{ vars.R2_BUCKET }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Versioned binaries (skip the .sig - its content lives in the manifest).
+          for f in dist-updater/*; do
+            case "$f" in *.sig) continue ;; esac
+            npx --yes wrangler@4 r2 object put \
+              "${BUCKET}/v${VERSION}/$(basename "$f")" --file "$f" --remote
+          done
+          # The manifest the app polls, always at the bucket root.
+          npx --yes wrangler@4 r2 object put \
+            "${BUCKET}/latest.json" --file latest.json \
+            --content-type application/json --remote

@@ -8,8 +8,6 @@ pub enum AppError {
     Git(#[from] git2::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("no repository is open")]
-    NoRepo,
     #[error("{0}")]
     Msg(String),
 }
