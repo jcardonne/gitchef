@@ -1,19 +1,48 @@
 name: release
 
-# Cut a release by pushing a version tag:  git tag v0.2.0 && git push --tags
-# Builds signed bundles on each native OS, assembles latest.json, and uploads
-# everything to the Cloudflare R2 bucket the app's updater points at.
+# Fully automated release. Push conventional commits to main:
+#   feat: ...      -> minor bump
+#   fix: ...       -> patch bump
+#   feat!/BREAKING -> major bump
+# semantic-release computes the next version, bumps the 3 version files + tag,
+# then the same run builds signed bundles on each OS and uploads them to R2.
+# Commits without a release-worthy type (chore/docs/refactor/...) publish nothing.
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
 permissions:
-  contents: read
+  contents: write # semantic-release pushes the version commit + tag
+  issues: write # semantic-release/github success comments
+  pull-requests: write
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.semantic.outputs.new_release_published }}
+      version: ${{ steps.semantic.outputs.new_release_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # semantic-release needs full history + tags
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Semantic release (version + tag)
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          extra_plugins: |
+            @semantic-release/exec
+            @semantic-release/git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build:
+    needs: version
+    if: needs.version.outputs.published == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -30,6 +59,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }} # the bumped + tagged commit
 
       - name: Inject updater endpoint
         shell: bash
@@ -100,7 +131,8 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [version, build]
+    if: needs.version.outputs.published == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -118,7 +150,7 @@ jobs:
 
       - name: Build latest.json
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ needs.version.outputs.version }}
           R2_PUBLIC_URL: ${{ vars.R2_PUBLIC_URL }}
           DIST_DIR: dist-updater
         run: node scripts/build-manifest.mjs
@@ -128,8 +160,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           BUCKET: ${{ vars.R2_BUCKET }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           # Versioned binaries (skip the .sig - its content lives in the manifest).
           for f in dist-updater/*; do
             case "$f" in *.sig) continue ;; esac

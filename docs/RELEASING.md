@@ -87,32 +87,47 @@ gh variable set R2_PUBLIC_URL --body "https://pub-<hash>.r2.dev"
 
 ---
 
-## Cutting a release
+## Cutting a release (fully automated)
 
-1. Bump the version in **all three** files (keep them in sync):
-   - `src-tauri/tauri.conf.json` -> `version`
-   - `src-tauri/Cargo.toml` -> `version`
-   - `package.json` -> `version`
-2. Commit.
-3. Tag and push - the tag drives the whole pipeline:
+There is **no manual versioning or tagging**. Just push
+[Conventional Commits](https://www.conventionalcommits.org/) to `main`:
 
-   ```sh
-   git tag v0.2.0
-   git push origin v0.2.0
-   ```
+| Commit type | Result |
+| --- | --- |
+| `fix: ...` | patch bump (0.1.0 -> 0.1.1) |
+| `feat: ...` | minor bump (0.1.0 -> 0.2.0) |
+| `feat!: ...` or a `BREAKING CHANGE:` footer | major bump (0.1.0 -> 1.0.0) |
+| `chore:` / `docs:` / `refactor:` / `test:` / `ci:` | no release |
 
-The `release` workflow then:
-- injects the real updater endpoint from `R2_PUBLIC_URL`;
-- builds + signs bundles on macOS (universal arm+intel), Windows, and Linux;
-- assembles `latest.json` from the `.sig` files (`scripts/build-manifest.mjs`);
-- uploads bundles to `<bucket>/v0.2.0/` and `latest.json` to the bucket root,
-  all via `wrangler r2 object put`.
+On every push to `main`, the `release` workflow runs `semantic-release`, which:
+1. analyses the new commits and computes the next version (or nothing);
+2. runs `scripts/bump-version.mjs` to sync that version into `package.json`,
+   `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`;
+3. commits the bump (`chore(release): x.y.z [skip ci]`), tags `vx.y.z`, and
+   creates a GitHub Release with auto-generated notes;
+4. **in the same run**, builds + signs bundles on macOS (universal arm+intel),
+   Windows, and Linux, assembles `latest.json`, and uploads everything to R2 via
+   `wrangler` (bundles under `<bucket>/vx.y.z/`, `latest.json` at the root).
 
-Within a minute, every running GitChef older than `0.2.0` self-updates on its
+Within a minute of the run finishing, every older GitChef self-updates on its
 next launch.
 
+> Why one workflow does all of it: a tag pushed with the default `GITHUB_TOKEN`
+> does **not** trigger other workflows (GitHub's anti-recursion rule), so the
+> build can't live in a separate tag-triggered workflow. The `build`/`publish`
+> jobs instead `needs:` the `version` job and check out the freshly created tag.
+
 > The updater only fires when the **remote** version is **greater** than the
-> installed one. Re-tagging the same version does nothing.
+> installed one.
+
+### Manual / forced release
+
+Need to ship without a qualifying commit? Make an empty one:
+
+```sh
+git commit --allow-empty -m "fix: force release"
+git push
+```
 
 ---
 
