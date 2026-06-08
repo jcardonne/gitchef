@@ -158,6 +158,26 @@ fn stash_file(repo: String, path: String) -> AppResult<String> {
 }
 
 #[tauri::command]
+fn stash_apply(repo: String, sha: String) -> AppResult<String> {
+    ops::stash_apply(&mut open(&repo)?, &sha)
+}
+
+#[tauri::command]
+fn stash_pop(repo: String, sha: String) -> AppResult<String> {
+    ops::stash_pop(&mut open(&repo)?, &sha)
+}
+
+#[tauri::command]
+fn stash_drop(repo: String, sha: String) -> AppResult<String> {
+    ops::stash_drop(&mut open(&repo)?, &sha)
+}
+
+#[tauri::command]
+fn stash_edit_message(repo: String, sha: String, message: String) -> AppResult<String> {
+    ops::stash_edit_message(&mut open(&repo)?, &sha, &message)
+}
+
+#[tauri::command]
 fn save_patch(repo: String, path: String, dest: String) -> AppResult<()> {
     files::save_patch(&open(&repo)?, &path, &dest)
 }
@@ -249,6 +269,10 @@ pub fn run() {
             discard_paths,
             ignore_path,
             stash_file,
+            stash_apply,
+            stash_pop,
+            stash_drop,
+            stash_edit_message,
             save_patch,
             delete_file,
             copy_text,

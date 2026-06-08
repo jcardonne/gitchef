@@ -304,6 +304,21 @@ export default function GraphView({
           // Off-spine dots dim to match their edges; the current branch's dots
           // stay full strength so the backbone is unbroken.
           const dim = !active.has(n.id) && !selected ? 0.5 : 1;
+          // Stashes are not commits in the usual sense - draw them as a diamond
+          // (never an avatar bubble) so they stand out as off-to-the-side state.
+          if (n.refs.some((r) => r.kind === "stash")) {
+            const r = DOT_R + 2.5;
+            return (
+              <path
+                key={n.id}
+                d={`M ${cx} ${cy - r} L ${cx + r} ${cy} L ${cx} ${cy + r} L ${cx - r} ${cy} Z`}
+                fill={laneColor(n.color)}
+                opacity={dim}
+                style={{ stroke: selected ? "var(--text)" : "var(--bg)" }}
+                strokeWidth={selected ? 2 : 1.5}
+              />
+            );
+          }
           const url = n.email ? avatars.get(n.email) : undefined;
           if (!url) {
             // No avatar yet (loading / no email): the classic colored lane dot.

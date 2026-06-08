@@ -8,7 +8,7 @@ export interface RepoActions {
   busy: boolean;
   run: (fn: () => Promise<void>) => void;
   refresh: () => Promise<void>;
-  notify: (msg: string) => void;
+  notify: (msg: string, error?: boolean) => void;
 }
 
 export const RepoContext = createContext<RepoActions | null>(null);

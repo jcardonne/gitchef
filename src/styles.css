@@ -1330,3 +1330,44 @@ button {
   0% { margin-left: -40%; }
   100% { margin-left: 100%; }
 }
+
+/* --- error toast: persistent, selectable, copyable --- */
+.toast-msg {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.toast-error {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 60%;
+  align-items: stretch;
+  border-color: color-mix(in srgb, #f7768e 55%, var(--border));
+  text-align: left;
+}
+.toast-error .toast-msg {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 40vh;
+  overflow: auto;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.toast-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.toast-actions button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.toast-actions button:hover {
+  background: var(--bg-elev);
+}

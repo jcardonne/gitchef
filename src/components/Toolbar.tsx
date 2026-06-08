@@ -165,9 +165,14 @@ export default function Toolbar({
         )}
       </div>
 
-      <button className="tool-btn" disabled={busy} onClick={onPush}>
+      <button
+        className="tool-btn"
+        disabled={busy}
+        onClick={onPush}
+        title={repo.has_upstream ? "Push" : "Publish branch: push and set upstream"}
+      >
         <PushIcon />
-        Push
+        {repo.has_upstream ? "Push" : "Publish"}
       </button>
       <button className="tool-btn" disabled={busy} onClick={onNewBranch}>
         <BranchIcon />

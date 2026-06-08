@@ -4,6 +4,9 @@ export interface RepoInfo {
   path: string;
   name: string;
   head: string | null;
+  // True when the current branch tracks a same-name remote branch; false means
+  // push must publish (-u origin HEAD) first.
+  has_upstream: boolean;
 }
 
 /// An open repository tab (path doubles as its stable id).

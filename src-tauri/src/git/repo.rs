@@ -8,6 +8,31 @@ pub struct RepoInfo {
     pub path: String,
     pub name: String,
     pub head: Option<String>,
+    /// True when the current branch tracks a same-name remote branch. Drives the
+    /// toolbar's "Push" vs "Publish" affordance.
+    pub has_upstream: bool,
+}
+
+/// Whether the current branch has an upstream of the *same name* on a remote.
+/// No upstream, or one pointing at a differently-named branch, both return false
+/// - those are exactly the cases where push must `-u origin HEAD` to publish.
+fn same_name_upstream(repo: &Repository) -> bool {
+    let head = match repo.head() {
+        Ok(h) if h.is_branch() => h,
+        _ => return false,
+    };
+    let name = match head.shorthand() {
+        Some(n) => n,
+        None => return false,
+    };
+    repo.find_branch(name, git2::BranchType::Local)
+        .ok()
+        .and_then(|b| b.upstream().ok())
+        .and_then(|u| u.get().name().map(str::to_string))
+        .and_then(|full| full.strip_prefix("refs/remotes/").map(str::to_string))
+        .and_then(|short| short.split_once('/').map(|(_remote, b)| b.to_string()))
+        .map(|up_branch| up_branch == name)
+        .unwrap_or(false)
 }
 
 /// Serializes to the lowercase variant name, matching the TS `FileStatusKind`
@@ -75,7 +100,8 @@ pub fn info(repo: &Repository) -> AppResult<RepoInfo> {
         Ok(h) => h.target().map(super::short_oid),
         Err(_) => None, // unborn branch (fresh repo, no commits yet)
     };
-    Ok(RepoInfo { path, name, head })
+    let has_upstream = same_name_upstream(repo);
+    Ok(RepoInfo { path, name, head, has_upstream })
 }
 
 /// Working-tree status split into what's staged (index vs HEAD) and what's not

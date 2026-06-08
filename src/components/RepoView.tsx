@@ -34,6 +34,7 @@ interface Props {
 export default function RepoView({ path, isActive, onLoaded }: Props) {
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   const [nodes, setNodes] = useState<CommitNode[]>([]);
+  const [hiddenStashes, setHiddenStashes] = useState<string[]>([]);
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
   const [status, setStatus] = useState<StatusResult>(EMPTY_STATUS);
@@ -50,22 +51,30 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
   const [busy, setBusy] = useState(false);
   const [graphLimit, setGraphLimit] = useState(500);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; error: boolean } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{
     title: string;
     placeholder: string;
     onSubmit: (value: string) => void;
+    initial?: string;
+    cta?: string;
   } | null>(null);
-  const askName = (title: string, placeholder: string, onSubmit: (value: string) => void) =>
-    setNamePrompt({ title, placeholder, onSubmit });
+  const askName = (
+    title: string,
+    placeholder: string,
+    onSubmit: (value: string) => void,
+    opts?: { initial?: string; cta?: string }
+  ) => setNamePrompt({ title, placeholder, onSubmit, ...opts });
 
   const loadedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
 
-  const notify = useCallback((msg: string) => {
-    setToast(msg);
+  // Info toasts auto-dismiss after 4s; error toasts persist (long git messages
+  // need reading + copying) until the user closes them.
+  const notify = useCallback((msg: string, error = false) => {
+    setToast({ msg, error });
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
+    if (!error) toastTimer.current = window.setTimeout(() => setToast(null), 4000);
   }, []);
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
@@ -88,7 +97,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       try {
         await fn();
       } catch (e) {
-        notify(String(e));
+        notify(String(e), true);
       } finally {
         setBusy(false);
       }
@@ -137,7 +146,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
           loadedRef.current = true;
         }
       } catch (e) {
-        notify(String(e));
+        notify(String(e), true);
       }
     })();
     return () => {
@@ -145,6 +154,31 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
+
+  // Edits often happen in an external editor while GitChef is in the background.
+  // Refresh a loaded active tab when it becomes visible/focused again.
+  useEffect(() => {
+    if (!isActive) return;
+    let inFlight = false;
+
+    const refreshVisibleRepo = () => {
+      if (!loadedRef.current || document.visibilityState === "hidden" || inFlight) return;
+      inFlight = true;
+      refresh()
+        .catch((e) => notify(String(e), true))
+        .finally(() => {
+          inFlight = false;
+        });
+    };
+
+    refreshVisibleRepo();
+    window.addEventListener("focus", refreshVisibleRepo);
+    document.addEventListener("visibilitychange", refreshVisibleRepo);
+    return () => {
+      window.removeEventListener("focus", refreshVisibleRepo);
+      document.removeEventListener("visibilitychange", refreshVisibleRepo);
+    };
+  }, [isActive, notify, refresh]);
 
   const closeDiff = () => {
     setDiff(null);
@@ -338,7 +372,65 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       notify("Patch saved");
     });
 
+  // --- stash node actions ---
+  const stashApply = (sha: string) =>
+    run(async () => {
+      const out = await api.stashApply(path, sha);
+      await reload();
+      notify(out.trim() || "Stash applied");
+    });
+  const stashPop = (sha: string) =>
+    run(async () => {
+      const out = await api.stashPop(path, sha);
+      await reload();
+      notify(out.trim() || "Stash popped");
+    });
+  const stashDrop = (sha: string) =>
+    run(async () => {
+      const ok = await confirm("Delete this stash? This cannot be undone.", {
+        title: "Delete stash",
+        kind: "warning",
+      });
+      if (!ok) return;
+      await api.stashDrop(path, sha);
+      await reload();
+      notify("Stash deleted");
+    });
+  const stashEdit = (sha: string, message: string) =>
+    run(async () => {
+      await api.stashEditMessage(path, sha, message);
+      await reload();
+      notify("Stash message updated");
+    });
+  // Hide is view-only and session-scoped: a refresh brings the stash back.
+  const hideStash = (sha: string) => {
+    setHiddenStashes((prev) => (prev.includes(sha) ? prev : [...prev, sha]));
+    notify("Stash hidden (reopen to show)");
+  };
+
+  const showStashMenu = async (node: CommitNode) => {
+    const sha = node.id;
+    const items = await Promise.all([
+      MenuItem.new({ text: "Apply Stash", action: () => stashApply(sha) }),
+      MenuItem.new({ text: "Pop Stash", action: () => stashPop(sha) }),
+      MenuItem.new({ text: "Delete Stash", action: () => stashDrop(sha) }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({
+        text: "Edit stash message…",
+        action: () =>
+          askName("Edit stash message", "stash message", (m) => stashEdit(sha, m), {
+            initial: node.summary,
+            cta: "Save",
+          }),
+      }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({ text: "Hide", action: () => hideStash(sha) }),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
+
   const showCommitMenu = async (node: CommitNode) => {
+    if (node.refs.some((r) => r.kind === "stash")) return showStashMenu(node);
     const sha = node.id;
     const short = node.short_id;
     const items = await Promise.all([
@@ -454,7 +546,14 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
           )}
           <div className="center-graph">
             <GraphView
-              nodes={nodes}
+              nodes={
+                hiddenStashes.length
+                  ? nodes.filter(
+                      (n) =>
+                        !(hiddenStashes.includes(n.id) && n.refs.some((r) => r.kind === "stash"))
+                    )
+                  : nodes
+              }
               selectedId={selectedCommit}
               onSelect={selectCommit}
               onCommitMenu={showCommitMenu}
@@ -514,7 +613,19 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
         </div>
       </div>
 
-      {toast && <div className="toast">{toast}</div>}
+      {toast && (
+        <div className={`toast${toast.error ? " toast-error" : ""}`}>
+          <span className="toast-msg">{toast.msg}</span>
+          {toast.error && (
+            <div className="toast-actions">
+              <button onClick={() => run(async () => (await api.copyText(toast.msg), notify("Copied")))}>
+                Copy
+              </button>
+              <button onClick={() => setToast(null)}>Close</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {namePrompt && (
         <NamePromptModal
@@ -522,6 +633,8 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
           placeholder={namePrompt.placeholder}
           onSubmit={namePrompt.onSubmit}
           onClose={() => setNamePrompt(null)}
+          initial={namePrompt.initial}
+          cta={namePrompt.cta}
         />
       )}
     </RepoContext.Provider>
@@ -534,13 +647,17 @@ function NamePromptModal({
   placeholder,
   onSubmit,
   onClose,
+  initial,
+  cta,
 }: {
   title: string;
   placeholder: string;
   onSubmit: (value: string) => void;
   onClose: () => void;
+  initial?: string;
+  cta?: string;
 }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initial ?? "");
   const submit = () => {
     const v = value.trim();
     if (!v) return;
@@ -561,7 +678,7 @@ function NamePromptModal({
         <div className="modal-actions">
           <button onClick={onClose}>Cancel</button>
           <button className="primary-btn" disabled={!value.trim()} onClick={submit}>
-            Create
+            {cta ?? "Create"}
           </button>
         </div>
       </div>

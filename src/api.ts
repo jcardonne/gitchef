@@ -78,6 +78,16 @@ export const ignorePath = (repo: string, pattern: string) =>
   invoke<void>("ignore_path", { repo, pattern });
 export const stashFile = (repo: string, path: string) =>
   invoke<string>("stash_file", { repo, path });
+
+// stash node actions (operate on the stash commit oid)
+export const stashApply = (repo: string, sha: string) =>
+  invoke<string>("stash_apply", { repo, sha });
+export const stashPop = (repo: string, sha: string) =>
+  invoke<string>("stash_pop", { repo, sha });
+export const stashDrop = (repo: string, sha: string) =>
+  invoke<string>("stash_drop", { repo, sha });
+export const stashEditMessage = (repo: string, sha: string, message: string) =>
+  invoke<string>("stash_edit_message", { repo, sha, message });
 export const savePatch = (repo: string, path: string, dest: string) =>
   invoke<void>("save_patch", { repo, path, dest });
 export const deleteFile = (repo: string, path: string) =>
