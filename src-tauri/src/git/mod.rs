@@ -39,3 +39,36 @@ pub fn run_git(dir: &Path, args: &[&str]) -> AppResult<String> {
         Err(AppError::Msg(format!("git {}: {}", args.join(" "), msg.trim())))
     }
 }
+
+/// Like `run_git`, but pipes `input` into the command's stdin - used for
+/// `git apply` (hunk staging) where the patch is fed on stdin.
+pub fn run_git_stdin(dir: &Path, args: &[&str], input: &str) -> AppResult<String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    // Drop stdin after writing so git sees EOF. Hunk patches are small (well
+    // under the pipe buffer), so writing before reading output won't deadlock.
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| AppError::Msg("failed to open git stdin".into()))?
+        .write_all(input.as_bytes())?;
+    let out = child.wait_with_output()?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    } else {
+        let err = String::from_utf8_lossy(&out.stderr);
+        let msg = if err.trim().is_empty() {
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        } else {
+            err.into_owned()
+        };
+        Err(AppError::Msg(format!("git {}: {}", args.join(" "), msg.trim())))
+    }
+}

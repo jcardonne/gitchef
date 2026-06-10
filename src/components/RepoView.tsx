@@ -3,6 +3,7 @@ import { confirm, save } from "@tauri-apps/plugin-dialog";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import * as api from "../api";
 import { RepoContext } from "../repoContext";
+import { getRightPanelWidth, setRightPanelWidth } from "../storage";
 import type { PullAction } from "../storage";
 import type {
   BranchInfo,
@@ -13,6 +14,7 @@ import type {
   TagInfo,
   WorkStats,
 } from "../types";
+import { gravatarUrl, relativeTime } from "../util";
 import Toolbar from "./Toolbar";
 import Sidebar from "./Sidebar";
 import GraphView from "./GraphView";
@@ -45,12 +47,18 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
   const [commitFiles, setCommitFiles] = useState<FileDiff[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [diff, setDiff] = useState<FileDiff | null>(null);
+  const selectedCommitNode = useMemo(
+    () => nodes.find((n) => n.id === selectedCommit) ?? null,
+    [nodes, selectedCommit]
+  );
   // Tracks the working-file currently shown so "Load full file" can refetch it.
   const [workSel, setWorkSel] = useState<{ path: string; staged: boolean } | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [graphLimit, setGraphLimit] = useState(500);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [rightWidth, setRightWidth] = useState(getRightPanelWidth);
+  const [selectedCommitAvatar, setSelectedCommitAvatar] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; error: boolean } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{
     title: string;
@@ -77,6 +85,18 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
     if (!error) toastTimer.current = window.setTimeout(() => setToast(null), 4000);
   }, []);
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+
+  useEffect(() => {
+    let alive = true;
+    setSelectedCommitAvatar(null);
+    if (!selectedCommitNode?.email) return;
+    gravatarUrl(selectedCommitNode.email).then((url) => {
+      if (alive) setSelectedCommitAvatar(url);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [selectedCommitNode?.email]);
 
   // Cmd/Ctrl+F opens the commit search (active tab only).
   useEffect(() => {
@@ -127,6 +147,23 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       setGraphLimit(next);
       setNodes(await api.commitGraph(path, next));
     });
+
+  useEffect(() => setRightPanelWidth(rightWidth), [rightWidth]);
+
+  const startRightResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = rightWidth;
+    const maxW = Math.max(340, window.innerWidth - 560);
+    const move = (ev: MouseEvent) =>
+      setRightWidth(Math.min(maxW, Math.max(320, startW - (ev.clientX - startX))));
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
 
   // Load repo data on first activation (lazy: background tabs never hit the
   // backend until focused). `path`/`refresh`/`onLoaded` are intentionally NOT in
@@ -303,6 +340,69 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
   // --- commit context-menu actions ---
   const headBranch = branches.find((b) => b.is_head)?.name ?? "HEAD";
 
+  const shortRemoteBranchName = (name: string) => {
+    const slash = name.indexOf("/");
+    return slash >= 0 ? name.slice(slash + 1) : name;
+  };
+  const remoteForLocal = (localName: string) =>
+    branches
+      .filter((b) => b.is_remote && shortRemoteBranchName(b.name) === localName)
+      .sort((a, b) => (a.name.startsWith("origin/") ? -1 : b.name.startsWith("origin/") ? 1 : 0))[0];
+
+  const fastForwardToBranch = (branchName: string) =>
+    run(async () => {
+      const out = await api.fastForwardTo(path, branchName);
+      await reload();
+      notify(out.trim() || `Fast-forwarded ${headBranch} to ${branchName}`);
+    });
+  const rebaseOntoBranch = (branchName: string) =>
+    run(async () => {
+      const out = await api.rebaseOnto(path, branchName);
+      await reload();
+      notify(out.trim() || `Rebased ${headBranch} onto ${branchName}`);
+    });
+  const setBranchUpstream = (localName: string, upstreamName: string) =>
+    run(async () => {
+      const out = await api.setUpstream(path, localName, upstreamName);
+      await reload();
+      notify(out.trim() || `Set upstream to ${upstreamName}`);
+    });
+  const renameBranch = (oldName: string, newName: string) =>
+    run(async () => {
+      const out = await api.renameBranch(path, oldName, newName);
+      await reload();
+      notify(out.trim() || `Renamed ${oldName} to ${newName}`);
+    });
+  const deleteBranch = (branch: BranchInfo) =>
+    run(async () => {
+      const ok = await confirm(
+        branch.is_remote
+          ? `Delete local remote-tracking branch ${branch.name}? This does not delete it from the remote server.`
+          : `Delete branch ${branch.name}?`,
+        {
+          title: branch.is_remote ? "Delete remote-tracking branch" : "Delete branch",
+          kind: "warning",
+        }
+      );
+      if (!ok) return;
+      try {
+        const out = await api.deleteBranch(path, branch.name, branch.is_remote);
+        await reload();
+        notify(out.trim() || `Deleted ${branch.name}`);
+      } catch (e) {
+        // `git branch -d` refuses an unmerged local branch; offer to force it.
+        if (branch.is_remote || !/not fully merged|not deleted/i.test(String(e))) throw e;
+        const force = await confirm(
+          `${branch.name} isn't fully merged. Force delete? Unmerged commits will be lost.`,
+          { title: "Force delete branch", kind: "warning" }
+        );
+        if (!force) return;
+        const forced = await api.deleteBranch(path, branch.name, branch.is_remote, true);
+        await reload();
+        notify(forced.trim() || `Force-deleted ${branch.name}`);
+      }
+    });
+
   const checkoutCommit = (sha: string) =>
     run(async () => {
       await api.checkout(path, sha);
@@ -371,6 +471,175 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       await api.saveCommitPatch(path, sha, dest);
       notify("Patch saved");
     });
+
+  const createCommitFilePatch = (sha: string, filePath: string) =>
+    run(async () => {
+      const base = filePath.split("/").pop() ?? "file";
+      const dest = await save({
+        defaultPath: `${sha.slice(0, 7)}-${base}.patch`,
+        filters: [{ name: "Patch", extensions: ["patch"] }],
+      });
+      if (!dest) return;
+      await api.saveCommitFilePatch(path, sha, filePath, dest);
+      notify("Patch saved");
+    });
+
+  // Right-click a file in a selected commit's change list.
+  const showCommitFileMenu = async (file: FileDiff) => {
+    if (!selectedCommit) return;
+    const sha = selectedCommit;
+    const items = await Promise.all([
+      MenuItem.new({ text: "Open in editor", action: () => run(async () => void (await api.openInEditor(path, file.path))) }),
+      MenuItem.new({ text: "Show in Finder", action: () => run(async () => void (await api.revealInFinder(path, file.path))) }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({
+        text: "Copy path",
+        action: () => run(async () => (await api.copyText(file.path), notify("Path copied"))),
+      }),
+      MenuItem.new({ text: "Create patch for this file…", action: () => createCommitFilePatch(sha, file.path) }),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
+
+  const showBranchMenu = async (
+    branch: BranchInfo,
+    opts: { includeCommitActions?: boolean } = {}
+  ) => {
+    const target = opts.includeCommitActions ? branch.target : null;
+    const isCurrent = !branch.is_remote && branch.is_head;
+    const targetShort = target?.slice(0, 7) ?? "";
+    const upstream = !branch.is_remote ? branch.upstream ?? remoteForLocal(branch.name)?.name : null;
+
+    const topItems = await Promise.all([
+      ...(isCurrent
+        ? [
+            MenuItem.new({ text: "Pull (fast-forward if possible)", action: () => onPullAction("ff") }),
+            MenuItem.new({ text: "Push", action: onPush }),
+            ...(upstream && !branch.upstream
+              ? [MenuItem.new({ text: "Set Upstream", action: () => setBranchUpstream(branch.name, upstream) })]
+              : []),
+            PredefinedMenuItem.new({ item: "Separator" }),
+          ]
+        : []),
+      ...(!isCurrent
+        ? [
+            MenuItem.new({
+              text: `Fast-forward ${headBranch} to ${branch.name}`,
+              action: () => fastForwardToBranch(branch.name),
+            }),
+            MenuItem.new({
+              text: `Merge ${branch.name} into ${headBranch}`,
+              action: () => onMerge(branch.name),
+            }),
+            MenuItem.new({
+              text: `Rebase ${headBranch} onto ${branch.name}`,
+              action: () => rebaseOntoBranch(branch.name),
+            }),
+            PredefinedMenuItem.new({ item: "Separator" }),
+          ]
+        : []),
+      ...(!isCurrent
+        ? [
+            MenuItem.new({
+              text: `Checkout ${branch.name}`,
+              action: () =>
+                onCheckout(
+                  branch.is_remote ? branch.name.split("/").slice(1).join("/") : branch.name
+                ),
+            }),
+            PredefinedMenuItem.new({ item: "Separator" }),
+          ]
+        : []),
+      ...(target
+        ? [
+            MenuItem.new({
+              text: "Create branch here…",
+              action: () => askName(`Branch at ${targetShort}`, "branch-name", (n) => branchAt(n, target)),
+            }),
+            MenuItem.new({ text: "Cherry-pick commit", action: () => cherryPick(target) }),
+            Submenu.new({
+              text: `Reset ${headBranch} to this commit`,
+              items: await Promise.all([
+                MenuItem.new({ text: "Soft (keep changes staged)", action: () => resetTo(target, "soft") }),
+                MenuItem.new({ text: "Mixed (keep changes unstaged)", action: () => resetTo(target, "mixed") }),
+                MenuItem.new({ text: "Hard (discard changes)", action: () => resetTo(target, "hard") }),
+              ]),
+            }),
+            MenuItem.new({ text: "Revert commit", action: () => revertCommit(target) }),
+            PredefinedMenuItem.new({ item: "Separator" }),
+          ]
+        : []),
+      ...(!branch.is_remote
+        ? [
+            MenuItem.new({
+              text: `Rename ${branch.name}…`,
+              action: () =>
+                askName("Rename branch", "branch-name", (name) => renameBranch(branch.name, name), {
+                  initial: branch.name,
+                  cta: "Rename",
+                }),
+            }),
+          ]
+        : []),
+      ...(!branch.is_head
+        ? [
+            MenuItem.new({
+              text: branch.is_remote
+                ? `Delete remote-tracking branch ${branch.name}`
+                : `Delete ${branch.name}`,
+              action: () => deleteBranch(branch),
+            }),
+            PredefinedMenuItem.new({ item: "Separator" }),
+          ]
+        : []),
+      MenuItem.new({
+        text: "Copy branch name",
+        action: () => run(async () => (await api.copyText(branch.name), notify("Branch name copied"))),
+      }),
+      ...(target
+        ? [
+            MenuItem.new({
+              text: "Copy commit SHA",
+              action: () => run(async () => (await api.copyText(target), notify("SHA copied"))),
+            }),
+            MenuItem.new({
+              text: "Compare commit against working directory",
+              action: () => compareWorkdir(target),
+            }),
+            PredefinedMenuItem.new({ item: "Separator" }),
+            MenuItem.new({
+              text: "Create patch from commit…",
+              action: () => createCommitPatch(target),
+            }),
+            MenuItem.new({
+              text: "Create tag here…",
+              action: () => askName(`Tag at ${targetShort}`, "tag-name", (n) => tagAt(n, target, false)),
+            }),
+            MenuItem.new({
+              text: "Create annotated tag here…",
+              action: () => askName(`Annotated tag at ${targetShort}`, "tag-name", (n) => tagAt(n, target, true)),
+            }),
+          ]
+        : []),
+    ]);
+
+    await (await Menu.new({ items: topItems })).popup();
+  };
+
+  const showGraphBranchMenu = (branchName: string, isRemote: boolean, targetSha: string) => {
+    const branch =
+      branches.find((b) => b.name === branchName && b.is_remote === isRemote) ??
+      ({
+        name: branchName,
+        is_remote: isRemote,
+        is_head: false,
+        upstream: null,
+        ahead: 0,
+        behind: 0,
+        target: targetSha,
+      } satisfies BranchInfo);
+    void showBranchMenu(branch, { includeCommitActions: true });
+  };
 
   // --- stash node actions ---
   const stashApply = (sha: string) =>
@@ -464,12 +733,197 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       MenuItem.new({ text: "Copy commit SHA", action: () => run(async () => (await api.copyText(sha), notify("SHA copied"))) }),
       MenuItem.new({
         text: "Copy commit message",
-        action: () => run(async () => (await api.copyText(node.summary), notify("Message copied"))),
+        action: () => run(async () => (await api.copyText(node.message), notify("Message copied"))),
       }),
       MenuItem.new({ text: "Create patch from commit…", action: () => createCommitPatch(sha) }),
     ]);
     await (await Menu.new({ items })).popup();
   };
+
+  // --- tag context-menu actions ---
+  const deleteTag = (name: string) =>
+    run(async () => {
+      const ok = await confirm(`Delete tag ${name}? This only removes it locally.`, {
+        title: "Delete tag",
+        kind: "warning",
+      });
+      if (!ok) return;
+      const out = await api.deleteTag(path, name);
+      await refresh();
+      notify(out.trim() || `Deleted tag ${name}`);
+    });
+
+  const showTagMenu = async (name: string, target: string) => {
+    const items = await Promise.all([
+      MenuItem.new({ text: `Checkout ${name} (detached)`, action: () => onCheckoutTag(name) }),
+      MenuItem.new({
+        text: "Create branch here…",
+        action: () => askName(`Branch at ${name}`, "branch-name", (n) => branchAt(n, target)),
+      }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({ text: "Compare against working directory", action: () => compareWorkdir(target) }),
+      MenuItem.new({
+        text: "Copy tag name",
+        action: () => run(async () => (await api.copyText(name), notify("Tag name copied"))),
+      }),
+      MenuItem.new({
+        text: "Copy commit SHA",
+        action: () => run(async () => (await api.copyText(target), notify("SHA copied"))),
+      }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({ text: `Delete tag ${name}`, action: () => deleteTag(name) }),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
+
+  // Right-click a sidebar section header.
+  const showSectionMenu = async (section: "local" | "remote" | "tags") => {
+    const items = await Promise.all(
+      section === "local"
+        ? [MenuItem.new({ text: "New branch…", action: () => askName("New branch", "branch-name", onCreateBranch) })]
+        : section === "remote"
+          ? [MenuItem.new({ text: "Fetch all", action: () => onPullAction("fetch") })]
+          : [
+              MenuItem.new({
+                text: "New tag on current commit…",
+                action: () => askName("New tag at HEAD", "tag-name", (n) => tagAt(n, "HEAD", false)),
+              }),
+            ]
+    );
+    await (await Menu.new({ items })).popup();
+  };
+
+  // --- uncommitted-changes (WIP) row actions ---
+  const stageAllChanges = () =>
+    run(async () => {
+      await api.stagePaths(path, status.unstaged.map((f) => f.path));
+      await refresh();
+      notify("Staged all changes");
+    });
+  const stashAllChanges = () =>
+    run(async () => {
+      const out = await api.stashAll(path);
+      await reload();
+      notify(out.trim() || "Stashed all changes");
+    });
+  const discardAllChanges = () =>
+    run(async () => {
+      const ok = await confirm(
+        "Discard ALL uncommitted changes? This also deletes untracked files and cannot be undone.",
+        { title: "Discard all changes", kind: "warning" }
+      );
+      if (!ok) return;
+      if (status.staged.length) await api.unstagePaths(path, status.staged.map((f) => f.path));
+      const all = [...new Set([...status.unstaged, ...status.staged].map((f) => f.path))];
+      await api.discardPaths(path, all);
+      await refresh();
+      notify("Discarded all changes");
+    });
+
+  const showWorkMenu = async () => {
+    const items = await Promise.all([
+      MenuItem.new({ text: "Stage all changes", action: stageAllChanges }),
+      MenuItem.new({ text: "Stash all changes", action: stashAllChanges }),
+      MenuItem.new({ text: "Discard all changes", action: discardAllChanges }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({ text: "View changes", action: selectWork }),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
+
+  // --- hunk-level staging (working-file diffs only) ---
+  const applyHunkAction = (header: string, action: "stage" | "unstage" | "discard") =>
+    run(async () => {
+      if (!workSel) return;
+      if (action === "discard") {
+        const ok = await confirm("Discard this hunk? This cannot be undone.", {
+          title: "Discard hunk",
+          kind: "warning",
+        });
+        if (!ok) return;
+      }
+      await api.applyHunk(path, workSel.path, action, header);
+      // Re-fetch the same diff so remaining hunks (and their keys) stay current;
+      // if the file has no changes left in this view, close the diff.
+      const fresh = await api.fileDiff(path, workSel.path, workSel.staged);
+      if (fresh.hunks.length === 0) closeDiff();
+      else setDiff(fresh);
+      await refresh();
+      notify(action === "stage" ? "Hunk staged" : action === "unstage" ? "Hunk unstaged" : "Hunk discarded");
+    });
+
+  const applyLinesAction = (
+    header: string,
+    action: "stage" | "unstage" | "discard",
+    selected: string[]
+  ) =>
+    run(async () => {
+      if (!workSel || selected.length === 0) return;
+      const n = selected.length;
+      if (action === "discard") {
+        const ok = await confirm(`Discard ${n} selected line${n === 1 ? "" : "s"}? This cannot be undone.`, {
+          title: "Discard lines",
+          kind: "warning",
+        });
+        if (!ok) return;
+      }
+      await api.applyLines(path, workSel.path, action, header, selected);
+      const fresh = await api.fileDiff(path, workSel.path, workSel.staged);
+      if (fresh.hunks.length === 0) closeDiff();
+      else setDiff(fresh);
+      await refresh();
+      notify(action === "stage" ? "Lines staged" : action === "unstage" ? "Lines unstaged" : "Lines discarded");
+    });
+
+  const showHunkMenu = async (header: string, text: string, selected: string[]) => {
+    if (!workSel) return;
+    const n = selected.length;
+    const plural = n === 1 ? "" : "s";
+    const items = await Promise.all([
+      ...(workSel.staged
+        ? [MenuItem.new({ text: "Unstage hunk", action: () => applyHunkAction(header, "unstage") })]
+        : [
+            MenuItem.new({ text: "Stage hunk", action: () => applyHunkAction(header, "stage") }),
+            MenuItem.new({ text: "Discard hunk", action: () => applyHunkAction(header, "discard") }),
+          ]),
+      ...(n > 0
+        ? [
+            PredefinedMenuItem.new({ item: "Separator" }),
+            ...(workSel.staged
+              ? [
+                  MenuItem.new({
+                    text: `Unstage ${n} line${plural}`,
+                    action: () => applyLinesAction(header, "unstage", selected),
+                  }),
+                ]
+              : [
+                  MenuItem.new({
+                    text: `Stage ${n} line${plural}`,
+                    action: () => applyLinesAction(header, "stage", selected),
+                  }),
+                  MenuItem.new({
+                    text: `Discard ${n} line${plural}`,
+                    action: () => applyLinesAction(header, "discard", selected),
+                  }),
+                ]),
+          ]
+        : []),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({
+        text: "Copy hunk",
+        action: () => run(async () => (await api.copyText(text), notify("Hunk copied"))),
+      }),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
+
+  // Hunk staging needs a tracked index diff to carve from: gate out untracked
+  // (unstaged "new") files and conflicted files, where it can't work.
+  const workFileStatus = workSel
+    ? (workSel.staged ? status.staged : status.unstaged).find((f) => f.path === workSel.path)?.status
+    : undefined;
+  const hunkMenuEnabled =
+    !!workSel && workFileStatus !== "conflicted" && !(!workSel.staged && workFileStatus === "new");
 
   // While inspecting a commit's files: ↑/↓ move between files, Escape deselects.
   useEffect(() => {
@@ -527,8 +981,11 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
           selectedCommit={selectedCommit}
           onCheckout={onCheckout}
           onMerge={onMerge}
+          onBranchMenu={showBranchMenu}
           onSelectTag={selectCommit}
           onCheckoutTag={onCheckoutTag}
+          onTagMenu={showTagMenu}
+          onSectionMenu={showSectionMenu}
         />
 
         <div className={`center${diff ? " has-diff" : ""}`}>
@@ -541,7 +998,11 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
               >
                 ✕
               </button>
-              <DiffViewer diff={diff} onLoadFull={workSel ? loadFullDiff : undefined} />
+              <DiffViewer
+                diff={diff}
+                onLoadFull={workSel ? loadFullDiff : undefined}
+                onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined}
+              />
             </div>
           )}
           <div className="center-graph">
@@ -560,6 +1021,9 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
               workStats={workStats}
               workActive={rightTab === "changes" && !selectedCommit}
               onSelectWork={selectWork}
+              onWorkMenu={showWorkMenu}
+              onBranchMenu={showGraphBranchMenu}
+              onTagMenu={showTagMenu}
               searchOpen={searchOpen}
               onSearchClose={() => setSearchOpen(false)}
               canLoadMore={nodes.length >= graphLimit}
@@ -568,7 +1032,14 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
           </div>
         </div>
 
-        <div className="right">
+        <div
+          className="panel-resize"
+          onMouseDown={startRightResize}
+          title="Resize right panel"
+          aria-label="Resize right panel"
+        />
+
+        <div className="right" style={{ width: rightWidth }}>
           <div className="right-tabs">
             <button
               className={rightTab === "changes" ? "active" : ""}
@@ -593,20 +1064,29 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
                 onCommit={onCommit}
               />
             ) : (
-              <div className="commit-files">
-                {commitFiles.length === 0 && <div className="empty-hint">No file changes.</div>}
-                {commitFiles.map((f) => (
-                  <div
-                    key={f.path}
-                    ref={(el) => {
-                      if (el && selectedPath === f.path) el.scrollIntoView({ block: "nearest" });
-                    }}
-                    className={`file-row${selectedPath === f.path ? " selected" : ""}`}
-                    onClick={() => selectCommitFile(f)}
-                  >
-                    <span className="file-path">{f.path}</span>
-                  </div>
-                ))}
+              <div className="commit-detail-panel">
+                {selectedCommitNode && (
+                  <CommitDetails commit={selectedCommitNode} avatarUrl={selectedCommitAvatar} />
+                )}
+                <div className="commit-files">
+                  {commitFiles.length === 0 && <div className="empty-hint">No file changes.</div>}
+                  {commitFiles.map((f) => (
+                    <div
+                      key={f.path}
+                      ref={(el) => {
+                        if (el && selectedPath === f.path) el.scrollIntoView({ block: "nearest" });
+                      }}
+                      className={`file-row${selectedPath === f.path ? " selected" : ""}`}
+                      onClick={() => selectCommitFile(f)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        void showCommitFileMenu(f);
+                      }}
+                    >
+                      <span className="file-path">{f.path}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -639,6 +1119,49 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       )}
     </RepoContext.Provider>
   );
+}
+
+function CommitDetails({
+  commit,
+  avatarUrl,
+}: {
+  commit: CommitNode;
+  avatarUrl: string | null;
+}) {
+  const description = commitDescription(commit);
+  const absoluteTime = new Date(commit.time * 1000).toLocaleString();
+  return (
+    <div className="commit-detail-card">
+      <div className="commit-detail-main">
+        {avatarUrl ? (
+          <img className="commit-detail-avatar" src={avatarUrl} alt="" />
+        ) : (
+          <div className="commit-detail-avatar placeholder" />
+        )}
+        <div className="commit-detail-text">
+          <div className="commit-detail-title" title={commit.summary}>
+            {commit.summary || "(no message)"}
+          </div>
+          {description && <div className="commit-detail-description">{description}</div>}
+          <div className="commit-detail-author" title={commit.email}>
+            {commit.author}
+          </div>
+        </div>
+      </div>
+      <div className="commit-detail-meta">
+        <span title={commit.id}>{commit.short_id}</span>
+        <span title={absoluteTime}>{relativeTime(commit.time)}</span>
+      </div>
+    </div>
+  );
+}
+
+function commitDescription(commit: CommitNode): string {
+  const message = commit.message.trim();
+  if (!message || message === commit.summary.trim()) return "";
+  const lines = message.split(/\r?\n/);
+  if (lines[0]?.trim() === commit.summary.trim()) lines.shift();
+  return lines.join("\n").trim();
 }
 
 /// A single-text-field modal used for "new branch", "tag here", etc.

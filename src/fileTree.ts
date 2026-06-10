@@ -63,3 +63,16 @@ export function flattenVisible(
   }
   return out;
 }
+
+/// Every file in a folder subtree (depth-first) - used for folder bulk actions.
+export function filesIn(folder: TreeFolder): FileStatus[] {
+  const out: FileStatus[] = [];
+  const walk = (nodes: TreeNode[]) => {
+    for (const n of nodes) {
+      if (n.type === "file") out.push(n.file);
+      else walk(n.children);
+    }
+  };
+  walk(folder.children);
+  return out;
+}

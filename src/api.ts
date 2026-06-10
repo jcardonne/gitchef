@@ -46,6 +46,18 @@ export type PullMode = "ff" | "ff-only" | "rebase";
 export const pull = (repo: string, mode: PullMode) => invoke<string>("pull", { repo, mode });
 export const fetchRemotes = (repo: string) => invoke<string>("fetch", { repo });
 export const merge = (repo: string, branch: string) => invoke<string>("merge", { repo, branch });
+export const fastForwardTo = (repo: string, branch: string) =>
+  invoke<string>("fast_forward_to", { repo, branch });
+export const rebaseOnto = (repo: string, branch: string) =>
+  invoke<string>("rebase_onto", { repo, branch });
+export const renameBranch = (repo: string, oldName: string, newName: string) =>
+  invoke<string>("rename_branch", { repo, oldName, newName });
+export const deleteBranch = (repo: string, name: string, isRemote: boolean, force = false) =>
+  invoke<string>("delete_branch", { repo, name, isRemote, force });
+export const setUpstream = (repo: string, local: string, upstream: string) =>
+  invoke<string>("set_upstream", { repo, local, upstream });
+export const deleteTag = (repo: string, name: string) =>
+  invoke<string>("delete_tag", { repo, name });
 
 // commit context-menu actions
 export const createBranchAt = (repo: string, name: string, sha: string, checkout: boolean) =>
@@ -65,6 +77,8 @@ export const resetTo = (repo: string, sha: string, mode: "soft" | "mixed" | "har
   invoke<string>("reset_to", { repo, sha, mode });
 export const saveCommitPatch = (repo: string, sha: string, dest: string) =>
   invoke<void>("save_commit_patch", { repo, sha, dest });
+export const saveCommitFilePatch = (repo: string, sha: string, path: string, dest: string) =>
+  invoke<void>("save_commit_file_patch", { repo, sha, path, dest });
 export const compareWorkdir = (repo: string, sha: string) =>
   invoke<FileDiff[]>("compare_workdir", { repo, sha });
 
@@ -78,6 +92,20 @@ export const ignorePath = (repo: string, pattern: string) =>
   invoke<void>("ignore_path", { repo, pattern });
 export const stashFile = (repo: string, path: string) =>
   invoke<string>("stash_file", { repo, path });
+export const stashAll = (repo: string) => invoke<string>("stash_all", { repo });
+export const applyHunk = (
+  repo: string,
+  path: string,
+  action: "stage" | "unstage" | "discard",
+  hunkHeader: string
+) => invoke<void>("apply_hunk", { repo, path, action, hunkHeader });
+export const applyLines = (
+  repo: string,
+  path: string,
+  action: "stage" | "unstage" | "discard",
+  hunkHeader: string,
+  selected: string[]
+) => invoke<void>("apply_lines", { repo, path, action, hunkHeader, selected });
 
 // stash node actions (operate on the stash commit oid)
 export const stashApply = (repo: string, sha: string) =>
@@ -95,6 +123,8 @@ export const deleteFile = (repo: string, path: string) =>
 export const copyText = (text: string) => invoke<void>("copy_text", { text });
 export const revealInFinder = (repo: string, path: string) =>
   invoke<void>("reveal_in_finder", { repo, path });
+export const revealPath = (path: string) => invoke<void>("reveal_path", { path });
+export const openTerminal = (path: string) => invoke<void>("open_terminal", { path });
 export const openDefault = (repo: string, path: string) =>
   invoke<void>("open_default", { repo, path });
 export const openInEditor = (repo: string, path: string) =>

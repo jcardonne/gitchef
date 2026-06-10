@@ -114,6 +114,24 @@ export default function App() {
     refreshRecents();
   };
 
+  // Close every tab except `path`, keeping it focused. Closed paths go on the
+  // restore stack so Cmd/Ctrl+Shift+T can reopen them.
+  const closeOthers = (path: string) => {
+    tabs.forEach((t) => t.path !== path && closedTabs.current.push(t.path));
+    setTabs(tabs.filter((t) => t.path === path));
+    setActivePath(path);
+  };
+
+  // Close all tabs to the right of `path`.
+  const closeToRight = (path: string) => {
+    const idx = tabs.findIndex((t) => t.path === path);
+    if (idx < 0) return;
+    tabs.slice(idx + 1).forEach((t) => closedTabs.current.push(t.path));
+    setTabs(tabs.slice(0, idx + 1));
+    const activeIdx = tabs.findIndex((t) => t.path === activePath);
+    if (activeIdx > idx) setActivePath(path);
+  };
+
   return (
     <div className="app">
       <TabBar
@@ -122,6 +140,8 @@ export default function App() {
         onActivate={setActivePath}
         onClose={closeTab}
         onReorder={reorder}
+        onCloseOthers={closeOthers}
+        onCloseToRight={closeToRight}
         onOpen={pickAndOpen}
       />
 
