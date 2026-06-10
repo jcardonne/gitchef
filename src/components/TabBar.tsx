@@ -95,7 +95,7 @@ export default function TabBar({
     <div className={`tabbar${isMac ? " platform-mac" : " platform-windows"}`}>
       {isMac && <WindowControls platform="mac" />}
       <div className="tabbar-brand">
-        <span className="brand-mark">⌥</span> GitChef
+        <img className="brand-mark" src="/logo.png" alt="" /> GitChef
       </div>
 
       <div

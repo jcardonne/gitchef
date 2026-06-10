@@ -10,6 +10,13 @@ if (import.meta.env.PROD) {
   window.addEventListener(
     "contextmenu",
     (event) => {
+      // Keep the native menu on text fields (copy/paste/spellcheck); the app
+      // attaches its own menus elsewhere, so suppress the default there.
+      const target = event.target as HTMLElement | null;
+      const editable = "input, textarea, [contenteditable='true'], [contenteditable=''], [contenteditable='plaintext-only']";
+      if (target?.closest(editable)) {
+        return;
+      }
       event.preventDefault();
     },
     { capture: true }

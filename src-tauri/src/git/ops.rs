@@ -164,7 +164,7 @@ pub fn save_commit_patch(repo: &Repository, sha: &str, dest: &str) -> AppResult<
 pub fn save_commit_file_patch(repo: &Repository, sha: &str, path: &str, dest: &str) -> AppResult<()> {
     let patch = run_git(
         workdir(repo)?,
-        &["diff-tree", "-p", "--no-commit-id", "-r", sha, "--", path],
+        &["diff-tree", "-p", "--no-commit-id", "-r", "--root", sha, "--", path],
     )?;
     std::fs::write(dest, patch)?;
     Ok(())
@@ -210,8 +210,8 @@ pub fn stash_drop(repo: &mut Repository, sha: &str) -> AppResult<String> {
 /// alone can't change what GitChef displays - and re-storing the current tip is
 /// a no-op that leaves a stale `stash@{n+1}` the old code wrongly dropped (which
 /// deleted a *different* stash). Instead rebuild the stash commit with the new
-/// message - same tree, parents, author, committer - then drop the old entry and
-/// re-store the rewritten commit at the top.
+/// message - same tree, parents, author, committer - then store the rewrite and
+/// drop the original (storing first so a failed store can't lose the stash).
 pub fn stash_edit_message(repo: &mut Repository, sha: &str, message: &str) -> AppResult<String> {
     let n = stash_index(repo, sha)?;
     let stash = repo.find_commit(git2::Oid::from_str(sha)?)?;
@@ -230,8 +230,11 @@ pub fn stash_edit_message(repo: &mut Repository, sha: &str, message: &str) -> Ap
         &parent_refs,
     )?;
     let dir = workdir(repo)?;
-    run_git(dir, &["stash", "drop", &format!("stash@{{{n}}}")])?;
-    run_git(dir, &["stash", "store", "-m", message, &new_oid.to_string()])
+    // Store the rewrite first - it lands at stash@{0}, pushing the original down
+    // to stash@{n+1} - then drop the original. Storing first means a failed store
+    // can't turn a rename into data loss.
+    run_git(dir, &["stash", "store", "-m", message, &new_oid.to_string()])?;
+    run_git(dir, &["stash", "drop", &format!("stash@{{{}}}", n + 1)])
 }
 
 #[cfg(test)]
@@ -423,6 +426,25 @@ mod tests {
             std::fs::read_to_string(dir.join("f.txt")).unwrap().contains("second"),
             "mixed reset keeps the change in the working tree"
         );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn save_commit_file_patch_includes_root_commit() {
+        let dir = tmp("rootpatch");
+        init(&dir); // a single root commit that adds f.txt
+        let root = head(&dir);
+        let dest = dir.join("out.patch");
+        super::save_commit_file_patch(
+            &Repository::open(&dir).unwrap(),
+            &root,
+            "f.txt",
+            dest.to_str().unwrap(),
+        )
+        .unwrap();
+        // Without --root, diff-tree emits nothing for the parentless root commit.
+        let patch = std::fs::read_to_string(&dest).unwrap();
+        assert!(patch.contains("+base"), "root commit patch must include additions: {patch}");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

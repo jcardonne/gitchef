@@ -26,6 +26,7 @@ export default function Home({ recents, onOpen, onOpenRecent, onRemoveRecent }: 
   return (
     <div className="home">
       <div className="home-inner">
+        <img className="home-logo" src="/logo.png" alt="" />
         <h1>GitChef</h1>
         <p>Open-source visual Git client.</p>
         <button className="primary-btn home-open" onClick={onOpen}>
