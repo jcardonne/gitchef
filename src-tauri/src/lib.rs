@@ -87,6 +87,31 @@ fn merge(repo: String, branch: String) -> AppResult<String> {
     ops::merge(&open(&repo)?, &branch)
 }
 
+#[tauri::command]
+fn fast_forward_to(repo: String, branch: String) -> AppResult<String> {
+    ops::fast_forward_to(&open(&repo)?, &branch)
+}
+
+#[tauri::command]
+fn rebase_onto(repo: String, branch: String) -> AppResult<String> {
+    ops::rebase_onto(&open(&repo)?, &branch)
+}
+
+#[tauri::command]
+fn rename_branch(repo: String, old_name: String, new_name: String) -> AppResult<String> {
+    branch::rename_branch(&open(&repo)?, &old_name, &new_name)
+}
+
+#[tauri::command]
+fn delete_branch(repo: String, name: String, is_remote: bool, force: bool) -> AppResult<String> {
+    branch::delete_branch(&open(&repo)?, &name, is_remote, force)
+}
+
+#[tauri::command]
+fn set_upstream(repo: String, local: String, upstream: String) -> AppResult<String> {
+    branch::set_upstream(&open(&repo)?, &local, &upstream)
+}
+
 // --- commit context-menu actions ---
 
 #[tauri::command]
@@ -103,6 +128,11 @@ fn create_tag_at(
     message: Option<String>,
 ) -> AppResult<()> {
     branch::create_tag_at(&open(&repo)?, &name, &sha, annotated, message)
+}
+
+#[tauri::command]
+fn delete_tag(repo: String, name: String) -> AppResult<String> {
+    branch::delete_tag(&open(&repo)?, &name)
 }
 
 #[tauri::command]
@@ -123,6 +153,11 @@ fn reset_to(repo: String, sha: String, mode: String) -> AppResult<String> {
 #[tauri::command]
 fn save_commit_patch(repo: String, sha: String, dest: String) -> AppResult<()> {
     ops::save_commit_patch(&open(&repo)?, &sha, &dest)
+}
+
+#[tauri::command]
+fn save_commit_file_patch(repo: String, sha: String, path: String, dest: String) -> AppResult<()> {
+    ops::save_commit_file_patch(&open(&repo)?, &sha, &path, &dest)
 }
 
 #[tauri::command]
@@ -212,6 +247,37 @@ fn open_difftool(repo: String, path: String) -> AppResult<()> {
     files::open_difftool(&open(&repo)?, &path)
 }
 
+#[tauri::command]
+fn reveal_path(path: String) -> AppResult<()> {
+    files::reveal_path(&path)
+}
+
+#[tauri::command]
+fn open_terminal(path: String) -> AppResult<()> {
+    files::open_terminal(&path)
+}
+
+#[tauri::command]
+fn stash_all(repo: String) -> AppResult<String> {
+    ops::stash_all(&open(&repo)?)
+}
+
+#[tauri::command]
+fn apply_hunk(repo: String, path: String, action: String, hunk_header: String) -> AppResult<()> {
+    files::apply_hunk(&open(&repo)?, &path, &action, &hunk_header)
+}
+
+#[tauri::command]
+fn apply_lines(
+    repo: String,
+    path: String,
+    action: String,
+    hunk_header: String,
+    selected: Vec<String>,
+) -> AppResult<()> {
+    files::apply_lines(&open(&repo)?, &path, &action, &hunk_header, selected)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -257,8 +323,14 @@ pub fn run() {
             pull,
             fetch,
             merge,
+            fast_forward_to,
+            rebase_onto,
+            rename_branch,
+            delete_branch,
+            set_upstream,
             create_branch_at,
             create_tag_at,
+            delete_tag,
             cherry_pick,
             revert_commit,
             reset_to,
@@ -280,6 +352,12 @@ pub fn run() {
             open_default,
             open_in_editor,
             open_difftool,
+            reveal_path,
+            stash_all,
+            apply_hunk,
+            apply_lines,
+            save_commit_file_patch,
+            open_terminal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GitChef");

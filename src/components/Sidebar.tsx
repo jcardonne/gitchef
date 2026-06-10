@@ -8,8 +8,11 @@ interface Props {
   selectedCommit: string | null;
   onCheckout: (name: string) => void;
   onMerge: (name: string) => void;
+  onBranchMenu: (branch: BranchInfo) => void;
   onSelectTag: (target: string) => void;
   onCheckoutTag: (name: string) => void;
+  onTagMenu: (name: string, target: string) => void;
+  onSectionMenu: (section: "local" | "remote" | "tags") => void;
 }
 
 /// Left rail with collapsible Local / Remote / Tags sections.
@@ -21,8 +24,11 @@ export default function Sidebar({
   selectedCommit,
   onCheckout,
   onMerge,
+  onBranchMenu,
   onSelectTag,
   onCheckoutTag,
+  onTagMenu,
+  onSectionMenu,
 }: Props) {
   const [open, setOpen] = useState(getSidebarGroups);
   const toggle = (k: keyof typeof open) =>
@@ -37,13 +43,17 @@ export default function Sidebar({
 
   return (
     <div className="sidebar">
-      <Group title="Local" count={local.length} open={open.local} onToggle={() => toggle("local")}>
+      <Group title="Local" count={local.length} open={open.local} onToggle={() => toggle("local")} onMenu={() => onSectionMenu("local")}>
         {local.length === 0 && <div className="empty-hint small">No branches</div>}
         {local.map((b) => (
           <div
             key={b.name}
             className={`branch-row${b.is_head ? " head" : ""}`}
             onClick={() => !b.is_head && onCheckout(b.name)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onBranchMenu(b);
+            }}
             title={b.upstream ?? undefined}
           >
             <span className="branch-name">{b.name}</span>
@@ -69,16 +79,23 @@ export default function Sidebar({
         ))}
       </Group>
 
-      <Group title="Remote" count={remote.length} open={open.remote} onToggle={() => toggle("remote")}>
+      <Group title="Remote" count={remote.length} open={open.remote} onToggle={() => toggle("remote")} onMenu={() => onSectionMenu("remote")}>
         {remote.length === 0 && <div className="empty-hint small">No remotes</div>}
         {remote.map((b) => (
-          <div key={b.name} className="branch-row remote">
+          <div
+            key={b.name}
+            className="branch-row remote"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onBranchMenu(b);
+            }}
+          >
             <span className="branch-name">{b.name}</span>
           </div>
         ))}
       </Group>
 
-      <Group title="Tags" count={tags.length} open={open.tags} onToggle={() => toggle("tags")}>
+      <Group title="Tags" count={tags.length} open={open.tags} onToggle={() => toggle("tags")} onMenu={() => onSectionMenu("tags")}>
         {tags.length === 0 && <div className="empty-hint small">No tags</div>}
         {tags.map((t) => (
           <div
@@ -87,6 +104,10 @@ export default function Sidebar({
             title="Click to inspect · double-click to checkout"
             onClick={() => onSelectTag(t.target)}
             onDoubleClick={() => onCheckoutTag(t.name)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onTagMenu(t.name, t.target);
+            }}
           >
             <span className="tag-glyph">⌖</span>
             <span className="branch-name">{t.name}</span>
@@ -102,17 +123,30 @@ function Group({
   count,
   open,
   onToggle,
+  onMenu,
   children,
 }: {
   title: string;
   count: number;
   open: boolean;
   onToggle: () => void;
+  onMenu?: () => void;
   children: ReactNode;
 }) {
   return (
     <div className="sidebar-group">
-      <div className="sidebar-title" onClick={onToggle}>
+      <div
+        className="sidebar-title"
+        onClick={onToggle}
+        onContextMenu={
+          onMenu
+            ? (e) => {
+                e.preventDefault();
+                onMenu();
+              }
+            : undefined
+        }
+      >
         <span className={`chevron${open ? " open" : ""}`}>▸</span>
         <span className="group-name">{title}</span>
         <span className="group-count">{count}</span>

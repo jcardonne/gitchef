@@ -1,6 +1,12 @@
 import { useRef, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import type { Tab } from "../types";
+import * as api from "../api";
 import { getTheme, nextTheme, setTheme, type Theme } from "../theme";
+
+const appWindow = getCurrentWindow();
+const isMac = navigator.platform.toLowerCase().includes("mac");
 
 /// Monochrome SVG theme icons (no emoji). `currentColor` -> follows text color.
 function ThemeIcon({ theme }: { theme: Theme }) {
@@ -43,6 +49,8 @@ interface Props {
   onActivate: (path: string | null) => void;
   onClose: (path: string) => void;
   onReorder: (from: number, to: number) => void;
+  onCloseOthers: (path: string) => void;
+  onCloseToRight: (path: string) => void;
   onOpen: () => void;
 }
 
@@ -54,6 +62,8 @@ export default function TabBar({
   onActivate,
   onClose,
   onReorder,
+  onCloseOthers,
+  onCloseToRight,
   onOpen,
 }: Props) {
   const dragFrom = useRef<number | null>(null);
@@ -64,8 +74,26 @@ export default function TabBar({
     setThemeState(next);
   };
 
+  const showTabMenu = async (t: Tab, i: number) => {
+    const items = await Promise.all([
+      MenuItem.new({ text: "Close Tab", action: () => onClose(t.path) }),
+      MenuItem.new({ text: "Close Others", enabled: tabs.length > 1, action: () => onCloseOthers(t.path) }),
+      MenuItem.new({
+        text: "Close to the Right",
+        enabled: i < tabs.length - 1,
+        action: () => onCloseToRight(t.path),
+      }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({ text: "Copy Repo Path", action: () => void api.copyText(t.path) }),
+      MenuItem.new({ text: "Reveal in Finder", action: () => void api.revealPath(t.path) }),
+      MenuItem.new({ text: "Open in Terminal", action: () => void api.openTerminal(t.path) }),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
+
   return (
-    <div className="tabbar">
+    <div className={`tabbar${isMac ? " platform-mac" : " platform-windows"}`}>
+      {isMac && <WindowControls platform="mac" />}
       <div className="tabbar-brand">
         <span className="brand-mark">⌥</span> GitChef
       </div>
@@ -100,6 +128,10 @@ export default function TabBar({
             dragFrom.current = null;
           }}
           onClick={() => onActivate(t.path)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            void showTabMenu(t, i);
+          }}
           title={t.path}
         >
           <span className="tab-name">{t.name}</span>
@@ -118,6 +150,59 @@ export default function TabBar({
       <div className="tab-add" onClick={onOpen} title="Open a repository">
         +
       </div>
+
+      <div
+        className="tabbar-drag-region"
+        onMouseDown={(e) => {
+          if (e.button === 0) void appWindow.startDragging();
+        }}
+        onDoubleClick={() => void appWindow.toggleMaximize()}
+      />
+
+      {!isMac && <WindowControls platform="windows" />}
+    </div>
+  );
+}
+
+function WindowControls({ platform }: { platform: "mac" | "windows" }) {
+  return (
+    <div className={`window-controls ${platform}`}>
+      <button
+        className="window-control close"
+        onClick={() => void appWindow.close()}
+        title="Close"
+        aria-label="Close"
+      >
+        {platform === "windows" && (
+          <svg viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M2 2l6 6M8 2 2 8" />
+          </svg>
+        )}
+      </button>
+      <button
+        className="window-control minimize"
+        onClick={() => void appWindow.minimize()}
+        title="Minimize"
+        aria-label="Minimize"
+      >
+        {platform === "windows" && (
+          <svg viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M2 5h6" />
+          </svg>
+        )}
+      </button>
+      <button
+        className="window-control maximize"
+        onClick={() => void appWindow.toggleMaximize()}
+        title="Maximize"
+        aria-label="Maximize"
+      >
+        {platform === "windows" && (
+          <svg viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M2.5 2.5h5v5h-5z" />
+          </svg>
+        )}
+      </button>
     </div>
   );
 }

@@ -14,6 +14,7 @@
   --accent: #22c5a4;
   --on-accent: #06231d;
   --add: #2ea043;
+  --mod: #f2a93b;
   --del: #f7768e;
   --diff-add-bg: rgba(46, 160, 67, 0.15);
   --diff-del-bg: rgba(247, 118, 142, 0.13);
@@ -32,6 +33,7 @@
   --accent: #117f69;
   --on-accent: #ffffff;
   --add: #1a7f37;
+  --mod: #b86e00;
   --del: #cf222e;
   --diff-add-bg: rgba(26, 127, 55, 0.13);
   --diff-del-bg: rgba(207, 34, 46, 0.1);
@@ -313,10 +315,35 @@ button {
   min-height: 0;
   overflow: auto;
 }
+.panel-resize {
+  position: relative;
+  flex: 0 0 9px;
+  cursor: col-resize;
+  background: var(--bg-elev);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+.panel-resize::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--text-dim) 28%, transparent);
+}
+.panel-resize:hover,
+.panel-resize:active {
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-elev));
+}
+.panel-resize:hover::before,
+.panel-resize:active::before {
+  background: var(--accent);
+}
 .right {
   width: 440px;
   flex: 0 0 auto;
-  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -510,23 +537,33 @@ button {
   z-index: 5;
   display: flex;
   align-items: stretch; /* cells fill full height so resize handles are grabbable */
-  gap: 10px;
-  height: 26px;
+  gap: 0;
+  height: 30px;
   padding: 0 12px 0 0;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--text-dim);
+  color: color-mix(in srgb, var(--text) 72%, var(--text-dim));
+  font-weight: 650;
   user-select: none;
 }
 .graph-header > div {
+  position: relative;
   display: flex;
   align-items: center;
+  min-width: 0;
+  padding: 0 10px;
 }
 .graph-header .col-sha {
   font-family: inherit;
+}
+.graph-header .col-graph,
+.graph-header .col-author,
+.graph-header .col-sha,
+.graph-header .col-date {
+  overflow: visible;
 }
 .graph {
   position: relative;
@@ -548,7 +585,7 @@ button {
 .commit-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
   padding: 0 12px 0 0; /* padding-left set inline = right next to the node */
   border-bottom: 1px solid var(--border);
   cursor: pointer;
@@ -560,6 +597,7 @@ button {
   align-items: center;
   gap: 4px;
   overflow: hidden;
+  padding-right: 10px;
 }
 .col-msg {
   flex: 1;
@@ -568,6 +606,7 @@ button {
   align-items: center;
   gap: 6px;
   overflow: hidden;
+  padding: 0 10px;
 }
 .col-author {
   position: relative;
@@ -578,24 +617,48 @@ button {
   overflow: hidden;
   font-size: 11px;
   color: var(--text-dim);
+  padding: 0 10px;
 }
 .col-resize {
   position: absolute;
   top: 0;
-  right: 0;
-  width: 8px;
+  right: -9px;
+  width: 18px;
   height: 100%;
   cursor: col-resize;
   z-index: 6;
 }
-.col-resize:hover {
-  background: linear-gradient(
-    to right,
-    transparent 40%,
-    var(--accent) 40%,
-    var(--accent) 60%,
-    transparent 60%
-  );
+.col-resize.left {
+  left: -9px;
+  right: auto;
+}
+.col-resize::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 8px;
+  width: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-dim) 42%, transparent);
+}
+.col-resize::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 12px;
+  width: 1px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--text-dim) 26%, transparent);
+}
+.col-resize:hover::before,
+.col-resize:active::before {
+  background: var(--accent);
+}
+.col-resize:hover::after,
+.col-resize:active::after {
+  background: color-mix(in srgb, var(--accent) 65%, transparent);
 }
 .col-date.sortable {
   cursor: pointer;
@@ -617,12 +680,14 @@ button {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   color: var(--text-dim);
+  padding: 0 10px;
 }
 .col-date {
   flex: 0 0 66px;
   font-size: 11px;
   color: var(--text-dim);
   text-align: right;
+  padding: 0 10px;
 }
 .col-wip {
   flex: 0 0 auto;
@@ -807,22 +872,31 @@ button {
 }
 .status-glyph {
   width: 16px;
-  text-align: center;
-  font-weight: 700;
-  font-size: 11px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+}
+.status-glyph svg {
+  display: block;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .s-new {
   color: var(--add);
 }
 .s-modified {
-  color: var(--accent);
+  color: var(--mod);
 }
 .s-deleted {
   color: var(--del);
 }
 .s-renamed,
 .s-typechange {
-  color: #e0af68;
+  color: var(--mod);
 }
 .s-conflicted {
   color: #ff9e64;
@@ -880,6 +954,79 @@ button {
 }
 
 /* ---------- commit file list ---------- */
+.commit-detail-panel {
+  min-height: 100%;
+}
+.commit-detail-card {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elev);
+}
+.commit-detail-main {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.commit-detail-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 50%;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+}
+.commit-detail-avatar.placeholder {
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 28%, transparent), transparent),
+    var(--bg-elev2);
+}
+.commit-detail-text {
+  min-width: 0;
+}
+.commit-detail-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+.commit-detail-description {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 86px;
+  overflow: auto;
+}
+.commit-detail-author {
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.commit-detail-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
 .commit-files {
   padding: 4px 0;
 }
@@ -958,6 +1105,18 @@ button {
 }
 .diff-line.del .sign {
   color: var(--del);
+}
+.diff-line.selectable {
+  cursor: pointer;
+}
+.diff-line.sel {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.diff-line.sel.add {
+  background: color-mix(in srgb, var(--accent) 20%, var(--diff-add-bg));
+}
+.diff-line.sel.del {
+  background: color-mix(in srgb, var(--accent) 20%, var(--diff-del-bg));
 }
 
 /* ---------- misc ---------- */
@@ -1064,17 +1223,24 @@ button {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 38px;
+  height: 40px;
   padding: 0 8px;
   background: var(--bg-deep);
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
   user-select: none;
 }
+.tabbar.platform-mac {
+  padding-left: 12px;
+}
+.tabbar.platform-windows {
+  padding-right: 0;
+}
 .tabbar-brand {
   font-weight: 700;
   font-size: 13px;
   margin-right: 8px;
+  flex: 0 0 auto;
 }
 .theme-btn {
   display: flex;
@@ -1137,6 +1303,73 @@ button {
 }
 .tab-add:hover {
   color: var(--text);
+}
+.tabbar-drag-region {
+  align-self: stretch;
+  flex: 1 1 auto;
+  min-width: 40px;
+  cursor: default;
+}
+.window-controls {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.window-controls.mac {
+  gap: 8px;
+  margin-right: 10px;
+  order: -1;
+}
+.window-controls.windows {
+  align-self: stretch;
+  margin-left: 4px;
+}
+.window-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  color: var(--text-dim);
+}
+.window-control svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.window-controls.mac .window-control {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+.window-controls.mac .window-control.close {
+  background: #ff5f57;
+}
+.window-controls.mac .window-control.minimize {
+  background: #ffbd2e;
+}
+.window-controls.mac .window-control.maximize {
+  background: #28c840;
+}
+.window-controls.mac:hover .window-control {
+  filter: brightness(0.95);
+}
+.window-controls.windows .window-control {
+  width: 46px;
+  height: 100%;
+  background: transparent;
+}
+.window-controls.windows .window-control:hover {
+  background: var(--bg-elev2);
+  color: var(--text);
+}
+.window-controls.windows .window-control.close:hover {
+  background: #c42b1c;
+  color: #ffffff;
 }
 
 /* ---------- body / repo host ---------- */
@@ -1240,13 +1473,99 @@ button {
 /* ---------- changes: view toggle + tree ---------- */
 .changes-toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
 }
+.discard-all-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 26px;
+  border: 1px solid color-mix(in srgb, var(--del) 55%, var(--border));
+  border-radius: 6px;
+  padding: 0;
+  background: color-mix(in srgb, var(--del) 10%, var(--bg-elev));
+  color: var(--del);
+}
+.discard-all-btn svg {
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.discard-all-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--del) 18%, var(--bg-elev));
+  border-color: var(--del);
+}
+.discard-all-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.changes-search {
+  min-width: 0;
+  flex: 1;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elev);
+  color: var(--text-dim);
+}
+.changes-search:focus-within {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.changes-search svg {
+  flex: 0 0 auto;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.changes-search input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+}
+.changes-search input::placeholder {
+  color: var(--text-dim);
+}
+.changes-search-clear {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  border: 0;
+  border-radius: 4px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+}
+.changes-search-clear:hover {
+  background: var(--bg-elev2);
+  color: var(--text);
+}
 .view-toggle {
   display: flex;
+  flex: 0 0 auto;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;

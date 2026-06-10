@@ -1,8 +1,7 @@
 import { useMemo, useRef, useState } from "react";
-import type { FileStatus } from "../types";
+import type { FileStatus, FileStatusKind } from "../types";
 import type { ChangesView } from "../storage";
-import { buildTree, flattenVisible, type TreeFile } from "../fileTree";
-import { STATUS_GLYPH } from "../util";
+import { buildTree, filesIn, flattenVisible, type TreeFile } from "../fileTree";
 
 interface Props {
   files: FileStatus[];
@@ -13,6 +12,7 @@ interface Props {
   onSelectionChange: (next: Set<string>) => void;
   onShowDiff: (f: FileStatus) => void;
   onContext: (f: FileStatus) => void;
+  onFolderContext: (files: FileStatus[], folderPath: string) => void;
   onQuickToggle: (f: FileStatus) => void;
 }
 
@@ -30,6 +30,7 @@ export default function ChangeList({
   onSelectionChange,
   onShowDiff,
   onContext,
+  onFolderContext,
   onQuickToggle,
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -89,7 +90,7 @@ export default function ChangeList({
           onContext(f);
         }}
       >
-        <span className={`status-glyph s-${f.status}`}>{STATUS_GLYPH[f.status] ?? "?"}</span>
+        <StatusIcon status={f.status} />
         <span className="file-path">{label}</span>
         <button
           className="mini-btn row-action"
@@ -121,6 +122,10 @@ export default function ChangeList({
             className="tree-folder"
             style={{ paddingLeft: BASE_PAD + depth * INDENT }}
             onClick={() => toggleFolder(node.path)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onFolderContext(filesIn(node), node.path);
+            }}
           >
             <span className={`chevron${collapsed.has(node.path) ? "" : " open"}`}>▸</span>
             <span className="folder-name">{node.name}</span>
@@ -138,3 +143,64 @@ function visibleFiles(visible: { node: { type: string } }[]): FileStatus[] {
     .filter((v) => v.node.type === "file")
     .map((v) => (v.node as TreeFile).file);
 }
+
+function StatusIcon({ status }: { status: FileStatusKind }) {
+  const label = STATUS_LABEL[status];
+  return (
+    <span className={`status-glyph s-${status}`} title={label} aria-label={label}>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        {status === "new" && (
+          <>
+            <path d="M8 3v10" />
+            <path d="M3 8h10" />
+          </>
+        )}
+        {status === "modified" && (
+          <>
+            <path d="M4 12l2.8-.6 5.6-5.6-2.2-2.2-5.6 5.6L4 12z" />
+            <path d="M9.4 4.4l2.2 2.2" />
+          </>
+        )}
+        {status === "deleted" && (
+          <>
+            <path d="M3.5 4.5h9" />
+            <path d="M6 4.5V3.2h4v1.3" />
+            <path d="M5 6.5l.5 6h5l.5-6" />
+            <path d="M7 7.5v3.5" />
+            <path d="M9.5 7.5v3.5" />
+          </>
+        )}
+        {status === "renamed" && (
+          <>
+            <path d="M3 5h8" />
+            <path d="M8.5 2.5 11 5 8.5 7.5" />
+            <path d="M13 11H5" />
+            <path d="M7.5 8.5 5 11l2.5 2.5" />
+          </>
+        )}
+        {status === "typechange" && (
+          <>
+            <path d="M4 3.5h5l3 3v6H4z" />
+            <path d="M9 3.5v3h3" />
+            <path d="M6 9.5h4" />
+          </>
+        )}
+        {status === "conflicted" && (
+          <>
+            <path d="M4.5 4.5l7 7" />
+            <path d="M11.5 4.5l-7 7" />
+          </>
+        )}
+      </svg>
+    </span>
+  );
+}
+
+const STATUS_LABEL: Record<FileStatusKind, string> = {
+  new: "Added",
+  modified: "Modified",
+  deleted: "Deleted",
+  renamed: "Renamed",
+  typechange: "Type changed",
+  conflicted: "Conflicted",
+};

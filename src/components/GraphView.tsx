@@ -1,22 +1,41 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckMenuItem, Menu } from "@tauri-apps/api/menu";
 import type { CommitNode, RefKind, RefLabel, WorkStats } from "../types";
 import { gravatarUrl, laneColor, relativeTime } from "../util";
-import { getGraphCols, getSortAsc, setGraphCols, setSortAsc } from "../storage";
+import {
+  getGraphColumnVisibility,
+  getGraphCols,
+  getSortAsc,
+  setGraphColumnVisibility,
+  setGraphCols,
+  setSortAsc,
+  type GraphColumnVisibility,
+} from "../storage";
 
 const ROW_H = 48;
 const LANE_W = 16;
 const DOT_R = 5;
 const AVATAR_R = 8; // committer avatar disc radius (~16px, fits one lane)
 const PAD_X = 14;
+const GRAPH_COLUMNS: { key: keyof GraphColumnVisibility; label: string }[] = [
+  { key: "graph", label: "Group" },
+  { key: "message", label: "Message" },
+  { key: "author", label: "Author" },
+  { key: "sha", label: "SHA" },
+  { key: "date", label: "Date" },
+];
 
 interface Props {
   nodes: CommitNode[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCommitMenu: (node: CommitNode) => void;
+  onBranchMenu: (branchName: string, isRemote: boolean, targetSha: string) => void;
+  onTagMenu: (tagName: string, targetSha: string) => void;
   workStats: WorkStats | null;
   workActive: boolean;
   onSelectWork: () => void;
+  onWorkMenu: () => void;
   searchOpen: boolean;
   onSearchClose: () => void;
   canLoadMore: boolean;
@@ -32,9 +51,12 @@ export default function GraphView({
   selectedId,
   onSelect,
   onCommitMenu,
+  onBranchMenu,
+  onTagMenu,
   workStats,
   workActive,
   onSelectWork,
+  onWorkMenu,
   searchOpen,
   onSearchClose,
   canLoadMore,
@@ -43,6 +65,8 @@ export default function GraphView({
   // Resizable column widths (persisted) + sort direction.
   const [cols, setCols] = useState(getGraphCols);
   useEffect(() => setGraphCols(cols), [cols]);
+  const [visibleCols, setVisibleCols] = useState(getGraphColumnVisibility);
+  useEffect(() => setGraphColumnVisibility(visibleCols), [visibleCols]);
   const [sortAsc, setSortAscState] = useState(getSortAsc);
   const toggleSort = () => {
     const next = !sortAsc;
@@ -163,21 +187,47 @@ export default function GraphView({
   // after it (fixed) so all messages align regardless of lane depth. Resizable.
   const graphColW = cols.graph ?? graphWidth + 150;
   const authorW = cols.author ?? 150;
+  const shaW = cols.sha ?? 64;
+  const dateW = cols.date ?? 66;
   const x = (lane: number) => PAD_X + lane * LANE_W;
 
   // Drag a header separator to resize a column (clamped, persisted on change).
-  const startResize = (keyName: "graph" | "author", startW: number) => (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const startX = e.clientX;
-    const move = (ev: MouseEvent) =>
-      setCols((c) => ({ ...c, [keyName]: Math.max(80, startW + (ev.clientX - startX)) }));
-    const up = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
+  const startResize =
+    (keyName: "graph" | "author" | "sha" | "date", startW: number, direction: 1 | -1 = 1) =>
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const min = keyName === "date" ? 56 : keyName === "sha" ? 56 : 80;
+      const move = (ev: MouseEvent) =>
+        setCols((c) => ({
+          ...c,
+          [keyName]: Math.max(min, startW + direction * (ev.clientX - startX)),
+        }));
+      const up = () => {
+        window.removeEventListener("mousemove", move);
+        window.removeEventListener("mouseup", up);
+      };
+      window.addEventListener("mousemove", move);
+      window.addEventListener("mouseup", up);
     };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
+
+  const showHeaderMenu = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    // Keep at least one column visible so right-clicking the header (and the
+    // graph itself) never disappears into an all-blank state.
+    const visibleCount = GRAPH_COLUMNS.filter(({ key }) => visibleCols[key]).length;
+    const items = await Promise.all(
+      GRAPH_COLUMNS.map(({ key, label }) =>
+        CheckMenuItem.new({
+          text: label,
+          checked: visibleCols[key],
+          enabled: !(visibleCols[key] && visibleCount === 1),
+          action: () => setVisibleCols((v) => ({ ...v, [key]: !v[key] })),
+        })
+      )
+    );
+    await (await Menu.new({ items })).popup();
   };
   const y = (i: number) => (i + offset) * ROW_H + ROW_H / 2;
   const wipY = ROW_H / 2;
@@ -227,27 +277,65 @@ export default function GraphView({
           </button>
         </div>
       )}
-      <div className="graph-header">
-        <div className="col-graph" style={{ flex: `0 0 ${graphColW}px` }}>
-          <div className="col-resize" onMouseDown={startResize("graph", graphColW)} />
-        </div>
-        <div className="col-msg">Message</div>
-        <div className="col-author" style={{ flex: `0 0 ${authorW}px` }}>
-          Author
-          <div className="col-resize" onMouseDown={startResize("author", authorW)} />
-        </div>
-        <div className="col-sha">SHA</div>
-        <div className="col-date sortable" onClick={toggleSort} title="Sort by date">
-          Date
-          <SortArrow asc={sortAsc} />
-        </div>
+      <div className="graph-header" onContextMenu={showHeaderMenu}>
+        {visibleCols.graph && (
+          <div className="col-graph" style={{ flex: `0 0 ${graphColW}px` }}>
+            Group
+            <div
+              className="col-resize"
+              onMouseDown={startResize("graph", graphColW)}
+              title="Resize group column"
+            />
+          </div>
+        )}
+        {visibleCols.message && <div className="col-msg">Message</div>}
+        {visibleCols.author && (
+          <div className="col-author" style={{ flex: `0 0 ${authorW}px` }}>
+            <div
+              className="col-resize left"
+              onMouseDown={startResize("author", authorW, -1)}
+              onClick={(e) => e.stopPropagation()}
+              title="Resize author column"
+            />
+            Author
+          </div>
+        )}
+        {visibleCols.sha && (
+          <div className="col-sha" style={{ flex: `0 0 ${shaW}px` }}>
+            <div
+              className="col-resize left"
+              onMouseDown={startResize("sha", shaW, -1)}
+              onClick={(e) => e.stopPropagation()}
+              title="Resize SHA column"
+            />
+            SHA
+          </div>
+        )}
+        {visibleCols.date && (
+          <div
+            className="col-date sortable"
+            style={{ flex: `0 0 ${dateW}px` }}
+            onClick={toggleSort}
+            title="Sort by date"
+          >
+            <div
+              className="col-resize left"
+              onMouseDown={startResize("date", dateW, -1)}
+              onClick={(e) => e.stopPropagation()}
+              title="Resize date column"
+            />
+            Date
+            <SortArrow asc={sortAsc} />
+          </div>
+        )}
       </div>
-      <div className="graph" style={{ minWidth: graphColW }}>
-      <svg
-        className="graph-svg"
-        width={graphWidth}
-        height={(displayed.length + offset) * ROW_H}
-      >
+      <div className="graph" style={{ minWidth: visibleCols.graph ? graphColW : 0 }}>
+      {visibleCols.graph && (
+        <svg
+          className="graph-svg"
+          width={graphWidth}
+          height={(displayed.length + offset) * ROW_H}
+        >
         {/* dashed edge from the WIP node down into HEAD */}
         {hasWip && nodes.length > 0 && (
           <path
@@ -363,7 +451,8 @@ export default function GraphView({
             </g>
           );
         })}
-      </svg>
+        </svg>
+      )}
 
       <div className="graph-rows" onMouseLeave={() => setTraceId(null)}>
         {hasWip && workStats && (
@@ -371,15 +460,23 @@ export default function GraphView({
             className={`commit-row wip-row${workActive ? " selected" : ""}`}
             style={{ height: ROW_H }}
             onClick={onSelectWork}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onWorkMenu();
+            }}
             onMouseEnter={() => setTraceId(null)}
           >
-            <div
-              className="col-graph"
-              style={{ flex: `0 0 ${graphColW}px`, paddingLeft: x(wipLane) + DOT_R + 8 }}
-            />
-            <div className="col-msg">
-              <span className="commit-summary">Uncommitted changes</span>
-            </div>
+            {visibleCols.graph && (
+              <div
+                className="col-graph"
+                style={{ flex: `0 0 ${graphColW}px`, paddingLeft: x(wipLane) + DOT_R + 8 }}
+              />
+            )}
+            {visibleCols.message && (
+              <div className="col-msg">
+                <span className="commit-summary">Uncommitted changes</span>
+              </div>
+            )}
             <div className="col-wip">
               <span className="wip-add">+{workStats.insertions}</span>
               <span className="wip-del">-{workStats.deletions}</span>
@@ -411,21 +508,37 @@ export default function GraphView({
                 onCommitMenu(n);
               }}
             >
-              <div
-                className="col-graph"
-                style={{ flex: `0 0 ${graphColW}px`, paddingLeft: x(n.lane) + DOT_R + 8 }}
-              >
-                <CommitRefs refs={n.refs} />
-              </div>
-              <div className="col-msg">
-                <span className="commit-summary">{n.summary || "(no message)"}</span>
-              </div>
-              <div className="col-author" style={{ flex: `0 0 ${authorW}px` }}>
-                {url && <img className="author-avatar" src={url} alt="" />}
-                <span className="col-author-name">{n.author}</span>
-              </div>
-              <div className="col-sha">{n.short_id}</div>
-              <div className="col-date">{relativeTime(n.time)}</div>
+              {visibleCols.graph && (
+                <div
+                  className="col-graph"
+                  style={{ flex: `0 0 ${graphColW}px`, paddingLeft: x(n.lane) + DOT_R + 8 }}
+                >
+                  <CommitRefs
+                    refs={n.refs}
+                    onBranchMenu={(branchName, isRemote) =>
+                      onBranchMenu(branchName, isRemote, n.id)
+                    }
+                    onTagMenu={(tagName) => onTagMenu(tagName, n.id)}
+                  />
+                </div>
+              )}
+              {visibleCols.message && (
+                <div className="col-msg">
+                  <span className="commit-summary">{n.summary || "(no message)"}</span>
+                </div>
+              )}
+              {visibleCols.author && (
+                <div className="col-author" style={{ flex: `0 0 ${authorW}px` }}>
+                  {url && <img className="author-avatar" src={url} alt="" />}
+                  <span className="col-author-name">{n.author}</span>
+                </div>
+              )}
+              {visibleCols.sha && (
+                <div className="col-sha" style={{ flex: `0 0 ${shaW}px` }}>{n.short_id}</div>
+              )}
+              {visibleCols.date && (
+                <div className="col-date" style={{ flex: `0 0 ${dateW}px` }}>{relativeTime(n.time)}</div>
+              )}
             </div>
           );
         })}
@@ -452,33 +565,123 @@ function SortArrow({ asc }: { asc: boolean }) {
 
 const REF_ORDER: Record<RefKind, number> = { branch: 0, tag: 1, stash: 2, remote: 3, head: 4 };
 
+interface BranchRefGroup {
+  name: string;
+  locals: string[];
+  remotes: string[];
+}
+
 /// Typed ref badges for a commit. HEAD marks the current branch as "current"
 /// (filled); a standalone HEAD badge appears only on a detached checkout.
-function CommitRefs({ refs }: { refs: RefLabel[] }) {
+function CommitRefs({
+  refs,
+  onBranchMenu,
+  onTagMenu,
+}: {
+  refs: RefLabel[];
+  onBranchMenu: (branchName: string, isRemote: boolean) => void;
+  onTagMenu: (tagName: string) => void;
+}) {
   const isHead = refs.some((r) => r.kind === "head");
-  const visible = refs
-    .filter((r) => r.kind !== "head")
+  const branchGroups = groupBranchRefs(refs);
+  const otherRefs = refs
+    .filter((r) => r.kind !== "head" && r.kind !== "branch" && r.kind !== "remote")
     .sort((a, b) => REF_ORDER[a.kind] - REF_ORDER[b.kind]);
-  const hasBranch = visible.some((r) => r.kind === "branch");
+  const hasLocalBranch = branchGroups.some((g) => g.locals.length > 0);
   return (
     <>
-      {isHead && !hasBranch && <RefBadge kind="head" name="HEAD" current />}
-      {visible.map((r) => (
+      {isHead && !hasLocalBranch && <RefBadge kinds={["head"]} name="HEAD" current />}
+      {branchGroups.map((g) => (
+        <RefBadge
+          key={`branch-group:${g.name}`}
+          kinds={[
+            ...(g.locals.length ? (["branch"] as const) : []),
+            ...(g.remotes.length ? (["remote"] as const) : []),
+          ]}
+          name={g.name}
+          title={branchGroupTitle(g)}
+          current={g.locals.length > 0 && isHead}
+          onContextMenu={() =>
+            onBranchMenu(g.locals[0] ?? g.remotes[0] ?? g.name, !g.locals.length)
+          }
+        />
+      ))}
+      {otherRefs.map((r) => (
         <RefBadge
           key={`${r.kind}:${r.name}`}
-          kind={r.kind}
+          kinds={[r.kind]}
           name={r.name}
-          current={r.kind === "branch" && isHead}
+          onContextMenu={r.kind === "tag" ? () => onTagMenu(r.name) : undefined}
         />
       ))}
     </>
   );
 }
 
-function RefBadge({ kind, name, current }: { kind: RefKind; name: string; current?: boolean }) {
+function groupBranchRefs(refs: RefLabel[]): BranchRefGroup[] {
+  const groups = new Map<string, BranchRefGroup>();
+  const ensure = (name: string) => {
+    const existing = groups.get(name);
+    if (existing) return existing;
+    const next = { name, locals: [], remotes: [] };
+    groups.set(name, next);
+    return next;
+  };
+
+  for (const ref of refs) {
+    if (ref.kind === "branch") {
+      ensure(ref.name).locals.push(ref.name);
+    } else if (ref.kind === "remote") {
+      ensure(remoteBranchName(ref.name)).remotes.push(ref.name);
+    }
+  }
+
+  return [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function remoteBranchName(name: string): string {
+  const short = name.includes("/") ? name.slice(name.indexOf("/") + 1) : name;
+  return short === "HEAD" ? name : short;
+}
+
+function branchGroupTitle(group: BranchRefGroup): string {
+  return [
+    ...group.locals.map((name) => `Local: ${name}`),
+    ...group.remotes.map((name) => `Remote: ${name}`),
+  ].join("\n");
+}
+
+function RefBadge({
+  kinds,
+  name,
+  title,
+  current,
+  onContextMenu,
+}: {
+  kinds: RefKind[];
+  name: string;
+  title?: string;
+  current?: boolean;
+  onContextMenu?: () => void;
+}) {
+  const primary = kinds.includes("branch") ? "branch" : kinds[0];
   return (
-    <span className={`ref-badge ref-${kind}${current ? " current" : ""}`} title={name}>
-      <RefIcon kind={kind} />
+    <span
+      className={`ref-badge ref-${primary}${current ? " current" : ""}`}
+      title={title ?? name}
+      onContextMenu={
+        onContextMenu
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onContextMenu();
+            }
+          : undefined
+      }
+    >
+      {kinds.map((kind) => (
+        <RefIcon key={kind} kind={kind} />
+      ))}
       <span className="ref-name">{name}</span>
     </span>
   );

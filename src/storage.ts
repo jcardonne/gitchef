@@ -34,12 +34,16 @@ export function setSidebarGroups(groups: SidebarGroups): void {
 }
 
 const COLS_KEY = "gitchef.graphCols";
+const COL_VISIBILITY_KEY = "gitchef.graphColumnVisibility";
 const SORT_KEY = "gitchef.graphSortAsc";
+const RIGHT_PANEL_KEY = "gitchef.rightPanelWidth";
 
 /// User overrides for the graph's resizable column widths (px).
 export interface GraphCols {
   graph?: number;
   author?: number;
+  sha?: number;
+  date?: number;
 }
 
 export function getGraphCols(): GraphCols {
@@ -47,6 +51,29 @@ export function getGraphCols(): GraphCols {
 }
 export function setGraphCols(cols: GraphCols): void {
   localStorage.setItem(COLS_KEY, JSON.stringify(cols));
+}
+
+export interface GraphColumnVisibility {
+  graph: boolean;
+  message: boolean;
+  author: boolean;
+  sha: boolean;
+  date: boolean;
+}
+
+const DEFAULT_GRAPH_COLUMN_VISIBILITY: GraphColumnVisibility = {
+  graph: true,
+  message: true,
+  author: true,
+  sha: true,
+  date: true,
+};
+
+export function getGraphColumnVisibility(): GraphColumnVisibility {
+  return { ...DEFAULT_GRAPH_COLUMN_VISIBILITY, ...read<Partial<GraphColumnVisibility>>(COL_VISIBILITY_KEY, {}) };
+}
+export function setGraphColumnVisibility(visibility: GraphColumnVisibility): void {
+  localStorage.setItem(COL_VISIBILITY_KEY, JSON.stringify(visibility));
 }
 
 const PULL_KEY = "gitchef.pullDefault";
@@ -68,6 +95,13 @@ export function getSortAsc(): boolean {
 }
 export function setSortAsc(asc: boolean): void {
   localStorage.setItem(SORT_KEY, asc ? "1" : "0");
+}
+
+export function getRightPanelWidth(): number {
+  return read<number>(RIGHT_PANEL_KEY, 440);
+}
+export function setRightPanelWidth(width: number): void {
+  localStorage.setItem(RIGHT_PANEL_KEY, JSON.stringify(width));
 }
 
 export interface RecentRepo {
