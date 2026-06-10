@@ -135,6 +135,44 @@ pub fn apply_lines(
     let mut lines = hunk.lines();
     let head = lines.next().ok_or_else(|| AppError::Msg("empty hunk".into()))?;
     let (mut old_ln, mut new_ln) = parse_hunk_start(head)?;
+
+    // Auto-expand the selection across replacement blocks. A maximal run of change
+    // lines (no intervening context) that has BOTH a deletion and an addition is a
+    // replacement; staging only one side would leave the other in place (keep
+    // `old` AND add `new`), so if any line of such a run is selected, select the
+    // whole run. Pure add-only / delete-only runs keep fine-grained line selection.
+    {
+        let (mut o, mut n) = (old_ln, new_ln);
+        let mut run: Vec<(bool, u32)> = Vec::new();
+        let (mut had_del, mut had_add) = (false, false);
+        for line in hunk.lines().skip(1) {
+            match line.chars().next().unwrap_or(' ') {
+                '-' => {
+                    run.push((false, o));
+                    had_del = true;
+                    o += 1;
+                }
+                '+' => {
+                    run.push((true, n));
+                    had_add = true;
+                    n += 1;
+                }
+                _ => {
+                    if had_del && had_add && run.iter().any(|k| sel.contains(k)) {
+                        sel.extend(run.iter().copied());
+                    }
+                    run.clear();
+                    had_del = false;
+                    had_add = false;
+                    o += 1;
+                    n += 1;
+                }
+            }
+        }
+        if had_del && had_add && run.iter().any(|k| sel.contains(k)) {
+            sel.extend(run.iter().copied());
+        }
+    }
     let mut out = String::with_capacity(header.len() + hunk.len());
     out.push_str(&header);
     out.push_str(head);
@@ -275,8 +313,11 @@ pub fn reveal_path(path: &str) -> AppResult<()> {
 pub fn open_terminal(path: &str) -> AppResult<()> {
     #[cfg(target_os = "macos")]
     Command::new("open").args(["-a", "Terminal"]).arg(path).spawn()?;
+    // Pass the directory via current_dir, not as a shell arg: a repo path with
+    // cmd metacharacters (& | etc.) would otherwise be a command-injection vector.
+    // `start cmd` opens a fresh terminal window inheriting that working directory.
     #[cfg(target_os = "windows")]
-    Command::new("cmd").args(["/C", "start", "cmd", "/K", "cd", "/d", path]).spawn()?;
+    Command::new("cmd").args(["/C", "start", "cmd"]).current_dir(path).spawn()?;
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         let launched = ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"]
@@ -521,6 +562,23 @@ mod tests {
         let wt = std::fs::read_to_string(dir.join("f.txt")).unwrap();
         assert!(!wt.contains("L05b"), "new line discarded: {wt:?}");
         assert!(wt.contains("L02_X") && wt.contains("L04_X"), "edits kept: {wt:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn apply_lines_expands_half_selected_replacement() {
+        let dir = tmp("expandlines");
+        multi_change_repo(&dir);
+        let fd = fdiff(&dir, false);
+        let header = fd.hunks[0].header.clone();
+        // Select ONLY the "+" side of the L02 replacement (-L02 / +L02_X).
+        apply_lines(&fresh(&dir), "f.txt", "stage", &header, vec![key_for(&fd, "L02_X")]).unwrap();
+
+        // The whole replacement is staged - old removed AND new added - not a
+        // half-state that would keep L02 and also add L02_X.
+        let staged = changed(&fdiff(&dir, true));
+        assert!(staged.contains(&"+L02_X".into()) && staged.contains(&"-L02".into()), "{staged:?}");
+        assert!(!staged.contains(&"+L04_X".into()) && !staged.contains(&"+L05b".into()), "{staged:?}");
         std::fs::remove_dir_all(&dir).ok();
     }
 

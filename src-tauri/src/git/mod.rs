@@ -52,23 +52,26 @@ pub fn run_git_stdin(dir: &Path, args: &[&str], input: &str) -> AppResult<String
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
-    // Drop stdin after writing so git sees EOF. Hunk patches are small (well
-    // under the pipe buffer), so writing before reading output won't deadlock.
-    child
+    // Write the patch, then close stdin so git sees EOF. Capture the write result
+    // but always reap the child first: a broken pipe must not leave a zombie or
+    // mask git's own error. Hunk patches are small (well under the pipe buffer),
+    // so writing before reading output won't deadlock.
+    let mut stdin = child
         .stdin
         .take()
-        .ok_or_else(|| AppError::Msg("failed to open git stdin".into()))?
-        .write_all(input.as_bytes())?;
+        .ok_or_else(|| AppError::Msg("failed to open git stdin".into()))?;
+    let write_res = stdin.write_all(input.as_bytes());
+    drop(stdin);
     let out = child.wait_with_output()?;
-    if out.status.success() {
-        Ok(String::from_utf8_lossy(&out.stdout).into_owned())
-    } else {
+    if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let msg = if err.trim().is_empty() {
             String::from_utf8_lossy(&out.stdout).into_owned()
         } else {
             err.into_owned()
         };
-        Err(AppError::Msg(format!("git {}: {}", args.join(" "), msg.trim())))
+        return Err(AppError::Msg(format!("git {}: {}", args.join(" "), msg.trim())));
     }
+    write_res?; // process succeeded - surface a write error only now
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
