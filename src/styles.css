@@ -94,7 +94,9 @@ button {
   margin-right: 6px;
 }
 .brand-mark {
-  color: var(--accent);
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
 }
 .toolbar-spacer {
   flex: 1;
@@ -1237,6 +1239,9 @@ button {
   padding-right: 0;
 }
 .tabbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 700;
   font-size: 13px;
   margin-right: 8px;
@@ -1408,13 +1413,16 @@ button {
   width: 100%;
   max-width: 560px;
 }
+.home-logo {
+  display: block;
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
+  margin-bottom: 14px;
+}
 .home-inner h1 {
   margin: 0;
   font-size: 30px;
-}
-.home-inner h1::before {
-  content: "⌥ ";
-  color: var(--accent);
 }
 .home-inner > p {
   color: var(--text-dim);
