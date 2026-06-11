@@ -8,18 +8,20 @@ import type { PullAction } from "../storage";
 import type {
   BranchInfo,
   CommitNode,
+  FileContent,
   FileDiff,
   RepoInfo,
   StatusResult,
   TagInfo,
   WorkStats,
 } from "../types";
-import { gravatarUrl, relativeTime } from "../util";
+import { gravatarUrl, hasUncommittedChange, relativeTime } from "../util";
 import Toolbar from "./Toolbar";
 import Sidebar from "./Sidebar";
 import GraphView from "./GraphView";
 import StagingPanel from "./StagingPanel";
 import DiffViewer from "./DiffViewer";
+import FileView from "./FileView";
 
 const EMPTY_STATUS: StatusResult = { staged: [], unstaged: [] };
 
@@ -53,6 +55,15 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
   );
   // Tracks the working-file currently shown so "Load full file" can refetch it.
   const [workSel, setWorkSel] = useState<{ path: string; staged: boolean } | null>(null);
+
+  // The preview pane shows either the unified diff or the whole file. The mode
+  // is sticky across file selections; `fileContent` is loaded lazily in "file"
+  // mode. `compareMode` records that the open commit-file list came from a
+  // "compare with working directory" - so its File view reads the workdir (the
+  // diff's right-hand side), not the commit's blob.
+  const [previewMode, setPreviewMode] = useState<"diff" | "file">("diff");
+  const [fileContent, setFileContent] = useState<FileContent | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [graphLimit, setGraphLimit] = useState(500);
@@ -138,6 +149,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
     setBranches(b);
     setTags(t);
     setWorkStats(w);
+    return s;
   }, [path, graphLimit]);
 
   // Load another page of commits into the graph (search beyond the window).
@@ -221,6 +233,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
     setDiff(null);
     setSelectedPath(null);
     setWorkSel(null);
+    setFileContent(null);
   };
 
   // Focus the uncommitted-changes view (clicking the WIP node atop the graph).
@@ -228,9 +241,11 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
     setSelectedCommit(null);
     setCommitFiles([]);
     setRightTab("changes");
+    setCompareMode(false);
   };
 
   const selectCommit = (id: string) => {
+    setCompareMode(false);
     // Re-clicking the selected commit deselects it and closes its file list.
     if (selectedCommit === id) {
       setSelectedCommit(null);
@@ -279,12 +294,52 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       setDiff(await api.fileDiff(path, workSel.path, workSel.staged, true));
     });
 
+  // The "after" side the File view shows, mirroring the diff: a working file ->
+  // its staged blob or the working tree; a commit file -> that commit's blob,
+  // unless we're comparing against the working directory (then the workdir).
+  const fileContentSource = useCallback((): { rev: string | null; staged: boolean } => {
+    if (workSel) return { rev: null, staged: workSel.staged };
+    return { rev: compareMode ? null : selectedCommit, staged: false };
+  }, [workSel, compareMode, selectedCommit]);
+
+  // Load whole-file content lazily whenever the File view is active and the
+  // selection changes. Cancellation guards against a slow load landing after
+  // the user has already moved on to another file.
+  useEffect(() => {
+    if (previewMode !== "file" || !selectedPath) return;
+    const { rev, staged } = fileContentSource();
+    let cancelled = false;
+    run(async () => {
+      const c = await api.fileContent(path, selectedPath, rev, staged);
+      if (!cancelled) setFileContent(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewMode, selectedPath, workSel, selectedCommit, compareMode]);
+
+  const loadFullFile = () =>
+    run(async () => {
+      if (!selectedPath) return;
+      const { rev, staged } = fileContentSource();
+      setFileContent(await api.fileContent(path, selectedPath, rev, staged, true));
+    });
+
   const onCommit = (message: string) =>
     run(async () => {
+      // Remember which working file (if any) the diff preview is showing, so we
+      // can drop it when this commit absorbs that file.
+      const previewedPath = workSel?.path ?? null;
       const sha = await api.commit(path, message);
       notify(`Committed ${sha.slice(0, 7)}`);
       setRightTab("changes");
-      await refresh();
+      const next = await refresh();
+      // A committed file no longer has uncommitted changes, so its working-tree
+      // diff is stale: close the preview if the file dropped out of the changes.
+      if (previewedPath && !hasUncommittedChange(next, previewedPath)) {
+        closeDiff();
+      }
     });
 
   // Re-read RepoInfo (HEAD may have moved) and reload all repo data. Used after
@@ -455,6 +510,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
     run(async () => {
       const files = await api.compareWorkdir(path, sha);
       setSelectedCommit(sha);
+      setCompareMode(true);
       setRightTab("commit");
       setSelectedPath(null);
       setDiff(null);
@@ -994,15 +1050,42 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
               <button
                 className="mini-btn center-diff-close"
                 onClick={closeDiff}
-                title="Close diff"
+                title="Close preview"
               >
                 ✕
               </button>
-              <DiffViewer
-                diff={diff}
-                onLoadFull={workSel ? loadFullDiff : undefined}
-                onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined}
-              />
+              <div className="preview-header">
+                <span className="preview-path">{selectedPath}</span>
+                <div className="seg" role="tablist">
+                  <button
+                    className={previewMode === "diff" ? "active" : ""}
+                    onClick={() => setPreviewMode("diff")}
+                  >
+                    Diff
+                  </button>
+                  <button
+                    className={previewMode === "file" ? "active" : ""}
+                    onClick={() => setPreviewMode("file")}
+                  >
+                    File
+                  </button>
+                </div>
+                {((previewMode === "diff" && diff.truncated && workSel) ||
+                  (previewMode === "file" && fileContent?.truncated)) && (
+                  <button
+                    className="mini-btn"
+                    onClick={previewMode === "diff" ? loadFullDiff : loadFullFile}
+                    title="Load the entire file"
+                  >
+                    Load full file
+                  </button>
+                )}
+              </div>
+              {previewMode === "diff" ? (
+                <DiffViewer diff={diff} onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined} />
+              ) : (
+                <FileView content={fileContent} />
+              )}
             </div>
           )}
           <div className="center-graph">

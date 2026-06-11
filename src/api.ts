@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   BranchInfo,
   CommitNode,
+  FileContent,
   FileDiff,
   RepoInfo,
   StatusResult,
@@ -32,6 +33,13 @@ export const listBranches = (repo: string) => invoke<BranchInfo[]>("list_branche
 export const listTags = (repo: string) => invoke<TagInfo[]>("list_tags", { repo });
 export const fileDiff = (repo: string, path: string, staged: boolean, full = false) =>
   invoke<FileDiff>("file_diff", { repo, path, staged, full });
+export const fileContent = (
+  repo: string,
+  path: string,
+  rev: string | null,
+  staged: boolean,
+  full = false
+) => invoke<FileContent>("file_content", { repo, path, rev, staged, full });
 export const commitDiff = (repo: string, id: string) =>
   invoke<FileDiff[]>("commit_diff", { repo, id });
 

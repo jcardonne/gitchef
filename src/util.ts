@@ -1,4 +1,4 @@
-import type { FileStatusKind } from "./types";
+import type { FileStatusKind, StatusResult } from "./types";
 
 // Single-letter status badge shown next to each changed file.
 export const STATUS_GLYPH: Record<FileStatusKind, string> = {
@@ -54,4 +54,14 @@ export function relativeTime(unixSeconds: number): string {
   const months = Math.floor(days / 30);
   if (months < 12) return `${months}mo ago`;
   return `${Math.floor(months / 12)}y ago`;
+}
+
+/// Whether `path` still has an uncommitted change (staged or unstaged) in the
+/// given working-tree status. After a commit, a previewed file that returns
+/// false here was absorbed by the commit, so its working-tree diff can close.
+export function hasUncommittedChange(status: StatusResult, path: string): boolean {
+  return (
+    status.staged.some((f) => f.path === path) ||
+    status.unstaged.some((f) => f.path === path)
+  );
 }

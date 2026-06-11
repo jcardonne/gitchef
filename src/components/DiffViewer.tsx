@@ -6,7 +6,6 @@ const OVERSCAN = 20;
 
 interface Props {
   diff: FileDiff | null;
-  onLoadFull?: () => void;
   // Right-click a hunk. `selected` carries the chosen line keys when the
   // right-clicked hunk has a line selection (empty otherwise), which lets the
   // caller offer line-level stage/discard alongside the whole-hunk actions.
@@ -28,7 +27,7 @@ function lineKey(line: DiffLine): string | null {
 /// the scroll height is faked with top/bottom padding spacers. When `onHunkMenu`
 /// is set (a working-file diff), changed lines are click-selectable for
 /// line-level staging.
-export default function DiffViewer({ diff, onLoadFull, onHunkMenu }: Props) {
+export default function DiffViewer({ diff, onHunkMenu }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
@@ -114,14 +113,6 @@ export default function DiffViewer({ diff, onLoadFull, onHunkMenu }: Props) {
 
   return (
     <div className="diff">
-      <div className="diff-path">
-        <span className="diff-path-name">{diff.path}</span>
-        {diff.truncated && onLoadFull && (
-          <button className="mini-btn" onClick={onLoadFull} title="Load the entire file">
-            Load full file
-          </button>
-        )}
-      </div>
       <div className="diff-scroll" ref={ref}>
         <div style={{ paddingTop: start * ROW_H, paddingBottom: (rows.length - end) * ROW_H }}>
           {rows.slice(start, end).map((row, i) => {

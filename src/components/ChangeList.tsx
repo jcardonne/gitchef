@@ -93,7 +93,7 @@ export default function ChangeList({
         <StatusIcon status={f.status} />
         <span className="file-path">{label}</span>
         <button
-          className="mini-btn row-action"
+          className={`mini-btn row-action${staged ? "" : " row-stage"}`}
           onClick={(e) => {
             e.stopPropagation();
             onQuickToggle(f);

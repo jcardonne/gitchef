@@ -296,6 +296,8 @@ button {
 }
 .center-diff {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden; /* DiffViewer scrolls internally (virtualized) */
@@ -854,6 +856,16 @@ button {
 }
 .row-action {
   visibility: hidden;
+  cursor: pointer;
+}
+/* Stage is an additive action -> green, filling solid on button hover. */
+.row-action.row-stage {
+  color: var(--add);
+}
+.row-action.row-stage:hover:not(:disabled) {
+  color: #fff;
+  background: var(--add);
+  border-color: var(--add);
 }
 .file-row:hover .row-action {
   visibility: visible;
@@ -1039,24 +1051,54 @@ button {
   font-size: 12px;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
 }
-.diff-path {
+.preview-header {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   padding: 5px 12px;
   padding-right: 38px; /* clear the absolute close ✕ in the top-right */
   color: var(--text-dim);
   border-bottom: 1px solid var(--border);
   background: var(--bg-elev);
 }
-.diff-path-name {
+.preview-path {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.seg {
+  flex: 0 0 auto;
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+}
+.seg button {
+  background: var(--bg-elev2);
+  border: 0;
+  border-left: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 2px 12px;
+  cursor: pointer;
+}
+.seg button:first-child {
+  border-left: 0;
+}
+.seg button.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.seg button:hover:not(.active) {
+  color: var(--text);
 }
 .diff-scroll {
   flex: 1;

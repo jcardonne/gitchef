@@ -98,3 +98,12 @@ export interface FileDiff {
   hunks: DiffHunk[];
   truncated: boolean;
 }
+
+/// The raw file content shown by the "File" preview (vs the diff). `lines` is
+/// capped on the backend unless a full load was requested.
+export interface FileContent {
+  path: string;
+  binary: boolean;
+  lines: string[];
+  truncated: boolean;
+}

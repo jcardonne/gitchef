@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import type { StatusResult } from "./types";
 
 /// Cross-cutting primitives every repo-scoped component needs: which repo it
 /// acts on, the busy flag, and the run/refresh/notify action bus. Provided by
@@ -7,7 +8,7 @@ export interface RepoActions {
   repoPath: string;
   busy: boolean;
   run: (fn: () => Promise<void>) => void;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<StatusResult>;
   notify: (msg: string, error?: boolean) => void;
 }
 

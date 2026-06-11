@@ -48,6 +48,17 @@ fn file_diff(repo: String, path: String, staged: bool, full: bool) -> AppResult<
 }
 
 #[tauri::command]
+fn file_content(
+    repo: String,
+    path: String,
+    rev: Option<String>,
+    staged: bool,
+    full: bool,
+) -> AppResult<diff::FileContent> {
+    diff::file_content(&open(&repo)?, &path, rev.as_deref(), staged, full)
+}
+
+#[tauri::command]
 fn commit_diff(repo: String, id: String) -> AppResult<Vec<diff::FileDiff>> {
     diff::commit_diff(&open(&repo)?, &id)
 }
@@ -315,6 +326,7 @@ pub fn run() {
             list_branches,
             list_tags,
             file_diff,
+            file_content,
             commit_diff,
             commit,
             checkout,
