@@ -99,7 +99,8 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned (not @stable) to keep release builds on a known toolchain.
+      - uses: dtolnay/rust-toolchain@1.96.0
         with:
           targets: ${{ matrix.rust-targets }}
 

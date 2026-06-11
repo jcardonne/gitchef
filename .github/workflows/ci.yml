@@ -40,7 +40,9 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned (not @stable) so a new clippy release can't surprise-break CI.
+      # Bump deliberately when adopting a newer toolchain.
+      - uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: clippy
 
