@@ -61,7 +61,7 @@ jobs:
             rust-targets: ""
     runs-on: ${{ matrix.platform }}
     permissions:
-      contents: read # build only checks out + uploads artifacts
+      contents: write # build attaches release installers + uploads artifacts
     steps:
       - uses: actions/checkout@v5
         with:
@@ -136,6 +136,30 @@ jobs:
           name: updater-${{ matrix.platform }}
           path: dist-updater/*
           if-no-files-found: error
+
+      - name: Attach installers to the GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          mkdir -p dist-release
+          # User-facing installers only (no .sig - those are updater-only and
+          # live in latest.json on R2). One platform's set per matrix job.
+          find src-tauri/target -type f \( \
+            -name '*.dmg' \
+            -o -name '*-setup.exe' \
+            -o -name '*.msi' \
+            -o -name '*.AppImage' \
+            -o -name '*.deb' \
+          \) -exec cp {} dist-release/ \;
+          ls -la dist-release
+          if compgen -G 'dist-release/*' > /dev/null; then
+            gh release upload "v${VERSION}" dist-release/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            echo "::warning::no installers found for $PLATFORM"
+          fi
 
   publish:
     needs: [version, build]
