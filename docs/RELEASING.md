@@ -146,6 +146,23 @@ git push
 
 ---
 
+## App icon
+
+Two master images live at the repo root:
+
+- `app-icon.png` - the transparent brand mark. Source for the README hero and the
+  in-app logo (`public/logo.png`, shown on the Home screen and titlebar).
+- `app-icon-tile.png` - the dark, rounded macOS-style tile. Source for the OS
+  icons (dock, Finder, installer, taskbar).
+
+Regenerate every bundle icon under `src-tauri/icons/` from the tile master:
+
+```sh
+pnpm tauri icon app-icon-tile.png
+```
+
+---
+
 ## How the client side works
 
 - `src/updater.ts` - `runSilentUpdate(onStatus)`: `check()` ->
