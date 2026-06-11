@@ -198,6 +198,7 @@ fn whole_file_as_added(repo: &Repository, path: &str, max: usize) -> AppResult<F
 ///   - `rev = Some(sha)` -> the blob at that commit's tree,
 ///   - `rev = None, staged = true` -> the staged blob in the index,
 ///   - `rev = None, staged = false` -> the working-tree file on disk.
+///
 /// Capped like diffs unless `full`, so a huge file can't flood the webview.
 pub fn file_content(
     repo: &Repository,
