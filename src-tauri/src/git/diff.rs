@@ -236,8 +236,13 @@ fn read_file_bytes(
     if let Some(rev) = rev {
         let oid = Oid::from_str(rev).map_err(|e| AppError::Msg(format!("invalid commit id: {e}")))?;
         let tree = repo.find_commit(oid)?.tree()?;
-        let entry = tree.get_path(Path::new(path))?;
-        return Ok(repo.find_blob(entry.id())?.content().to_vec());
+        if let Ok(entry) = tree.get_path(Path::new(path)) {
+            return Ok(repo.find_blob(entry.id())?.content().to_vec());
+        }
+        // Absent from this commit (e.g. the file was deleted here): fall back to
+        // the working tree, which yields empty bytes for a file that no longer
+        // exists - rendered as empty instead of surfacing an error.
+        return Ok(std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default());
     }
     if staged {
         if let Some(entry) = repo.index()?.get_path(Path::new(path), 0) {
@@ -323,6 +328,18 @@ mod tests {
         let commit = file_content(&fresh(&dir), "f.txt", Some(&sha), false, false).unwrap();
         assert_eq!(commit.lines, ["v1"]);
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn commit_lookup_miss_renders_empty_not_error() {
+        let dir = tmp("filecontentmiss");
+        let sha = three_state_repo(&dir);
+        // A path absent from the commit's tree (e.g. deleted in that commit) must
+        // render as empty rather than surfacing an error in the File preview.
+        let ghost = file_content(&fresh(&dir), "ghost.txt", Some(&sha), false, false).unwrap();
+        assert!(ghost.lines.is_empty());
+        assert!(!ghost.binary && !ghost.truncated);
         std::fs::remove_dir_all(&dir).ok();
     }
 
