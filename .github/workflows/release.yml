@@ -12,14 +12,17 @@ on:
   push:
     branches: [main]
 
+# Least privilege at the top level; only the version job needs write (below).
 permissions:
-  contents: write # semantic-release pushes the version commit + tag
-  issues: write # semantic-release/github success comments
-  pull-requests: write
+  contents: read
 
 jobs:
   version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # semantic-release pushes the version commit + tag
+      issues: write # semantic-release/github success comments
+      pull-requests: write
     outputs:
       published: ${{ steps.semantic.outputs.new_release_published }}
       version: ${{ steps.semantic.outputs.new_release_version }}
@@ -32,7 +35,7 @@ jobs:
           node-version: 24
       - name: Semantic release (version + tag)
         id: semantic
-        uses: cycjimmy/semantic-release-action@v4
+        uses: cycjimmy/semantic-release-action@v5
         with:
           extra_plugins: |
             @semantic-release/exec
@@ -57,10 +60,13 @@ jobs:
             target: ""
             rust-targets: ""
     runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: read # build only checks out + uploads artifacts
     steps:
       - uses: actions/checkout@v5
         with:
           ref: v${{ needs.version.outputs.version }} # the bumped + tagged commit
+          persist-credentials: false
 
       - name: Inject updater endpoint
         shell: bash
@@ -134,8 +140,12 @@ jobs:
     needs: [version, build]
     if: needs.version.outputs.published == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # publish only reads the repo; R2 upload uses Cloudflare secrets
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         with:

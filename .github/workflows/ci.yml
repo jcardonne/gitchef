@@ -1,5 +1,9 @@
 name: ci
 
+# Least privilege: this pipeline only reads the repo to test + build.
+permissions:
+  contents: read
+
 # Gate every PR and push to main on the full test + build matrix, so a broken
 # change can never reach the release workflow (which tags first, then builds).
 on:
@@ -17,6 +21,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false # build/test only; don't leave the token in git config
 
       # Tauri/libgit2 build deps (mirrors the release workflow).
       - name: Install Linux build deps
