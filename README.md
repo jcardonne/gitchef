@@ -65,3 +65,13 @@ docs/           Project documentation (see RELEASING.md)
 ```bash
 pnpm test
 ```
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=jcardonne%2Fgitchef&type=date&legend=top-left">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=jcardonne/gitchef&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=jcardonne/gitchef&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=jcardonne/gitchef&type=Date" />
+  </picture>
+</a>
