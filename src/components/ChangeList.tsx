@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import type { FileStatus, FileStatusKind } from "../types";
 import type { ChangesView } from "../storage";
 import { buildTree, filesIn, flattenVisible, type TreeFile } from "../fileTree";
+import { nextIndex, rangeKeys } from "../changeNav";
 
 interface Props {
   files: FileStatus[];
@@ -37,6 +38,7 @@ export default function ChangeList({
   // Shift-range anchor stored as the file itself (not an index), so collapsing a
   // folder between clicks can't make the anchor point at the wrong row.
   const anchor = useRef<FileStatus | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const tree = useMemo(() => buildTree(files), [files]);
   const visible = useMemo(() => flattenVisible(tree, collapsed), [tree, collapsed]);
@@ -69,6 +71,37 @@ export default function ChangeList({
     onShowDiff(f);
   };
 
+  // Keyboard nav (rows are focusable): arrows move + select, Shift extends from
+  // the anchor, Space stages/unstages, Enter opens the diff, Cmd/Ctrl+A selects
+  // all. Arrows stay in this section; Tab crosses to the next one natively.
+  const handleKey = (f: FileStatus, index: number, e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const target = nextIndex(index, e.key === "ArrowDown" ? 1 : -1, orderedFiles.length);
+      if (target < 0) return;
+      listRef.current?.querySelectorAll<HTMLElement>(".file-row")[target]?.focus();
+      if (e.shiftKey) {
+        const base = (anchor.current ? indexOf.get(anchor.current) : index) ?? index;
+        onSelectionChange(new Set([...selected, ...rangeKeys(orderedFiles, keyOf, base, target)]));
+      } else {
+        const tf = orderedFiles[target];
+        onSelectionChange(new Set([keyOf(tf)]));
+        anchor.current = tf;
+      }
+    } else if (e.key === " ") {
+      e.preventDefault();
+      onQuickToggle(f);
+    } else if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      onSelectionChange(new Set([keyOf(f)]));
+      anchor.current = f;
+      onShowDiff(f);
+    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+      e.preventDefault();
+      onSelectionChange(new Set(orderedFiles.map(keyOf)));
+    }
+  };
+
   const toggleFolder = (path: string) =>
     setCollapsed((c) => {
       const next = new Set(c);
@@ -84,6 +117,8 @@ export default function ChangeList({
         className={`file-row${selected.has(keyOf(f)) ? " selected" : ""}`}
         style={{ paddingLeft: BASE_PAD + depth * INDENT }}
         onClick={(e) => handleClick(f, index, e)}
+        tabIndex={0}
+        onKeyDown={(e) => handleKey(f, index, e)}
         onContextMenu={(e) => {
           e.preventDefault();
           if (!selected.has(keyOf(f))) onSelectionChange(new Set([keyOf(f)]));
@@ -94,6 +129,7 @@ export default function ChangeList({
         <span className="file-path">{label}</span>
         <button
           className={`mini-btn row-action${staged ? "" : " row-stage"}`}
+          tabIndex={-1}
           onClick={(e) => {
             e.stopPropagation();
             onQuickToggle(f);
@@ -110,11 +146,11 @@ export default function ChangeList({
   }
 
   if (view === "list") {
-    return <div className="change-list">{files.map((f) => fileRow(f, 0, f.path))}</div>;
+    return <div className="change-list" ref={listRef}>{files.map((f) => fileRow(f, 0, f.path))}</div>;
   }
 
   return (
-    <div className="change-list">
+    <div className="change-list" ref={listRef}>
       {visible.map(({ node, depth }) =>
         node.type === "folder" ? (
           <div

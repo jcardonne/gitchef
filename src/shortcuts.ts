@@ -31,6 +31,16 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     ],
   },
   {
+    title: "Files list (when focused)",
+    items: [
+      { label: "Move between files", combo: ["ArrowUp", "ArrowDown"] },
+      { label: "Extend selection", combo: ["shift", "ArrowUp", "ArrowDown"] },
+      { label: "Select all", combo: ["mod", "A"] },
+      { label: "Stage / unstage file", combo: ["Space"] },
+      { label: "Open file diff", combo: ["Enter"] },
+    ],
+  },
+  {
     title: "Sync",
     items: [
       { label: "Push", combo: ["mod", "shift", "P"] },
