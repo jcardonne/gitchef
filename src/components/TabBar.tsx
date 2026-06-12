@@ -84,9 +84,9 @@ export default function TabBar({
         action: () => onCloseToRight(t.path),
       }),
       PredefinedMenuItem.new({ item: "Separator" }),
-      MenuItem.new({ text: "Copy Repo Path", action: () => void api.copyText(t.path) }),
-      MenuItem.new({ text: "Reveal in Finder", action: () => void api.revealPath(t.path) }),
-      MenuItem.new({ text: "Open in Terminal", action: () => void api.openTerminal(t.path) }),
+      MenuItem.new({ text: "Copy Repo Path", action: () => void api.copyText(t.path).catch(console.error) }),
+      MenuItem.new({ text: "Reveal in Finder", action: () => void api.revealPath(t.path).catch(console.error) }),
+      MenuItem.new({ text: "Open in Terminal", action: () => void api.openTerminal(t.path).catch(console.error) }),
     ]);
     await (await Menu.new({ items })).popup();
   };

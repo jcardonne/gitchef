@@ -16,8 +16,8 @@ export default function Home({ recents, onOpen, onOpenRecent, onRemoveRecent }: 
     const items = await Promise.all([
       MenuItem.new({ text: "Open", action: () => onOpenRecent(r.path) }),
       PredefinedMenuItem.new({ item: "Separator" }),
-      MenuItem.new({ text: "Copy Path", action: () => void api.copyText(r.path) }),
-      MenuItem.new({ text: "Reveal in Finder", action: () => void api.revealPath(r.path) }),
+      MenuItem.new({ text: "Copy Path", action: () => void api.copyText(r.path).catch(console.error) }),
+      MenuItem.new({ text: "Reveal in Finder", action: () => void api.revealPath(r.path).catch(console.error) }),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: "Remove from Recents", action: () => onRemoveRecent(r.path) }),
     ]);
