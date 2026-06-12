@@ -600,6 +600,10 @@ button {
   border-bottom: 1px solid var(--border);
   cursor: pointer;
   overflow: hidden;
+  /* Skip layout/paint for off-screen rows so long graphs stay smooth; harmlessly
+     ignored on webviews that don't support it. intrinsic size = ROW_H (48px). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 48px;
 }
 .col-graph {
   position: relative;
