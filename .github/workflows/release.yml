@@ -145,15 +145,30 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: |
           mkdir -p dist-release
-          # User-facing installers only (no .sig - those are updater-only and
-          # live in latest.json on R2). One platform's set per matrix job.
+          case "$PLATFORM" in
+            macos*)   OS=macOS ;;
+            windows*) OS=Windows ;;
+            *)        OS=Linux ;;
+          esac
+          # User-facing installers only (no .sig - those are updater-only and live
+          # in latest.json on R2). Renamed with the OS so the Releases page is
+          # obvious at a glance; the R2/updater artifacts keep their tauri names.
           find src-tauri/target -type f \( \
             -name '*.dmg' \
             -o -name '*-setup.exe' \
             -o -name '*.msi' \
             -o -name '*.AppImage' \
             -o -name '*.deb' \
-          \) -exec cp {} dist-release/ \;
+          \) | while read -r f; do
+            case "$f" in
+              *-setup.exe) cp "$f" "dist-release/GitChef_${VERSION}_${OS}_setup.exe" ;;
+              *.exe)       cp "$f" "dist-release/GitChef_${VERSION}_${OS}.exe" ;;
+              *.msi)       cp "$f" "dist-release/GitChef_${VERSION}_${OS}.msi" ;;
+              *.dmg)       cp "$f" "dist-release/GitChef_${VERSION}_${OS}.dmg" ;;
+              *.AppImage)  cp "$f" "dist-release/GitChef_${VERSION}_${OS}.AppImage" ;;
+              *.deb)       cp "$f" "dist-release/GitChef_${VERSION}_${OS}.deb" ;;
+            esac
+          done
           ls -la dist-release
           if compgen -G 'dist-release/*' > /dev/null; then
             gh release upload "v${VERSION}" dist-release/* --clobber --repo "$GITHUB_REPOSITORY"
