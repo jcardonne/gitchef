@@ -23,9 +23,13 @@ GitChef is a desktop Git client built with [Tauri](https://tauri.app) and React.
 
 ## Install
 
-Download the latest build for your platform from the [Releases](https://github.com/jcardonne/gitchef/releases) page.
+Grab the latest build for your platform from the [Releases](https://github.com/jcardonne/gitchef/releases) page:
 
-Once installed, GitChef checks for signed updates on launch and updates itself in the background.
+- **macOS** - `GitChef_<version>_universal.dmg` (Intel + Apple Silicon). Open it and drag GitChef to Applications. The app isn't notarized by Apple yet, so the first launch is blocked by Gatekeeper: right-click GitChef and choose **Open** (or run `xattr -dr com.apple.quarantine /Applications/GitChef.app`).
+- **Windows** - `GitChef_<version>_x64-setup.exe` (or the `.msi`). The installer isn't code-signed yet, so SmartScreen may warn - choose **More info -> Run anyway**.
+- **Linux** - `GitChef_<version>_amd64.AppImage` (recommended: portable, runs on most distros, and auto-updating; `chmod +x` it then run - some systems need `libfuse2`). A `.deb` is also published for Debian/Ubuntu.
+
+Once installed, GitChef checks for signature-verified updates on launch and updates itself in the background. Auto-update covers the macOS, Windows, and Linux **AppImage** builds; the Linux `.deb` updates through your package manager instead.
 
 ## Development
 
