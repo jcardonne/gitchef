@@ -7,10 +7,10 @@ export default function UpdateToast({ status }: { status: UpdateStatus | null })
 
   const label =
     status.phase === "installing"
-      ? `Installation de la v${status.version}…`
+      ? `Installing v${status.version}…`
       : status.pct === null
-        ? `Telechargement de la v${status.version}…`
-        : `Telechargement de la v${status.version}… ${status.pct}%`;
+        ? `Downloading v${status.version}…`
+        : `Downloading v${status.version}… ${status.pct}%`;
 
   // Determinate bar while downloading with a known size; indeterminate sweep
   // otherwise (unknown length, or during install).
