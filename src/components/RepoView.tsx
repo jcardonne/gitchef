@@ -87,6 +87,10 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
 
   const loadedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
+  // Monotonic request ids: a slower response for an earlier selection must never
+  // clobber the state of a newer one (rapid commit/file clicks).
+  const commitReq = useRef(0);
+  const fileReq = useRef(0);
 
   // Info toasts auto-dismiss after 4s; error toasts persist (long git messages
   // need reading + copying) until the user closes them.
@@ -255,12 +259,14 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       setRightTab("changes");
       return;
     }
+    const req = ++commitReq.current;
     run(async () => {
       setSelectedCommit(id);
       setRightTab("commit");
       setSelectedPath(null);
       setDiff(null);
-      setCommitFiles(await api.commitDiff(path, id));
+      const files = await api.commitDiff(path, id);
+      if (commitReq.current === req) setCommitFiles(files);
     });
   };
 
@@ -273,8 +279,10 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
     }
     setSelectedPath(p);
     setWorkSel({ path: p, staged });
+    const req = ++fileReq.current;
     run(async () => {
-      setDiff(await api.fileDiff(path, p, staged));
+      const d = await api.fileDiff(path, p, staged);
+      if (fileReq.current === req) setDiff(d);
     });
   };
 
