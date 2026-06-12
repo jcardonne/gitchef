@@ -1230,6 +1230,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 1000; /* above everything (max app z-index is 50) so modals never get painted over */
 }
 .modal {
   background: var(--bg-elev);
