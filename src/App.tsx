@@ -7,6 +7,7 @@ import Home from "./components/Home";
 import RepoView from "./components/RepoView";
 import UpdateToast from "./components/UpdateToast";
 import { runSilentUpdate, type UpdateStatus } from "./updater";
+import ShortcutsModal from "./components/ShortcutsModal";
 
 /// App shell: owns the open tabs + recents, routes between the Home tab and one
 /// mounted RepoView per open repository. All repo state lives inside RepoView.
@@ -20,6 +21,7 @@ export default function App() {
   const [activePath, setActivePath] = useState<string | null>(session.activePath);
   const [recents, setRecents] = useState(store.getRecents());
   const closedTabs = useRef<string[]>([]); // stack of recently closed tab paths
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Check Cloudflare for a newer signed build once, on launch (prod only).
   // Progress surfaces in a small toast; on success the app relaunches itself.
@@ -86,6 +88,9 @@ export default function App() {
       } else if (mod && key === "w") {
         e.preventDefault();
         if (activePath) closeTab(activePath);
+      } else if (mod && key === "/") {
+        e.preventDefault();
+        setShortcutsOpen((v) => !v);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -167,6 +172,7 @@ export default function App() {
       </div>
 
       <UpdateToast status={updateStatus} />
+      {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
     </div>
   );
 }
