@@ -3,7 +3,7 @@ import { confirm, save } from "@tauri-apps/plugin-dialog";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import * as api from "../api";
 import { RepoContext } from "../repoContext";
-import { getRightPanelWidth, setRightPanelWidth } from "../storage";
+import { getRightPanelWidth, setRightPanelWidth, getPullDefault } from "../storage";
 import type { PullAction } from "../storage";
 import type {
   BranchInfo,
@@ -399,6 +399,24 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       await refresh();
       notify("Pushed");
     });
+
+  // Keyboard: push / pull on the active tab.
+  useEffect(() => {
+    if (!isActive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "p") {
+        e.preventDefault();
+        onPush();
+      } else if (k === "l") {
+        e.preventDefault();
+        onPullAction(getPullDefault());
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isActive, onPush, onPullAction]);
 
   // --- commit context-menu actions ---
   const headBranch = branches.find((b) => b.is_head)?.name ?? "HEAD";
@@ -1153,6 +1171,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
                 status={status}
                 onSelectFile={selectWorkingFile}
                 onCommit={onCommit}
+                isActive={isActive}
               />
             ) : (
               <div className="commit-detail-panel">

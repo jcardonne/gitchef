@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { BranchInfo, RepoInfo } from "../types";
 import { getPullDefault, setPullDefault, type PullAction } from "../storage";
+import { comboHint } from "../shortcuts";
 
 interface Props {
   repo: RepoInfo;
@@ -142,6 +143,7 @@ export default function Toolbar({
           className="tool-btn split-main"
           disabled={busy}
           onClick={() => onPullAction(pullDefault)}
+          title={`${pullDefault === "fetch" ? "Fetch" : "Pull"} (${comboHint(["mod", "shift", "L"])})`}
         >
           {pullDefault === "fetch" ? <FetchIcon /> : <PullIcon />}
           {pullDefault === "fetch" ? "Fetch" : "Pull"}
@@ -169,7 +171,7 @@ export default function Toolbar({
         className="tool-btn"
         disabled={busy}
         onClick={onPush}
-        title={repo.has_upstream ? "Push" : "Publish branch: push and set upstream"}
+        title={`${repo.has_upstream ? "Push" : "Publish branch: push and set upstream"} (${comboHint(["mod", "shift", "P"])})`}
       >
         <PushIcon />
         {repo.has_upstream ? "Push" : "Publish"}
