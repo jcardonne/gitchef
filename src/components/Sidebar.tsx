@@ -2,6 +2,24 @@ import { useState, type ReactNode } from "react";
 import type { BranchInfo, TagInfo } from "../types";
 import { getSidebarGroups, setSidebarGroups } from "../storage";
 
+const LocalIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="2" y="3" width="12" height="8" rx="1.3" />
+    <path d="M8 11v2.5M5.5 13.5h5" />
+  </svg>
+);
+const RemoteIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4.5 12.5a3 3 0 0 1-.3-6A3.6 3.6 0 0 1 11 5.3a2.8 2.8 0 0 1 .4 7.2H4.5z" />
+  </svg>
+);
+const TagsIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M2.5 8.3V3.2a.7.7 0 0 1 .7-.7h5.1L14 7.8a1 1 0 0 1 0 1.4l-3.8 3.8a1 1 0 0 1-1.4 0L2.5 8.3z" />
+    <circle cx="5.2" cy="5.2" r="0.9" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 interface Props {
   branches: BranchInfo[];
   tags: TagInfo[];
@@ -43,7 +61,7 @@ export default function Sidebar({
 
   return (
     <div className="sidebar">
-      <Group title="Local" count={local.length} open={open.local} onToggle={() => toggle("local")} onMenu={() => onSectionMenu("local")}>
+      <Group title="Local" icon={<LocalIcon />} count={local.length} open={open.local} onToggle={() => toggle("local")} onMenu={() => onSectionMenu("local")}>
         {local.length === 0 && <div className="empty-hint small">No branches</div>}
         {local.map((b) => (
           <div
@@ -79,7 +97,7 @@ export default function Sidebar({
         ))}
       </Group>
 
-      <Group title="Remote" count={remote.length} open={open.remote} onToggle={() => toggle("remote")} onMenu={() => onSectionMenu("remote")}>
+      <Group title="Remote" icon={<RemoteIcon />} count={remote.length} open={open.remote} onToggle={() => toggle("remote")} onMenu={() => onSectionMenu("remote")}>
         {remote.length === 0 && <div className="empty-hint small">No remotes</div>}
         {remote.map((b) => (
           <div
@@ -95,7 +113,7 @@ export default function Sidebar({
         ))}
       </Group>
 
-      <Group title="Tags" count={tags.length} open={open.tags} onToggle={() => toggle("tags")} onMenu={() => onSectionMenu("tags")}>
+      <Group title="Tags" icon={<TagsIcon />} count={tags.length} open={open.tags} onToggle={() => toggle("tags")} onMenu={() => onSectionMenu("tags")}>
         {tags.length === 0 && <div className="empty-hint small">No tags</div>}
         {tags.map((t) => (
           <div
@@ -120,6 +138,7 @@ export default function Sidebar({
 
 function Group({
   title,
+  icon,
   count,
   open,
   onToggle,
@@ -127,6 +146,7 @@ function Group({
   children,
 }: {
   title: string;
+  icon: ReactNode;
   count: number;
   open: boolean;
   onToggle: () => void;
@@ -147,7 +167,7 @@ function Group({
             : undefined
         }
       >
-        <span className={`chevron${open ? " open" : ""}`}>▸</span>
+        <span className="group-icon">{icon}</span>
         <span className="group-name">{title}</span>
         <span className="group-count">{count}</span>
       </div>

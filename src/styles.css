@@ -381,6 +381,12 @@ button {
 .chevron.open {
   transform: rotate(90deg);
 }
+.group-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
 .group-name {
   flex: 1;
 }
