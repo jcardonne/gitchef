@@ -106,7 +106,9 @@ On every push to `main`, the `release` workflow runs `semantic-release`, which:
 3. commits the bump (`chore(release): x.y.z [skip ci]`), tags `vx.y.z`, and
    creates a GitHub Release with auto-generated notes;
 4. **in the same run**, builds + signs bundles on macOS (universal arm+intel),
-   Windows, and Linux, assembles `latest.json`, and uploads everything to R2 via
+   Windows, and Linux on a **pinned Rust toolchain**; attaches the user-facing
+   installers (`.dmg`, `.msi`, `-setup.exe`, `.AppImage`, `.deb`) to the GitHub
+   Release; assembles `latest.json`; and uploads the updater artifacts to R2 via
    `wrangler` (bundles under `<bucket>/vx.y.z/`, `latest.json` at the root).
 
 Within a minute of the run finishing, every older GitChef self-updates on its
@@ -143,6 +145,8 @@ git push
   bar but no prompts. Unsigned builds may show a SmartScreen warning on first
   install; an EV/OV code-signing cert removes it (optional, paid).
 - **Linux:** auto-update works for the **AppImage** target only (not deb/rpm).
+  The `.deb` is attached to the Release for download but updates through the
+  system package manager, not the in-app updater.
 
 ---
 
@@ -179,8 +183,9 @@ pnpm tauri icon app-icon-tile.png
 ## Hardening backlog (optional)
 
 - Add a passphrase to the signing key (see step 1).
-- Pin `tauri-apps/tauri-action@v0` and `dtolnay/rust-toolchain@stable` to commit
-  SHAs (the tauri-action step holds the signing key); add Dependabot.
+- Pin third-party actions (`tauri-apps/tauri-action@v0`, `swatinem/rust-cache`, etc.)
+  to commit SHAs - the tauri-action step holds the signing key; add Dependabot.
+  (`dtolnay/rust-toolchain` is already pinned to `1.96.0`.)
 - Set a restrictive `csp` in `tauri.conf.json` (currently `null`). Must allow
   `img-src https://gravatar.com data:` so commit avatars keep loading.
 
