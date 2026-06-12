@@ -107,9 +107,10 @@ pub fn push(repo: &Repository) -> AppResult<String> {
 }
 pub fn pull(repo: &Repository, mode: &str) -> AppResult<String> {
     let arg = match mode {
+        "ff" => "--ff",
         "ff-only" => "--ff-only",
         "rebase" => "--rebase",
-        _ => "--ff",
+        other => return Err(AppError::Msg(format!("unknown pull mode: {other}"))),
     };
     run_git(workdir(repo)?, &["pull", arg])
 }
@@ -146,8 +147,9 @@ pub fn revert_commit(repo: &Repository, sha: &str) -> AppResult<String> {
 pub fn reset_to(repo: &Repository, sha: &str, mode: &str) -> AppResult<String> {
     let flag = match mode {
         "soft" => "--soft",
+        "mixed" => "--mixed",
         "hard" => "--hard",
-        _ => "--mixed",
+        other => return Err(AppError::Msg(format!("unknown reset mode: {other}"))),
     };
     run_git(workdir(repo)?, &["reset", flag, sha])
 }
@@ -189,8 +191,9 @@ fn stash_index(repo: &mut Repository, sha: &str) -> AppResult<usize> {
 
 /// Apply a stash to the working tree, keeping it on the stack (`git stash apply`).
 pub fn stash_apply(repo: &mut Repository, sha: &str) -> AppResult<String> {
-    let n = stash_index(repo, sha)?;
-    run_git(workdir(repo)?, &["stash", "apply", &format!("stash@{{{n}}}")])
+    // Apply by commit id - git accepts a stash commit directly - so a concurrent
+    // stash change can't make a resolved index point at the wrong entry.
+    run_git(workdir(repo)?, &["stash", "apply", sha])
 }
 
 /// Apply a stash and remove it from the stack (`git stash pop`).
@@ -241,7 +244,7 @@ pub fn stash_edit_message(repo: &mut Repository, sha: &str, message: &str) -> Ap
 mod tests {
     use super::{
         cherry_pick, fast_forward_to, merge, rebase_onto, reset_to, revert_commit, stash_all,
-        stash_edit_message,
+        stash_apply, stash_edit_message,
     };
     use crate::git::run_git;
     use git2::Repository;
@@ -445,6 +448,28 @@ mod tests {
         // Without --root, diff-tree emits nothing for the parentless root commit.
         let patch = std::fs::read_to_string(&dest).unwrap();
         assert!(patch.contains("+base"), "root commit patch must include additions: {patch}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reset_to_rejects_unknown_mode() {
+        let dir = tmp("resetbad");
+        init(&dir);
+        let r = reset_to(&Repository::open(&dir).unwrap(), &head(&dir), "bogus");
+        assert!(r.is_err(), "an unknown reset mode must error, not silently default");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn stash_apply_addresses_by_commit_id() {
+        let dir = tmp("stashapply");
+        init(&dir);
+        stash_with(&dir, "ONE", "stash ONE"); // stash@{0} = ONE
+        stash_with(&dir, "TWO", "stash TWO"); // stash@{0} = TWO, stash@{1} = ONE
+        let one_sha = run_git(&dir, &["rev-parse", "stash@{1}"]).unwrap().trim().to_string();
+        stash_apply(&mut Repository::open(&dir).unwrap(), &one_sha).unwrap();
+        let f = std::fs::read_to_string(dir.join("f.txt")).unwrap();
+        assert!(f.contains("ONE") && !f.contains("TWO"), "the sha-addressed stash applies: {f}");
         std::fs::remove_dir_all(&dir).ok();
     }
 }
