@@ -88,7 +88,7 @@ export default function App() {
       } else if (mod && key === "w") {
         e.preventDefault();
         if (activePath) closeTab(activePath);
-      } else if (mod && key === "/") {
+      } else if (mod && (key === "/" || key === ":")) {
         e.preventDefault();
         setShortcutsOpen((v) => !v);
       }
