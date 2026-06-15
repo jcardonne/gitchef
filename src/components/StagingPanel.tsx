@@ -4,7 +4,7 @@ import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/men
 import * as api from "../api";
 import type { FileStatus, StatusResult } from "../types";
 import { getChangesView, setChangesView, type ChangesView } from "../storage";
-import { useRepo } from "../repoContext";
+import { useRepo, type RefreshOpts } from "../repoContext";
 import ChangeList from "./ChangeList";
 import { comboHint } from "../shortcuts";
 
@@ -53,20 +53,20 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
     setChangesView(v);
   };
 
-  const afterMutation = async () => {
+  const afterMutation = async (opts?: RefreshOpts) => {
     setSelected(new Set());
-    await refresh();
+    await refresh(opts);
   };
 
   const stageFiles = (fs: FileStatus[]) =>
     run(async () => {
       await api.stagePaths(repoPath, fs.map((f) => f.path));
-      await afterMutation();
+      await afterMutation({ history: false, stats: false });
     });
   const unstageFiles = (fs: FileStatus[]) =>
     run(async () => {
       await api.unstagePaths(repoPath, fs.map((f) => f.path));
-      await afterMutation();
+      await afterMutation({ history: false, stats: false });
     });
   const quickToggle = (f: FileStatus) => (f.staged ? unstageFiles([f]) : stageFiles([f]));
 
@@ -111,7 +111,7 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
   const ignore = (pattern: string) =>
     run(async () => {
       await api.ignorePath(repoPath, pattern);
-      await afterMutation();
+      await afterMutation({ history: false });
       notify(`Ignored ${pattern}`);
     });
   const stash = (path: string) =>
@@ -128,7 +128,7 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
       });
       if (!ok) return;
       await api.discardPaths(repoPath, group.map((f) => f.path));
-      await afterMutation();
+      await afterMutation({ history: false });
     });
   const discardAllLocalChanges = () =>
     run(async () => {
@@ -142,7 +142,7 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
       if (!ok) return;
       if (status.staged.length) await api.unstagePaths(repoPath, status.staged.map((f) => f.path));
       await api.discardPaths(repoPath, allLocalFiles.map((f) => f.path));
-      await afterMutation();
+      await afterMutation({ history: false });
     });
   const createPatch = (f: FileStatus) =>
     run(async () => {
@@ -162,7 +162,7 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
       });
       if (!ok) return;
       await api.deleteFile(repoPath, f.path);
-      await afterMutation();
+      await afterMutation({ history: false });
       notify("File deleted");
     });
 

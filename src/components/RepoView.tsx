@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { confirm, save } from "@tauri-apps/plugin-dialog";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import * as api from "../api";
-import { RepoContext } from "../repoContext";
+import { RepoContext, type RefreshOpts } from "../repoContext";
 import { getRightPanelWidth, setRightPanelWidth, getPullDefault } from "../storage";
 import type { PullAction } from "../storage";
 import type {
@@ -157,29 +157,38 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       .catch(() => {});
   }, [path]);
 
-  // Status + graph + refs WITHOUT the heavy stats - the cheap part that gates
-  // first paint. Used directly by the auto/focus path (where stats may lag).
-  const reloadView = useCallback(async () => {
-    const [s, g, b, t] = await Promise.all([
-      api.repoStatus(path),
-      api.commitGraph(path, graphLimit),
-      api.listBranches(path),
-      api.listTags(path),
-    ]);
-    setStatus(s);
-    setNodes(g);
-    setBranches(b);
-    setTags(t);
-    return s;
-  }, [path, graphLimit]);
-
-  // Full refresh after a GitChef mutation: repaint the view, then recompute the
-  // work-tree stats in the background.
-  const refresh = useCallback(async () => {
-    const s = await reloadView();
-    refreshStats();
-    return s;
-  }, [reloadView, refreshStats]);
+  // One refresh for all mutations. Status always reloads (it's what staging
+  // changes). `history` (commit graph + branches + tags) and `stats` default on
+  // but are skipped for working-tree-only changes that can't alter them - e.g.
+  // stage/unstage move nothing in HEAD and leave the uncommitted line totals
+  // unchanged - so the graph isn't re-walked + re-rendered on every stage.
+  // Status + history fetch concurrently; status resolves first so the file list
+  // paints without waiting on the walk.
+  const refresh = useCallback(
+    async (opts?: RefreshOpts) => {
+      const withHistory = opts?.history ?? true;
+      const withStats = opts?.stats ?? true;
+      const statusP = api.repoStatus(path);
+      const historyP = withHistory
+        ? Promise.all([
+            api.commitGraph(path, graphLimit),
+            api.listBranches(path),
+            api.listTags(path),
+          ])
+        : null;
+      const s = await statusP;
+      setStatus(s);
+      if (historyP) {
+        const [g, b, t] = await historyP;
+        setNodes(g);
+        setBranches(b);
+        setTags(t);
+      }
+      if (withStats) refreshStats();
+      return s;
+    },
+    [path, graphLimit, refreshStats]
+  );
 
   // Load another page of commits into the graph (search beyond the window).
   const loadMore = () =>
@@ -252,7 +261,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       if (!loadedRef.current || document.visibilityState === "hidden") return;
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
-        reloadView().catch((e) => notify(String(e), true));
+        refresh({ stats: false }).catch((e) => notify(String(e), true));
       }, 200);
     };
     schedule();
@@ -263,7 +272,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       window.removeEventListener("focus", schedule);
       document.removeEventListener("visibilitychange", schedule);
     };
-  }, [isActive, notify, reloadView]);
+  }, [isActive, notify, refresh]);
 
   const closeDiff = () => {
     setDiff(null);
@@ -911,7 +920,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
   const stageAllChanges = () =>
     run(async () => {
       await api.stagePaths(path, status.unstaged.map((f) => f.path));
-      await refresh();
+      await refresh({ history: false, stats: false });
       notify("Staged all changes");
     });
   const stashAllChanges = () =>
@@ -930,7 +939,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       if (status.staged.length) await api.unstagePaths(path, status.staged.map((f) => f.path));
       const all = [...new Set([...status.unstaged, ...status.staged].map((f) => f.path))];
       await api.discardPaths(path, all);
-      await refresh();
+      await refresh({ history: false });
       notify("Discarded all changes");
     });
 
@@ -962,7 +971,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       const fresh = await api.fileDiff(path, workSel.path, workSel.staged);
       if (fresh.hunks.length === 0) closeDiff();
       else setDiff(fresh);
-      await refresh();
+      await refresh({ history: false });
       notify(action === "stage" ? "Hunk staged" : action === "unstage" ? "Hunk unstaged" : "Hunk discarded");
     });
 
@@ -985,7 +994,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
       const fresh = await api.fileDiff(path, workSel.path, workSel.staged);
       if (fresh.hunks.length === 0) closeDiff();
       else setDiff(fresh);
-      await refresh();
+      await refresh({ history: false });
       notify(action === "stage" ? "Lines staged" : action === "unstage" ? "Lines unstaged" : "Lines discarded");
     });
 
