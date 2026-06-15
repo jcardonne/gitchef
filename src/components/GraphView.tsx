@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CheckMenuItem, Menu } from "@tauri-apps/api/menu";
 import type { CommitNode, RefKind, RefLabel, WorkStats } from "../types";
 import { gravatarUrl, laneColor, relativeTime } from "../util";
@@ -17,6 +17,7 @@ const LANE_W = 16;
 const DOT_R = 5;
 const AVATAR_R = 8; // committer avatar disc radius (~16px, fits one lane)
 const PAD_X = 14;
+const OVERSCAN = 8; // rows kept mounted above/below the viewport
 const GRAPH_COLUMNS: { key: keyof GraphColumnVisibility; label: string }[] = [
   { key: "graph", label: "Group" },
   { key: "message", label: "Message" },
@@ -181,6 +182,64 @@ export default function GraphView({
   const wipLane = displayed[0]?.lane ?? 0;
   const wipColor = laneColor(displayed[0]?.color ?? 0);
 
+  // --- virtualization: mount only the rows in/around the viewport ---
+  const graphRef = useRef<HTMLDivElement>(null);
+  const scRef = useRef<HTMLElement | null>(null);
+  const [band, setBand] = useState({ start: 0, end: 60 });
+  const total = displayed.length + offset; // visual rows, incl. the WIP node
+  const hasGraph = nodes.length > 0 || hasWip;
+  // Track the visible band against the scrolling ancestor (.center-graph). The
+  // SVG keeps its full height + absolute coordinates; we only cull its children
+  // and pad the row column, so dots / edges / rows stay aligned.
+  useLayoutEffect(() => {
+    const g = graphRef.current;
+    if (!g) return;
+    let p: HTMLElement | null = g.parentElement;
+    while (p) {
+      const oy = getComputedStyle(p).overflowY;
+      if (oy === "auto" || oy === "scroll") break;
+      p = p.parentElement;
+    }
+    scRef.current = p;
+    const sc: HTMLElement = p ?? document.documentElement;
+    const recompute = () => {
+      const top = sc.getBoundingClientRect().top - g.getBoundingClientRect().top;
+      const start = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN);
+      const end = Math.ceil((top + sc.clientHeight) / ROW_H) + OVERSCAN;
+      setBand((b) => (b.start === start && b.end === end ? b : { start, end }));
+    };
+    recompute();
+    const evt: Window | HTMLElement = p ?? window;
+    evt.addEventListener("scroll", recompute, { passive: true });
+    const ro = new ResizeObserver(recompute);
+    if (p) ro.observe(p);
+    ro.observe(g);
+    return () => {
+      evt.removeEventListener("scroll", recompute);
+      ro.disconnect();
+    };
+  }, [hasGraph]);
+
+  const vStart = Math.min(band.start, total);
+  const vEnd = Math.min(band.end, total);
+  const wipVisible = hasWip && vStart === 0;
+  const visibleRows = displayed.slice(Math.max(0, vStart - offset), Math.max(0, vEnd - offset));
+  const padTop = vStart * ROW_H;
+  const padBottom = Math.max(0, (total - vEnd) * ROW_H);
+
+  // Center the current search match; it may be outside the mounted window, so
+  // scroll by computed position rather than relying on the matched row's ref.
+  useEffect(() => {
+    if (!currentMatchId || lastScrolled.current === currentMatchId) return;
+    const i = index.get(currentMatchId);
+    const sc = scRef.current;
+    const g = graphRef.current;
+    if (i === undefined || !sc || !g) return;
+    lastScrolled.current = currentMatchId;
+    const gTop = g.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+    sc.scrollTop = gTop + (i + offset) * ROW_H + ROW_H / 2 - sc.clientHeight / 2;
+  }, [currentMatchId, index, offset]);
+
   const maxLane = nodes.reduce((m, n) => Math.max(m, n.lane), 0);
   const graphWidth = PAD_X + (maxLane + 1) * LANE_W;
   // The graph column holds lanes/dots + branch badges; message column starts
@@ -232,7 +291,7 @@ export default function GraphView({
   const y = (i: number) => (i + offset) * ROW_H + ROW_H / 2;
   const wipY = ROW_H / 2;
 
-  if (nodes.length === 0 && !hasWip) {
+  if (!hasGraph) {
     return <div className="empty-hint">No commits yet.</div>;
   }
 
@@ -329,7 +388,7 @@ export default function GraphView({
           </div>
         )}
       </div>
-      <div className="graph" style={{ minWidth: visibleCols.graph ? graphColW : 0 }}>
+      <div className="graph" ref={graphRef} style={{ minWidth: visibleCols.graph ? graphColW : 0 }}>
       {visibleCols.graph && (
         <svg
           className="graph-svg"
@@ -351,6 +410,7 @@ export default function GraphView({
           n.parents.map((pid, pi) => {
             const j = index.get(pid);
             if (j === undefined) return null;
+            if (Math.max(i, j) + offset < vStart || Math.min(i, j) + offset > vEnd) return null;
             const x1 = x(n.lane);
             const y1 = y(i);
             const x2 = x(displayed[j].lane);
@@ -374,7 +434,7 @@ export default function GraphView({
           })
         )}
         {/* WIP node: hollow dashed dot = uncommitted changes */}
-        {hasWip && (
+        {wipVisible && (
           <circle
             cx={x(wipLane)}
             cy={wipY}
@@ -386,6 +446,7 @@ export default function GraphView({
           />
         )}
         {displayed.map((n, i) => {
+          if (i + offset < vStart || i + offset > vEnd) return null;
           const cx = x(n.lane);
           const cy = y(i);
           const selected = n.id === selectedId;
@@ -455,7 +516,8 @@ export default function GraphView({
       )}
 
       <div className="graph-rows" onMouseLeave={() => setTraceId(null)}>
-        {hasWip && workStats && (
+        <div aria-hidden style={{ height: padTop }} />
+        {wipVisible && workStats && (
           <div
             className={`commit-row wip-row${workActive ? " selected" : ""}`}
             style={{ height: ROW_H }}
@@ -486,17 +548,11 @@ export default function GraphView({
             </div>
           </div>
         )}
-        {displayed.map((n) => {
+        {visibleRows.map((n) => {
           const url = n.email ? avatars.get(n.email) : undefined;
           return (
             <div
               key={n.id}
-              ref={(el) => {
-                if (el && n.id === currentMatchId && lastScrolled.current !== currentMatchId) {
-                  lastScrolled.current = currentMatchId;
-                  el.scrollIntoView({ block: "center" });
-                }
-              }}
               className={`commit-row${n.id === selectedId ? " selected" : ""}${
                 matchSet ? (matchSet.has(n.id) ? " matched" : " dimmed") : ""
               }${n.id === currentMatchId ? " match-current" : ""}`}
@@ -542,6 +598,7 @@ export default function GraphView({
             </div>
           );
         })}
+        <div aria-hidden style={{ height: padBottom }} />
         {canLoadMore && !filtering && (
           <div className="load-more-row">
             <button className="load-more-btn" onClick={onLoadMore}>
