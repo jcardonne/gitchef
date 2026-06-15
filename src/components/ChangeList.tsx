@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FileStatus, FileStatusKind } from "../types";
 import type { ChangesView } from "../storage";
-import { buildTree, filesIn, flattenVisible, type TreeFile } from "../fileTree";
+import { buildTree, filesIn, flattenVisible, type TreeFile, type TreeFolder, type TreeNode } from "../fileTree";
 import { nextIndex, rangeKeys } from "../changeNav";
+import { useVirtual } from "../useVirtual";
 
 interface Props {
   files: FileStatus[];
@@ -19,10 +20,18 @@ interface Props {
 
 const INDENT = 14;
 const BASE_PAD = 12;
+const ROW_H = 24; // must match the .file-row / .tree-folder height in CSS
+const EMPTY_TREE: TreeNode[] = []; // stable ref so list view never builds a tree
+
+// One flat, fixed-height row model shared by BOTH views, so a single windowing
+// pass drives the list and the tree alike.
+type Row =
+  | { kind: "file"; file: FileStatus; depth: number; label: string }
+  | { kind: "folder"; node: TreeFolder; depth: number };
 
 /// Renders one section's files as a flat list or a collapsible folder tree, with
 /// click / Cmd+click / Shift+click selection and per-row context + quick action.
-export default function ChangeList({
+function ChangeList({
   files,
   staged,
   view,
@@ -38,18 +47,85 @@ export default function ChangeList({
   // Shift-range anchor stored as the file itself (not an index), so collapsing a
   // folder between clicks can't make the anchor point at the wrong row.
   const anchor = useRef<FileStatus | null>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const pendingFocus = useRef<number | null>(null);
 
-  const tree = useMemo(() => buildTree(files), [files]);
-  const visible = useMemo(() => flattenVisible(tree, collapsed), [tree, collapsed]);
+  // List view never needs the folder tree, so skip building it (buildTree is
+  // O(N) and used to run on every render even in list view).
+  const tree = useMemo(() => (view === "tree" ? buildTree(files) : EMPTY_TREE), [view, files]);
+  const visible = useMemo(
+    () => (view === "tree" ? flattenVisible(tree, collapsed) : []),
+    [view, tree, collapsed]
+  );
 
   // Files in current display order - the basis for Shift+click ranges.
-  const orderedFiles = view === "list" ? files : visibleFiles(visible);
+  const orderedFiles = useMemo(
+    () => (view === "list" ? files : visibleFiles(visible)),
+    [view, files, visible]
+  );
   const indexOf = useMemo(() => {
     const m = new Map<FileStatus, number>();
     orderedFiles.forEach((f, i) => m.set(f, i));
     return m;
   }, [orderedFiles]);
+
+  // Both views feed ONE flat fixed-height array; the window math is identical to
+  // FileView. Folders carry their depth so the tree renders at the right indent.
+  const rows = useMemo<Row[]>(
+    () =>
+      view === "list"
+        ? files.map((f) => ({ kind: "file", file: f, depth: 0, label: f.path }))
+        : visible.map(({ node, depth }) =>
+            node.type === "folder"
+              ? { kind: "folder", node, depth }
+              : {
+                  kind: "file",
+                  file: node.file,
+                  depth,
+                  label: node.file.path.split("/").pop() ?? node.file.path,
+                }
+          ),
+    [view, files, visible]
+  );
+  // A file's position in the MIXED rows array (folders shift offsets in tree
+  // view) - lets keyboard nav scroll the correct row into view.
+  const rowIndexOf = useMemo(() => {
+    const m = new Map<FileStatus, number>();
+    rows.forEach((r, i) => {
+      if (r.kind === "file") m.set(r.file, i);
+    });
+    return m;
+  }, [rows]);
+
+  // Fixed-row windowing shared with FileView/DiffViewer. No resetKey: the list
+  // keeps its scroll position as rows are staged in/out.
+  const { ref: listRef, start, end, scrollTop, padTop, padBottom } = useVirtual(rows.length, ROW_H);
+
+  // Virtualization unmounts off-screen rows, so positional focus no longer
+  // works. Scroll the target row into the window, then focus it once it mounts
+  // (the effect below re-tries after the scroll-driven re-render).
+  const flushFocus = () => {
+    const t = pendingFocus.current;
+    if (t == null) return;
+    const node = listRef.current?.querySelector<HTMLElement>(`.file-row[data-idx="${t}"]`);
+    if (node) {
+      node.focus();
+      pendingFocus.current = null;
+    }
+  };
+  const focusFile = (target: number) => {
+    pendingFocus.current = target;
+    const el = listRef.current;
+    if (el) {
+      const top = (rowIndexOf.get(orderedFiles[target]) ?? target) * ROW_H;
+      let want = el.scrollTop;
+      if (top < el.scrollTop) want = top;
+      else if (top + ROW_H > el.scrollTop + el.clientHeight) want = top + ROW_H - el.clientHeight;
+      if (want !== el.scrollTop) el.scrollTop = want;
+    }
+    flushFocus();
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(flushFocus, [scrollTop, rows]);
 
   const handleClick = (f: FileStatus, index: number, e: React.MouseEvent) => {
     const k = keyOf(f);
@@ -79,7 +155,7 @@ export default function ChangeList({
       e.preventDefault();
       const target = nextIndex(index, e.key === "ArrowDown" ? 1 : -1, orderedFiles.length);
       if (target < 0) return;
-      listRef.current?.querySelectorAll<HTMLElement>(".file-row")[target]?.focus();
+      focusFile(target);
       if (e.shiftKey) {
         const base = (anchor.current ? indexOf.get(anchor.current) : index) ?? index;
         onSelectionChange(new Set([...selected, ...rangeKeys(orderedFiles, keyOf, base, target)]));
@@ -116,6 +192,7 @@ export default function ChangeList({
         key={keyOf(f)}
         className={`file-row${selected.has(keyOf(f)) ? " selected" : ""}`}
         style={{ paddingLeft: BASE_PAD + depth * INDENT }}
+        data-idx={index}
         onClick={(e) => handleClick(f, index, e)}
         tabIndex={0}
         onKeyDown={(e) => handleKey(f, index, e)}
@@ -141,34 +218,34 @@ export default function ChangeList({
     );
   };
 
-  if (files.length === 0) {
-    return <div className="empty-hint small">No files</div>;
-  }
-
-  if (view === "list") {
-    return <div className="change-list" ref={listRef}>{files.map((f) => fileRow(f, 0, f.path))}</div>;
-  }
-
+  // Always render the .change-list scroll container (even when empty) so the
+  // scroll/resize listener stays attached across empty <-> non-empty changes.
   return (
     <div className="change-list" ref={listRef}>
-      {visible.map(({ node, depth }) =>
-        node.type === "folder" ? (
-          <div
-            key={`d-${node.path}`}
-            className="tree-folder"
-            style={{ paddingLeft: BASE_PAD + depth * INDENT }}
-            onClick={() => toggleFolder(node.path)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              onFolderContext(filesIn(node), node.path);
-            }}
-          >
-            <span className={`chevron${collapsed.has(node.path) ? "" : " open"}`}>▸</span>
-            <span className="folder-name">{node.name}</span>
-          </div>
-        ) : (
-          fileRow(node.file, depth, node.file.path.split("/").pop() ?? node.file.path)
-        )
+      {rows.length === 0 ? (
+        <div className="empty-hint small">No files</div>
+      ) : (
+        <div style={{ paddingTop: padTop, paddingBottom: padBottom }}>
+          {rows.slice(start, end).map((r) =>
+            r.kind === "folder" ? (
+              <div
+                key={`d-${r.node.path}`}
+                className="tree-folder"
+                style={{ paddingLeft: BASE_PAD + r.depth * INDENT }}
+                onClick={() => toggleFolder(r.node.path)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  onFolderContext(filesIn(r.node), r.node.path);
+                }}
+              >
+                <span className={`chevron${collapsed.has(r.node.path) ? "" : " open"}`}>▸</span>
+                <span className="folder-name">{r.node.name}</span>
+              </div>
+            ) : (
+              fileRow(r.file, r.depth, r.label)
+            )
+          )}
+        </div>
       )}
     </div>
   );
@@ -240,3 +317,5 @@ const STATUS_LABEL: Record<FileStatusKind, string> = {
   typechange: "Type changed",
   conflicted: "Conflicted",
 };
+
+export default ChangeList;

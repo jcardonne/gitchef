@@ -1,7 +1,8 @@
-use super::{ops, run_git, run_git_stdin, workdir};
+use super::{run_git, run_git_stdin, workdir};
 use crate::error::{AppError, AppResult};
-use git2::Repository;
+use git2::{build::CheckoutBuilder, ObjectType, Repository};
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 /// Absolute path of a repo-relative file.
@@ -11,16 +12,74 @@ fn abs(repo: &Repository, rel: &str) -> AppResult<String> {
 
 // --- bulk staging (multi-select) ---
 
+/// Stage a batch in ONE index write. The old per-path helper re-opened and
+/// rewrote the entire index file for every path, so "Stage all" on a 20k-file
+/// tree did ~20k full index serializations (O(N^2) disk). Open once, apply every
+/// path, write once.
 pub fn stage_paths(repo: &Repository, paths: Vec<String>) -> AppResult<()> {
-    paths.iter().try_for_each(|p| ops::stage(repo, p))
+    let wd = workdir(repo)?.to_path_buf();
+    let mut index = repo.index()?;
+    for p in &paths {
+        let rel = Path::new(p);
+        // Path gone from disk -> a staged deletion; otherwise stage its content.
+        if wd.join(p).exists() {
+            index.add_path(rel)?;
+        } else {
+            index.remove_path(rel)?;
+        }
+    }
+    index.write()?;
+    Ok(())
 }
 
+/// Unstage a batch in ONE reset (reset_default takes a pathspec iterator), vs the
+/// old per-path reset that rewrote the index each time.
 pub fn unstage_paths(repo: &Repository, paths: Vec<String>) -> AppResult<()> {
-    paths.iter().try_for_each(|p| ops::unstage(repo, p))
+    match repo.head().ok().and_then(|h| h.peel(ObjectType::Commit).ok()) {
+        Some(head) => repo.reset_default(Some(&head), paths.iter().map(String::as_str))?,
+        None => {
+            // No commits yet: nothing in HEAD to reset to, just drop from the index.
+            let mut index = repo.index()?;
+            for p in &paths {
+                index.remove_path(Path::new(p))?;
+            }
+            index.write()?;
+        }
+    }
+    Ok(())
 }
 
+/// Discard a batch: peel HEAD->tree ONCE to classify tracked vs untracked, then
+/// do a SINGLE checkout for all tracked paths (the old code peeled HEAD and ran a
+/// checkout per path). Untracked (new) files aren't in HEAD, so the only way to
+/// discard them is to delete them from disk.
 pub fn discard_paths(repo: &Repository, paths: Vec<String>) -> AppResult<()> {
-    paths.iter().try_for_each(|p| ops::discard(repo, p))
+    let head_tree = repo.head().ok().and_then(|h| h.peel_to_tree().ok());
+    let wd = workdir(repo)?.to_path_buf();
+    let mut cob = CheckoutBuilder::new();
+    let mut any_tracked = false;
+    for p in &paths {
+        let tracked = head_tree
+            .as_ref()
+            .map(|t| t.get_path(Path::new(p)).is_ok())
+            .unwrap_or(false);
+        if tracked {
+            cob.path(p.as_str());
+            any_tracked = true;
+        } else {
+            let full = wd.join(p);
+            if full.exists() {
+                std::fs::remove_file(full)?;
+            }
+        }
+    }
+    // CRITICAL: only checkout when at least one tracked path was added. An empty
+    // pathspec with force() would check out the ENTIRE working tree from HEAD.
+    if any_tracked {
+        cob.force();
+        repo.checkout_head(Some(&mut cob))?;
+    }
+    Ok(())
 }
 
 // --- partial (hunk-level) staging ---
@@ -379,7 +438,7 @@ pub fn open_difftool(repo: &Repository, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_hunk, apply_lines, stash_file};
+    use super::{apply_hunk, apply_lines, discard_paths, stage_paths, stash_file, unstage_paths};
     use crate::git::{diff, run_git};
     use git2::Repository;
     use std::path::{Path, PathBuf};
@@ -599,6 +658,103 @@ mod tests {
         let err = apply_lines(&fresh(&dir), "f.txt", "stage", &header, vec![key_for(&fd, "B_X")]);
         assert!(err.is_err(), "no-newline partial staging must be refused");
         assert!(fdiff(&dir, true).hunks.is_empty(), "index must be untouched");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn stage_paths_batches_modify_delete_add() {
+        let dir = tmp("stagepaths");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "a\n").unwrap();
+        std::fs::write(dir.join("b.txt"), "b\n").unwrap();
+        run_git(&dir, &["add", "."]).unwrap();
+        run_git(&dir, &["commit", "-m", "init"]).unwrap();
+        // a modified, b deleted from disk, c brand new - one batched index write.
+        std::fs::write(dir.join("a.txt"), "a2\n").unwrap();
+        std::fs::remove_file(dir.join("b.txt")).unwrap();
+        std::fs::write(dir.join("c.txt"), "c\n").unwrap();
+
+        stage_paths(&fresh(&dir), vec!["a.txt".into(), "b.txt".into(), "c.txt".into()]).unwrap();
+
+        let staged = run_git(&dir, &["diff", "--cached", "--name-status"]).unwrap();
+        assert!(staged.contains("M\ta.txt"), "a modified staged: {staged}");
+        assert!(staged.contains("D\tb.txt"), "b deletion staged: {staged}");
+        assert!(staged.contains("A\tc.txt"), "c addition staged: {staged}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn unstage_paths_batches() {
+        let dir = tmp("unstagepaths");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "a\n").unwrap();
+        std::fs::write(dir.join("b.txt"), "b\n").unwrap();
+        run_git(&dir, &["add", "."]).unwrap();
+        run_git(&dir, &["commit", "-m", "init"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "a2\n").unwrap();
+        std::fs::write(dir.join("b.txt"), "b2\n").unwrap();
+        run_git(&dir, &["add", "."]).unwrap(); // stage both
+
+        unstage_paths(&fresh(&dir), vec!["a.txt".into(), "b.txt".into()]).unwrap();
+
+        assert!(
+            run_git(&dir, &["diff", "--cached", "--name-only"]).unwrap().trim().is_empty(),
+            "nothing left staged"
+        );
+        let wt = run_git(&dir, &["diff", "--name-only"]).unwrap();
+        assert!(wt.contains("a.txt") && wt.contains("b.txt"), "both back in the working tree: {wt}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // Data-loss guard: discarding ONLY untracked paths must never reach
+    // checkout_head (an empty pathspec + force would wipe the whole tree), so a
+    // tracked file's uncommitted edits must survive untouched.
+    #[test]
+    fn discard_paths_untracked_only_preserves_tracked_edits() {
+        let dir = tmp("discarduntracked");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("tracked.txt"), "v1\n").unwrap();
+        run_git(&dir, &["add", "."]).unwrap();
+        run_git(&dir, &["commit", "-m", "init"]).unwrap();
+        std::fs::write(dir.join("tracked.txt"), "v2\n").unwrap(); // uncommitted edit
+        std::fs::write(dir.join("untracked.txt"), "new\n").unwrap();
+
+        discard_paths(&fresh(&dir), vec!["untracked.txt".into()]).unwrap();
+
+        assert!(!dir.join("untracked.txt").exists(), "untracked file discarded");
+        assert_eq!(
+            std::fs::read_to_string(dir.join("tracked.txt")).unwrap(),
+            "v2\n",
+            "tracked file's uncommitted edit must survive (no errant checkout_head)"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn discard_paths_reverts_tracked_and_deletes_untracked() {
+        let dir = tmp("discardmixed");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "a1\n").unwrap();
+        std::fs::write(dir.join("b.txt"), "b1\n").unwrap();
+        run_git(&dir, &["add", "."]).unwrap();
+        run_git(&dir, &["commit", "-m", "init"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "a2\n").unwrap(); // tracked edit
+        std::fs::write(dir.join("b.txt"), "b2\n").unwrap(); // tracked edit
+        std::fs::write(dir.join("u.txt"), "u\n").unwrap(); // untracked
+
+        discard_paths(&fresh(&dir), vec!["a.txt".into(), "b.txt".into(), "u.txt".into()]).unwrap();
+
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "a1\n", "a reverted to HEAD");
+        assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "b1\n", "b reverted to HEAD");
+        assert!(!dir.join("u.txt").exists(), "untracked file deleted");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DiffLine, FileDiff } from "../types";
+import { useVirtual } from "../useVirtual";
 
 const ROW_H = 18; // must match .diff-line / .diff-hunk-header height in CSS
-const OVERSCAN = 20;
 
 interface Props {
   diff: FileDiff | null;
@@ -28,9 +28,6 @@ function lineKey(line: DiffLine): string | null {
 /// is set (a working-file diff), changed lines are click-selectable for
 /// line-level staging.
 export default function DiffViewer({ diff, onHunkMenu }: Props) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportH, setViewportH] = useState(0);
   // Line selection for partial staging, scoped to a single hunk at a time.
   const [selHunk, setSelHunk] = useState<number | null>(null);
   const [selKeys, setSelKeys] = useState<Set<string>>(new Set());
@@ -46,29 +43,16 @@ export default function DiffViewer({ diff, onHunkMenu }: Props) {
     return out;
   }, [diff]);
 
-  // Reset scroll + selection whenever the shown diff changes - including a reload
-  // of the same file after a staging action (selection keys may no longer exist).
+  const { ref, start, end, padTop, padBottom } = useVirtual(rows.length, ROW_H, diff);
+
+  // Clear the line selection whenever the shown diff changes - including a
+  // reload of the same file after staging (keys may no longer exist). The
+  // scroll reset is handled by useVirtual's resetKey above.
   useEffect(() => {
-    if (ref.current) ref.current.scrollTop = 0;
-    setScrollTop(0);
     setSelHunk(null);
     setSelKeys(new Set());
     anchor.current = null;
   }, [diff]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const onScroll = () => setScrollTop(el.scrollTop);
-    el.addEventListener("scroll", onScroll);
-    const ro = new ResizeObserver(() => setViewportH(el.clientHeight));
-    ro.observe(el);
-    setViewportH(el.clientHeight);
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      ro.disconnect();
-    };
-  }, []);
 
   if (!diff) return <div className="empty-hint">Select a file to view its diff.</div>;
   if (diff.binary) return <div className="empty-hint">Binary file - no text diff.</div>;
@@ -108,13 +92,10 @@ export default function DiffViewer({ diff, onHunkMenu }: Props) {
     onHunkMenu(diff.hunks[hi].header, text, selHunk === hi ? [...selKeys] : []);
   };
 
-  const start = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
-  const end = Math.min(rows.length, Math.ceil((scrollTop + viewportH) / ROW_H) + OVERSCAN);
-
   return (
     <div className="diff">
       <div className="diff-scroll" ref={ref}>
-        <div style={{ paddingTop: start * ROW_H, paddingBottom: (rows.length - end) * ROW_H }}>
+        <div style={{ paddingTop: padTop, paddingBottom: padBottom }}>
           {rows.slice(start, end).map((row, i) => {
             if ("hunk" in row) {
               return (

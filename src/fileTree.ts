@@ -15,19 +15,22 @@ export type TreeNode = TreeFile | TreeFolder;
 /// Build a folder hierarchy from flat file paths, folders before files, sorted.
 export function buildTree(files: FileStatus[]): TreeNode[] {
   const root: TreeFolder = { type: "folder", name: "", path: "", children: [] };
+  // Full-path -> folder map, so finding/creating a parent folder is O(1). The
+  // old `children.find` scan made a single flat directory of N files O(N^2).
+  const folders = new Map<string, TreeFolder>([["", root]]);
 
   for (const file of files) {
     const parts = file.path.split("/");
     let cur = root;
+    let prefix = "";
     for (let i = 0; i < parts.length - 1; i++) {
       const seg = parts[i];
-      const path = cur.path ? `${cur.path}/${seg}` : seg;
-      let next = cur.children.find(
-        (c): c is TreeFolder => c.type === "folder" && c.name === seg
-      );
+      prefix = prefix ? `${prefix}/${seg}` : seg;
+      let next = folders.get(prefix);
       if (!next) {
-        next = { type: "folder", name: seg, path, children: [] };
+        next = { type: "folder", name: seg, path: prefix, children: [] };
         cur.children.push(next);
+        folders.set(prefix, next);
       }
       cur = next;
     }
@@ -38,12 +41,17 @@ export function buildTree(files: FileStatus[]): TreeNode[] {
   return root.children;
 }
 
+// One reused collator (default locale/options, so ordering is identical to the
+// old per-call localeCompare). Constructing a collator per comparison was the
+// dominant cost when sorting tens of thousands of siblings.
+const collator = new Intl.Collator();
+
 function sort(folder: TreeFolder): void {
   folder.children.sort((a, b) => {
     if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
     const an = a.type === "folder" ? a.name : a.file.path;
     const bn = b.type === "folder" ? b.name : b.file.path;
-    return an.localeCompare(bn);
+    return collator.compare(an, bn);
   });
   for (const c of folder.children) if (c.type === "folder") sort(c);
 }

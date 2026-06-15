@@ -17,27 +17,33 @@ fn open_repo(path: String) -> AppResult<repo::RepoInfo> {
     repo::info(&open(&path)?)
 }
 
-#[tauri::command]
+// The working-tree reads + bulk index ops below do heavy/blocking libgit2 work
+// (full-tree status, the work_stats content diff over every changed file, bulk
+// index writes). `(async)` runs the synchronous body on Tauri's async runtime
+// (a worker thread) instead of the main thread, so a huge working tree can't
+// freeze the UI/IPC. Each body owns its Repository and never awaits, so the
+// spawned future is Send.
+#[tauri::command(async)]
 fn repo_status(repo: String) -> AppResult<repo::StatusResult> {
     repo::status(&open(&repo)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn work_stats(repo: String) -> AppResult<repo::WorkStats> {
     repo::work_stats(&open(&repo)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn commit_graph(repo: String, limit: Option<usize>) -> AppResult<Vec<graph::CommitNode>> {
     graph::commit_graph(&open(&repo)?, limit.unwrap_or(500))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_branches(repo: String) -> AppResult<Vec<branch::BranchInfo>> {
     branch::list_branches(&open(&repo)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_tags(repo: String) -> AppResult<Vec<branch::TagInfo>> {
     branch::list_tags(&open(&repo)?)
 }
@@ -178,17 +184,17 @@ fn compare_workdir(repo: String, sha: String) -> AppResult<Vec<diff::FileDiff>> 
 
 // --- multi-select + file actions ---
 
-#[tauri::command]
+#[tauri::command(async)]
 fn stage_paths(repo: String, paths: Vec<String>) -> AppResult<()> {
     files::stage_paths(&open(&repo)?, paths)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn unstage_paths(repo: String, paths: Vec<String>) -> AppResult<()> {
     files::unstage_paths(&open(&repo)?, paths)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn discard_paths(repo: String, paths: Vec<String>) -> AppResult<()> {
     files::discard_paths(&open(&repo)?, paths)
 }

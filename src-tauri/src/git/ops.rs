@@ -1,59 +1,6 @@
 use super::{run_git, workdir};
 use crate::error::{AppError, AppResult};
-use git2::{build::CheckoutBuilder, BranchType, ObjectType, Repository};
-use std::path::Path;
-
-/// Stage one path. Handles deletions (path gone from disk -> remove from index).
-pub fn stage(repo: &Repository, path: &str) -> AppResult<()> {
-    let mut index = repo.index()?;
-    if workdir(repo)?.join(path).exists() {
-        index.add_path(Path::new(path))?;
-    } else {
-        index.remove_path(Path::new(path))?;
-    }
-    index.write()?;
-    Ok(())
-}
-
-/// Unstage one path by resetting its index entry back to HEAD.
-pub fn unstage(repo: &Repository, path: &str) -> AppResult<()> {
-    match repo.head().ok().and_then(|h| h.peel(ObjectType::Commit).ok()) {
-        Some(head) => repo.reset_default(Some(&head), [path])?,
-        None => {
-            // No commits yet: nothing in HEAD to reset to, just drop from index.
-            let mut index = repo.index()?;
-            index.remove_path(Path::new(path))?;
-            index.write()?;
-        }
-    }
-    Ok(())
-}
-
-/// Discard working-tree changes for a path. Tracked files are force-checked-out
-/// from HEAD; untracked (new) files aren't in HEAD - the only way to discard
-/// them is to delete them from disk.
-pub fn discard(repo: &Repository, path: &str) -> AppResult<()> {
-    if is_tracked(repo, path) {
-        let mut cob = CheckoutBuilder::new();
-        cob.path(path).force();
-        repo.checkout_head(Some(&mut cob))?;
-    } else {
-        let full = workdir(repo)?.join(path);
-        if full.exists() {
-            std::fs::remove_file(full)?;
-        }
-    }
-    Ok(())
-}
-
-/// Whether `path` exists in the HEAD tree (i.e. it's a tracked file).
-fn is_tracked(repo: &Repository, path: &str) -> bool {
-    repo.head()
-        .ok()
-        .and_then(|h| h.peel_to_tree().ok())
-        .map(|t| t.get_path(Path::new(path)).is_ok())
-        .unwrap_or(false)
-}
+use git2::{BranchType, Repository};
 
 pub fn commit(repo: &Repository, message: &str) -> AppResult<String> {
     if message.trim().is_empty() {

@@ -91,6 +91,8 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
   // clobber the state of a newer one (rapid commit/file clicks).
   const commitReq = useRef(0);
   const fileReq = useRef(0);
+  const statsReq = useRef(0);
+  const rightRef = useRef<HTMLDivElement>(null);
 
   // Info toasts auto-dismiss after 4s; error toasts persist (long git messages
   // need reading + copying) until the user closes them.
@@ -140,21 +142,44 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
     [notify]
   );
 
-  const refresh = useCallback(async () => {
-    const [s, g, b, t, w] = await Promise.all([
+  // Background, stale-guarded work-tree stats. The +ins/-del/files counts require
+  // diffing every changed file's content (inherently O(changed lines)), so they
+  // are fetched OFF the awaited refresh: the file list paints immediately and the
+  // counts fill in when ready. The backend command is async (runs off the main
+  // thread); the id guard drops a slow earlier result.
+  const refreshStats = useCallback(() => {
+    const id = ++statsReq.current;
+    api
+      .workStats(path)
+      .then((w) => {
+        if (statsReq.current === id) setWorkStats(w);
+      })
+      .catch(() => {});
+  }, [path]);
+
+  // Status + graph + refs WITHOUT the heavy stats - the cheap part that gates
+  // first paint. Used directly by the auto/focus path (where stats may lag).
+  const reloadView = useCallback(async () => {
+    const [s, g, b, t] = await Promise.all([
       api.repoStatus(path),
       api.commitGraph(path, graphLimit),
       api.listBranches(path),
       api.listTags(path),
-      api.workStats(path),
     ]);
     setStatus(s);
     setNodes(g);
     setBranches(b);
     setTags(t);
-    setWorkStats(w);
     return s;
   }, [path, graphLimit]);
+
+  // Full refresh after a GitChef mutation: repaint the view, then recompute the
+  // work-tree stats in the background.
+  const refresh = useCallback(async () => {
+    const s = await reloadView();
+    refreshStats();
+    return s;
+  }, [reloadView, refreshStats]);
 
   // Load another page of commits into the graph (search beyond the window).
   const loadMore = () =>
@@ -171,11 +196,18 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
     const startX = e.clientX;
     const startW = rightWidth;
     const maxW = Math.max(340, window.innerWidth - 560);
-    const move = (ev: MouseEvent) =>
-      setRightWidth(Math.min(maxW, Math.max(320, startW - (ev.clientX - startX))));
+    let w = startW;
+    // Write the width straight to the DOM during the drag so we don't re-render
+    // the whole tab (and the change list) on every mousemove; commit to React
+    // state once on release (the effect above then persists it).
+    const move = (ev: MouseEvent) => {
+      w = Math.min(maxW, Math.max(320, startW - (ev.clientX - startX)));
+      if (rightRef.current) rightRef.current.style.width = `${w}px`;
+    };
     const up = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+      setRightWidth(w);
     };
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
@@ -212,26 +244,26 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
   // Refresh a loaded active tab when it becomes visible/focused again.
   useEffect(() => {
     if (!isActive) return;
-    let inFlight = false;
-
-    const refreshVisibleRepo = () => {
-      if (!loadedRef.current || document.visibilityState === "hidden" || inFlight) return;
-      inFlight = true;
-      refresh()
-        .catch((e) => notify(String(e), true))
-        .finally(() => {
-          inFlight = false;
-        });
+    let timer: number | undefined;
+    // Coalesce focus + visibilitychange bursts into a single trailing refresh.
+    // Status-only (no work_stats) on this auto path: external edits update the
+    // file list promptly; the +/- counts catch up on the next explicit action.
+    const schedule = () => {
+      if (!loadedRef.current || document.visibilityState === "hidden") return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        reloadView().catch((e) => notify(String(e), true));
+      }, 200);
     };
-
-    refreshVisibleRepo();
-    window.addEventListener("focus", refreshVisibleRepo);
-    document.addEventListener("visibilitychange", refreshVisibleRepo);
+    schedule();
+    window.addEventListener("focus", schedule);
+    document.addEventListener("visibilitychange", schedule);
     return () => {
-      window.removeEventListener("focus", refreshVisibleRepo);
-      document.removeEventListener("visibilitychange", refreshVisibleRepo);
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", schedule);
+      document.removeEventListener("visibilitychange", schedule);
     };
-  }, [isActive, notify, refresh]);
+  }, [isActive, notify, reloadView]);
 
   const closeDiff = () => {
     setDiff(null);
@@ -1148,7 +1180,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
           aria-label="Resize right panel"
         />
 
-        <div className="right" style={{ width: rightWidth }}>
+        <div className="right" ref={rightRef} style={{ width: rightWidth }}>
           <div className="right-tabs">
             <button
               className={rightTab === "changes" ? "active" : ""}

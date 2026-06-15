@@ -29,6 +29,18 @@ describe("buildTree", () => {
     expect(b.path).toBe("a/b");
     expect(b.children.map(label)).toEqual(["f:a/b/c.ts"]);
   });
+
+  it("groups thousands of files in one flat directory without dropping any", () => {
+    const n = 2000;
+    const tree = buildTree(
+      Array.from({ length: n }, (_, i) => file(`assets/flag_${String(i).padStart(4, "0")}.xml`))
+    );
+    expect(tree.length).toBe(1);
+    const assets = tree[0] as TreeFolder;
+    expect(assets.path).toBe("assets");
+    expect(assets.children.length).toBe(n);
+    expect(assets.children.every((c) => c.type === "file")).toBe(true);
+  });
 });
 
 describe("flattenVisible", () => {
