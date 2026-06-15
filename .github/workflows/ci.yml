@@ -67,3 +67,53 @@ jobs:
       - name: Rust tests
         run: cargo test
         working-directory: src-tauri
+
+  # WebDriver e2e guardrail for the virtualized views (change list + commit
+  # graph). tauri-driver has no macOS WKWebView driver, so this is the only
+  # place the windowing behaviour is exercised against a real webview - it runs
+  # on Linux via WebKitWebDriver under a virtual display.
+  e2e:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      # Tauri/libgit2 build deps plus the two tauri-driver needs:
+      # webkit2gtk-driver (WebKitWebDriver) and xvfb (a fake display).
+      - name: Install Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev libssl-dev build-essential libxdo-dev file \
+            webkit2gtk-driver xvfb
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@1.96.0
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install e2e deps
+        run: pnpm install --frozen-lockfile
+        working-directory: e2e
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      # wdio's onPrepare builds the debug binary; xvfb-run gives the app a
+      # display so it can run headless without code changes.
+      - name: WebdriverIO (xvfb)
+        run: xvfb-run --auto-servernum pnpm test
+        working-directory: e2e
