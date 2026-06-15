@@ -31,7 +31,9 @@ export const config = {
   logLevel: "warn",
   mochaOpts: {
     ui: "bdd",
-    timeout: 120000,
+    // Generous: the before() hook may reload + re-wait a few times if a launch
+    // stalls under CI load. The debug build runs in onPrepare, outside this.
+    timeout: 300000,
   },
 
   // Build the debug binary the webdriver session drives. `--no-bundle` skips

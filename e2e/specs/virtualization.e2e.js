@@ -30,26 +30,39 @@ const scrollToBottom = (selector) =>
     if (el) el.scrollTop = el.scrollHeight;
   }, selector);
 
+// Seed the persisted session so a reload restores straight into the repo (no
+// native folder picker), pin list view, then reload until the repo view has
+// fully painted. The load is async (status, then history, then stats); under CI
+// load the history fetch occasionally stalls on a given launch, so we retry the
+// reload and wait for a *real* commit row (not just the WIP node) before failing.
+async function openFixtureRepo(dir) {
+  await browser.execute((d) => {
+    localStorage.setItem(
+      "gitchef.session",
+      JSON.stringify({ paths: [d], activePath: d })
+    );
+    localStorage.setItem("gitchef.changesView", "list");
+  }, dir);
+
+  let lastErr;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await browser.execute(() => window.location.reload());
+    await browser.pause(1500);
+    try {
+      await $(".change-list .file-row").waitForExist({ timeout: 30000 });
+      await $(".commit-row:not(.wip-row)").waitForExist({ timeout: 30000 });
+      return;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr;
+}
+
 describe("GitChef virtualization", () => {
   before(async () => {
     const repo = createFixtureRepo({ commits: COMMITS, files: FILES });
-    // Seed the persisted session so launch restores straight into the repo (no
-    // native folder picker), and pin list view for a flat change window.
-    await browser.execute((dir) => {
-      localStorage.setItem(
-        "gitchef.session",
-        JSON.stringify({ paths: [dir], activePath: dir })
-      );
-      localStorage.setItem("gitchef.changesView", "list");
-    }, repo.dir);
-    await browser.execute(() => window.location.reload());
-    await browser.pause(1500);
-
-    // Change list + at least the WIP row are quick; the commit history (a real
-    // .commit-row that isn't the WIP node) resolves after the status paint.
-    await $(".change-list .file-row").waitForExist({ timeout: 90000 });
-    await $(".commit-row").waitForExist({ timeout: 90000 });
-    await $(".commit-row:not(.wip-row)").waitForExist({ timeout: 90000 });
+    await openFixtureRepo(repo.dir);
   });
 
   it("restores the fixture repo on launch", async () => {
