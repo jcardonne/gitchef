@@ -1,6 +1,6 @@
 [package]
 name = "gitchef"
-version = "0.8.3"
+version = "0.8.4"
 description = "Open-source visual Git client"
 authors = ["GitChef"]
 edition = "2021"
