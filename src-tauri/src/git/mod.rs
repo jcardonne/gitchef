@@ -1,3 +1,4 @@
+pub mod avatars;
 pub mod branch;
 pub mod diff;
 pub mod files;

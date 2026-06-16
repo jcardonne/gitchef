@@ -15,7 +15,7 @@ import type {
   TagInfo,
   WorkStats,
 } from "../types";
-import { gravatarUrl, hasUncommittedChange, relativeTime } from "../util";
+import { avatarUrl, type AvatarContext, hasUncommittedChange, relativeTime } from "../util";
 import Toolbar from "./Toolbar";
 import Sidebar from "./Sidebar";
 import GraphView from "./GraphView";
@@ -70,6 +70,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [rightWidth, setRightWidth] = useState(getRightPanelWidth);
   const [selectedCommitAvatar, setSelectedCommitAvatar] = useState<string | null>(null);
+  const [accountAvatars, setAccountAvatars] = useState<ReadonlyMap<string, string>>(new Map());
   const [toast, setToast] = useState<{ msg: string; error: boolean } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{
     title: string;
@@ -103,17 +104,43 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
   }, []);
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
+  // Provider account avatars (GitHub/GitLab profile pictures) for the committers
+  // in view, resolved by the backend (cached on disk) and merged in as they
+  // arrive - upgrading the no-reply/Gravatar fallbacks. Skipped for repos whose
+  // remote isn't a known provider.
+  useEffect(() => {
+    if (repo?.provider !== "github" && repo?.provider !== "gitlab") return;
+    const emails = [...new Set(nodes.map((n) => n.email).filter(Boolean))];
+    if (emails.length === 0) return;
+    let alive = true;
+    api.commitAvatars(path, emails).then(
+      (map) => {
+        if (alive && Object.keys(map).length) {
+          setAccountAvatars((prev) => new Map([...prev, ...Object.entries(map)]));
+        }
+      },
+      () => {} // avatars are best-effort; a failed lookup just leaves the fallback
+    );
+    return () => {
+      alive = false;
+    };
+  }, [path, repo?.provider, nodes]);
+
+  // Stable ctx identity so the avatar effects only re-run when the resolved
+  // account map actually changes.
+  const avatarCtx = useMemo<AvatarContext>(() => ({ accounts: accountAvatars }), [accountAvatars]);
+
   useEffect(() => {
     let alive = true;
     setSelectedCommitAvatar(null);
     if (!selectedCommitNode?.email) return;
-    gravatarUrl(selectedCommitNode.email).then((url) => {
+    avatarUrl(selectedCommitNode.email, avatarCtx).then((url) => {
       if (alive) setSelectedCommitAvatar(url);
     });
     return () => {
       alive = false;
     };
-  }, [selectedCommitNode?.email]);
+  }, [selectedCommitNode?.email, avatarCtx]);
 
   // Cmd/Ctrl+F opens the commit search (active tab only).
   useEffect(() => {
@@ -1178,6 +1205,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
               onSearchClose={() => setSearchOpen(false)}
               canLoadMore={nodes.length >= graphLimit}
               onLoadMore={loadMore}
+              avatarCtx={avatarCtx}
             />
           </div>
         </div>

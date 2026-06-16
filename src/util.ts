@@ -24,22 +24,65 @@ export const LANE_COLORS = [
 
 export const laneColor = (i: number) => LANE_COLORS[i % LANE_COLORS.length];
 
-// Gravatar URL for an email (SHA-256 per Gravatar's current scheme), cached so
-// each unique committer is hashed once. Falls back to a generated identicon, so
-// it always resolves to an image even when the author has no Gravatar.
+const AVATAR_SIZE = 32;
+
+/// Backend-resolved provider account avatars for this repo, keyed by lowercased
+/// committer email (the GitHub/GitLab profile pictures). Threaded in from
+/// RepoView; the remaining resolution (no-reply derivation, Gravatar) is
+/// provider-agnostic and needs no context.
+export interface AvatarContext {
+  accounts: ReadonlyMap<string, string>;
+}
+
+// Caches the provider-agnostic fallbacks (no-reply derivation + Gravatar hash)
+// per email, so each unique committer is resolved at most once per session.
 const avatarCache = new Map<string, string>();
 
-export async function gravatarUrl(email: string): Promise<string> {
-  const key = email.trim().toLowerCase();
-  const cached = avatarCache.get(key);
+/// Avatar image URL for a committer email. Prefers the provider account avatar
+/// the backend resolved (GitHub/GitLab - covers real, non-no-reply emails);
+/// otherwise derives it from a no-reply address; otherwise falls back to
+/// Gravatar. Always resolves to a real image (Gravatar serves an identicon for
+/// unknown emails), so callers never handle a missing avatar.
+export async function avatarUrl(email: string, ctx: AvatarContext): Promise<string> {
+  const normalized = email.trim().toLowerCase();
+  const account = ctx.accounts.get(normalized);
+  if (account) return account;
+  const cached = avatarCache.get(normalized);
   if (cached) return cached;
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
+  const url = noreplyAvatarUrl(normalized) ?? (await gravatarUrl(normalized));
+  avatarCache.set(normalized, url);
+  return url;
+}
+
+/// Direct avatar URL derived purely from a provider no-reply email, or null when
+/// `email` isn't one. These formats embed the user id (and, for GitLab, the
+/// instance host), so the result is a plain `<img>` URL - no auth, no API call,
+/// no rate limit. Exported for unit testing.
+export function noreplyAvatarUrl(email: string, size = AVATAR_SIZE): string | null {
+  // GitHub, modern id form: "123456+login@users.noreply.github.com".
+  let m = /^(\d+)\+[^@]+@users\.noreply\.github\.com$/i.exec(email);
+  if (m) return `https://avatars.githubusercontent.com/u/${m[1]}?s=${size}`;
+  // GitHub, legacy form (no id): "login@users.noreply.github.com". The account
+  // page's ".png" redirects to the avatar CDN.
+  m = /^([^@+]+)@users\.noreply\.github\.com$/i.exec(email);
+  if (m) return `https://github.com/${m[1]}.png?size=${size}`;
+  // GitLab: "123-login@users.noreply.<host>" (gitlab.com or self-hosted). The
+  // host after "users.noreply." is the instance that serves the avatar.
+  m = /^(\d+)-[^@]+@users\.noreply\.([a-z0-9.-]+)$/i.exec(email);
+  if (m)
+    return `https://${m[2].toLowerCase()}/uploads/-/system/user/avatar/${m[1]}/avatar.png?width=${size}`;
+  return null;
+}
+
+/// Gravatar URL for an email (SHA-256 per Gravatar's current scheme). The
+/// `identicon` default means it always resolves to an image, even when the
+/// author has no Gravatar account. Expects an already-normalized email.
+async function gravatarUrl(email: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(email));
   const hash = [...new Uint8Array(digest)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  const url = `https://gravatar.com/avatar/${hash}?s=32&d=identicon`;
-  avatarCache.set(key, url);
-  return url;
+  return `https://gravatar.com/avatar/${hash}?s=${AVATAR_SIZE}&d=identicon`;
 }
 
 export function relativeTime(unixSeconds: number): string {

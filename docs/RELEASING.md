@@ -186,8 +186,16 @@ pnpm tauri icon app-icon-tile.png
 - Pin third-party actions (`tauri-apps/tauri-action@v0`, `swatinem/rust-cache`, etc.)
   to commit SHAs - the tauri-action step holds the signing key; add Dependabot.
   (`dtolnay/rust-toolchain` is already pinned to `1.96.0`.)
-- Set a restrictive `csp` in `tauri.conf.json` (currently `null`). Must allow
-  `img-src https://gravatar.com data:` so commit avatars keep loading.
+- Set a restrictive `csp` in `tauri.conf.json` (currently `null`). Avatar images
+  load from a provider-dependent set of hosts, so it must allow at least
+  `img-src 'self' data: https://*.gravatar.com https://avatars.githubusercontent.com https://github.com https://gitlab.com`
+  (`github.com/<user>.png` redirects to the avatars CDN, so both GitHub hosts are
+  needed; GitLab account/Gravatar-fallback avatars come from `gitlab.com` /
+  `*.gravatar.com`). No `connect-src` entry is required: the GitHub/GitLab
+  account lookups run in the Rust backend (`git/avatars.rs`, via `ureq`), which
+  isn't subject to the webview CSP - only the resulting `<img>` URLs are. A
+  self-hosted GitLab serves avatars from its own host, which can't be enumerated
+  up front, so a strict CSP drops those images (Gravatar still renders).
 
 ## Testing the flow end-to-end
 

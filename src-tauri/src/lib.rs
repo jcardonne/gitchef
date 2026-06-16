@@ -2,7 +2,7 @@ mod error;
 mod git;
 
 use error::AppResult;
-use git::{branch, diff, files, graph, ops, repo};
+use git::{avatars, branch, diff, files, graph, ops, repo};
 use git2::Repository;
 
 /// Open a repository by path. The backend holds NO active-repo state: every
@@ -15,6 +15,18 @@ fn open(path: &str) -> AppResult<Repository> {
 #[tauri::command]
 fn open_repo(path: String) -> AppResult<repo::RepoInfo> {
     repo::info(&open(&path)?)
+}
+
+/// Provider account avatars for the given commit emails (GitHub/GitLab), keyed
+/// by lowercased email. `(async)` because it does blocking network I/O. Returns
+/// only emails that map to a real account; the frontend handles the rest.
+#[tauri::command(async)]
+fn commit_avatars(
+    app: tauri::AppHandle,
+    repo: String,
+    emails: Vec<String>,
+) -> AppResult<std::collections::HashMap<String, String>> {
+    avatars::resolve(&app, &repo, emails)
 }
 
 // The working-tree reads + bulk index ops below do heavy/blocking libgit2 work
@@ -326,6 +338,7 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             open_repo,
+            commit_avatars,
             repo_status,
             work_stats,
             commit_graph,

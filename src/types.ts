@@ -1,5 +1,7 @@
 // Mirrors the serde structs returned by the Rust backend.
 
+export type RemoteProvider = "github" | "gitlab";
+
 export interface RepoInfo {
   path: string;
   name: string;
@@ -7,6 +9,12 @@ export interface RepoInfo {
   // True when the current branch tracks a same-name remote branch; false means
   // push must publish (-u origin HEAD) first.
   has_upstream: boolean;
+  // Host of the primary remote (origin, else first remote), e.g. "github.com",
+  // "gitlab.com", "gitlab.example.com"; null when the repo has no remote.
+  remote_host: string | null;
+  // Provider inferred from remote_host, or null for self-hosted / unknown hosts
+  // (avatars then fall back to Gravatar).
+  provider: RemoteProvider | null;
 }
 
 /// An open repository tab (path doubles as its stable id).

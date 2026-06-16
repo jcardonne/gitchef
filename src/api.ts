@@ -29,6 +29,8 @@ export const repoStatus = (repo: string) => invoke<StatusResult>("repo_status", 
 export const workStats = (repo: string) => invoke<WorkStats>("work_stats", { repo });
 export const commitGraph = (repo: string, limit = 500) =>
   invoke<CommitNode[]>("commit_graph", { repo, limit });
+export const commitAvatars = (repo: string, emails: string[]) =>
+  invoke<Record<string, string>>("commit_avatars", { repo, emails });
 export const listBranches = (repo: string) => invoke<BranchInfo[]>("list_branches", { repo });
 export const listTags = (repo: string) => invoke<TagInfo[]>("list_tags", { repo });
 export const fileDiff = (repo: string, path: string, staged: boolean, full = false) =>

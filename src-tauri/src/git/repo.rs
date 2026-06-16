@@ -3,6 +3,13 @@ use git2::{DiffOptions, Repository, Status, StatusOptions};
 use serde::Serialize;
 use std::path::Path;
 
+#[derive(Serialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum RemoteProvider {
+    Github,
+    Gitlab,
+}
+
 #[derive(Serialize)]
 pub struct RepoInfo {
     pub path: String,
@@ -11,6 +18,13 @@ pub struct RepoInfo {
     /// True when the current branch tracks a same-name remote branch. Drives the
     /// toolbar's "Push" vs "Publish" affordance.
     pub has_upstream: bool,
+    /// Host of the primary remote (origin, else the first remote), lowercased -
+    /// e.g. "github.com", "gitlab.com", "gitlab.example.com". None when the repo
+    /// has no remote. Lets the UI build the GitLab avatar-API host.
+    pub remote_host: Option<String>,
+    /// Provider inferred from `remote_host` so the UI can pick an avatar source;
+    /// None for self-hosted / unknown hosts (the UI then falls back to Gravatar).
+    pub provider: Option<RemoteProvider>,
 }
 
 /// Whether the current branch has an upstream of the *same name* on a remote.
@@ -85,6 +99,93 @@ pub fn work_stats(repo: &Repository) -> AppResult<WorkStats> {
     })
 }
 
+/// Host of a git remote URL, lowercased. Handles the three shapes git remotes
+/// take: `scheme://[user@]host[:port]/path`, scp-like `[user@]host:path`, and
+/// bare local paths (which have no host).
+fn host_from_url(url: &str) -> Option<String> {
+    let url = url.trim();
+    if let Some((_, rest)) = url.split_once("://") {
+        let authority = rest.split('/').next().unwrap_or(rest);
+        let host_port = authority.rsplit('@').next().unwrap_or(authority);
+        normalize_host(host_port.split(':').next().unwrap_or(host_port))
+    } else if let Some((userhost, _)) = url.split_once(':') {
+        // scp-like git URL: [user@]host:path. A dotted host or a userinfo '@'
+        // tells it apart from a Windows drive path ("C:\\...").
+        if !userhost.contains('@') && !userhost.contains('.') {
+            return None;
+        }
+        normalize_host(userhost.rsplit('@').next().unwrap_or(userhost))
+    } else {
+        None
+    }
+}
+
+fn normalize_host(host: &str) -> Option<String> {
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    (!host.is_empty()).then_some(host)
+}
+
+/// Provider for a remote host: github.com -> GitHub; gitlab.com and self-hosted
+/// GitLab (host contains "gitlab") -> GitLab; anything else -> None.
+fn provider_for(host: &str) -> Option<RemoteProvider> {
+    if host == "github.com" || host.ends_with(".github.com") {
+        Some(RemoteProvider::Github)
+    } else if host.contains("gitlab") {
+        Some(RemoteProvider::Gitlab)
+    } else {
+        None
+    }
+}
+
+/// URL of `origin`, or the first remote if there is no `origin`.
+fn primary_remote_url(repo: &Repository) -> Option<String> {
+    if let Ok(remote) = repo.find_remote("origin") {
+        if let Some(url) = remote.url() {
+            return Some(url.to_string());
+        }
+    }
+    let remotes = repo.remotes().ok()?;
+    remotes
+        .iter()
+        .flatten()
+        .find_map(|name| repo.find_remote(name).ok().and_then(|r| r.url().map(str::to_string)))
+}
+
+/// A repo's primary remote resolved to the pieces the avatar fetcher needs: the
+/// host, the provider, and the project path (`owner/repo` for GitHub,
+/// `group/.../project` for GitLab), with any trailing `.git` stripped.
+pub(crate) struct RemoteTarget {
+    pub host: String,
+    pub provider: RemoteProvider,
+    pub path: String,
+}
+
+/// Project path of a git remote URL - everything after the host, minus a
+/// trailing `.git`: both `https://github.com/a/b.git` and `git@github.com:a/b.git`
+/// resolve to `a/b`.
+fn remote_path_from_url(url: &str) -> Option<String> {
+    let url = url.trim().trim_end_matches('/');
+    let after = if let Some((_, rest)) = url.split_once("://") {
+        &rest[rest.find('/')? + 1..]
+    } else if let Some((_, rest)) = url.split_once(':') {
+        rest
+    } else {
+        return None;
+    };
+    let path = after.trim_start_matches('/').trim_end_matches(".git");
+    (!path.is_empty()).then(|| path.to_string())
+}
+
+/// Resolve the primary remote (origin, else first) into host + provider + path,
+/// or None when there's no remote or the host isn't a known provider.
+pub(crate) fn remote_target(repo: &Repository) -> Option<RemoteTarget> {
+    let url = primary_remote_url(repo)?;
+    let host = host_from_url(&url)?;
+    let provider = provider_for(&host)?;
+    let path = remote_path_from_url(&url)?;
+    Some(RemoteTarget { host, provider, path })
+}
+
 pub fn info(repo: &Repository) -> AppResult<RepoInfo> {
     let path = repo
         .workdir()
@@ -101,7 +202,9 @@ pub fn info(repo: &Repository) -> AppResult<RepoInfo> {
         Err(_) => None, // unborn branch (fresh repo, no commits yet)
     };
     let has_upstream = same_name_upstream(repo);
-    Ok(RepoInfo { path, name, head, has_upstream })
+    let remote_host = primary_remote_url(repo).as_deref().and_then(host_from_url);
+    let provider = remote_host.as_deref().and_then(provider_for);
+    Ok(RepoInfo { path, name, head, has_upstream, remote_host, provider })
 }
 
 /// Working-tree status split into what's staged (index vs HEAD) and what's not
@@ -164,5 +267,54 @@ fn label_status(s: Status, staged: bool) -> FileStatusKind {
         FileStatusKind::Typechange
     } else {
         FileStatusKind::Modified
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_remote_hosts() {
+        let cases = [
+            ("https://github.com/owner/repo.git", Some("github.com")),
+            ("git@github.com:owner/repo.git", Some("github.com")),
+            ("ssh://git@gitlab.com/group/sub/repo.git", Some("gitlab.com")),
+            ("https://user@gitlab.example.com:8443/g/r.git", Some("gitlab.example.com")),
+            ("GIT@GitHub.com:Owner/Repo.git", Some("github.com")),
+            ("/Users/me/repo", None),
+            ("C:\\src\\repo", None),
+        ];
+        for (url, want) in cases {
+            assert_eq!(host_from_url(url).as_deref(), want, "host_from_url({url})");
+        }
+    }
+
+    #[test]
+    fn detects_provider() {
+        assert!(matches!(provider_for("github.com"), Some(RemoteProvider::Github)));
+        assert!(matches!(provider_for("ghe.github.com"), Some(RemoteProvider::Github)));
+        assert!(matches!(provider_for("gitlab.com"), Some(RemoteProvider::Gitlab)));
+        assert!(matches!(provider_for("gitlab.example.com"), Some(RemoteProvider::Gitlab)));
+        assert!(provider_for("bitbucket.org").is_none());
+        assert!(provider_for("git.sr.ht").is_none());
+    }
+
+    #[test]
+    fn parses_remote_paths() {
+        let cases = [
+            ("https://github.com/owner/repo.git", Some("owner/repo")),
+            ("git@github.com:owner/repo.git", Some("owner/repo")),
+            ("ssh://git@gitlab.com/group/sub/proj.git", Some("group/sub/proj")),
+            (
+                "git@gitlab.com:atyos/superscooper/superscooper-backend.git",
+                Some("atyos/superscooper/superscooper-backend"),
+            ),
+            ("https://github.com/owner/repo", Some("owner/repo")),
+            ("/Users/me/repo", None),
+        ];
+        for (url, want) in cases {
+            assert_eq!(remote_path_from_url(url).as_deref(), want, "remote_path_from_url({url})");
+        }
     }
 }

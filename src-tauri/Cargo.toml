@@ -24,6 +24,13 @@ tauri-plugin-updater = "2"
 git2 = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Blocking HTTP for provider avatar lookups (GitHub REST / GitLab GraphQL). rustls
+# TLS (ureq's default) keeps us off openssl-sys, same reason git2 drops its default
+# features above - so the x86_64 half of the universal macOS build still links.
+ureq = { version = "2", features = ["json"] }
+# Guards the shared avatar cache across concurrent tab commands; parking_lot per
+# project rule (guards returned directly, no poison-unwrap boilerplate).
+parking_lot = "0.12"
 thiserror = "2"
 
 [profile.dev]

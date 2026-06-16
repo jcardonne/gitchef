@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CheckMenuItem, Menu } from "@tauri-apps/api/menu";
 import type { CommitNode, RefKind, RefLabel, WorkStats } from "../types";
-import { gravatarUrl, laneColor, relativeTime } from "../util";
+import { avatarUrl, type AvatarContext, laneColor, relativeTime } from "../util";
 import {
   getGraphColumnVisibility,
   getGraphCols,
@@ -41,6 +41,7 @@ interface Props {
   onSearchClose: () => void;
   canLoadMore: boolean;
   onLoadMore: () => void;
+  avatarCtx: AvatarContext;
 }
 
 /// Renders the commit DAG: an SVG of lanes/edges/dots on the left, aligned
@@ -62,6 +63,7 @@ export default function GraphView({
   onSearchClose,
   canLoadMore,
   onLoadMore,
+  avatarCtx,
 }: Props) {
   // Resizable column widths (persisted) + sort direction.
   const [cols, setCols] = useState(getGraphCols);
@@ -127,21 +129,24 @@ export default function GraphView({
     return m;
   }, [displayed]);
 
-  // Resolve a Gravatar URL per unique committer email (cached in util).
+  // Resolve each unique committer's avatar (GitHub / GitLab / Gravatar per the
+  // repo's provider; cached in util).
   const [avatars, setAvatars] = useState<Map<string, string>>(new Map());
   useEffect(() => {
     let alive = true;
     const emails = [...new Set(nodes.map((n) => n.email).filter(Boolean))];
-    Promise.all(emails.map(async (e) => [e, await gravatarUrl(e)] as const)).then((pairs) => {
-      if (!alive) return;
-      // Warm the browser cache so dots + row avatars don't pop in on first paint.
-      for (const [, url] of pairs) new Image().src = url;
-      setAvatars(new Map(pairs));
-    });
+    Promise.all(emails.map(async (e) => [e, await avatarUrl(e, avatarCtx)] as const)).then(
+      (pairs) => {
+        if (!alive) return;
+        // Warm the browser cache so dots + row avatars don't pop in on first paint.
+        for (const [, url] of pairs) new Image().src = url;
+        setAvatars(new Map(pairs));
+      }
+    );
     return () => {
       alive = false;
     };
-  }, [nodes]);
+  }, [nodes, avatarCtx]);
 
   // First-parent chain from any commit: walk parents[0] until it leaves the
   // loaded set. This is the "commits that belong to this branch" definition,
