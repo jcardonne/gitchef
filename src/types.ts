@@ -17,10 +17,26 @@ export interface RepoInfo {
   provider: RemoteProvider | null;
 }
 
+/// A user-assignable tab color. Each id maps to a `--tab-<id>` CSS variable
+/// defined for both themes in styles.css.
+export type TabColor = "red" | "amber" | "green" | "blue" | "purple";
+
+/// Ordered palette shown in the tab context menu. Single source of truth: the
+/// menu is generated from this list and each id has a matching `--tab-<id>` var.
+export const TAB_COLORS: { id: TabColor; label: string }[] = [
+  { id: "red", label: "Red" },
+  { id: "amber", label: "Amber" },
+  { id: "green", label: "Green" },
+  { id: "blue", label: "Blue" },
+  { id: "purple", label: "Purple" },
+];
+
 /// An open repository tab (path doubles as its stable id).
 export interface Tab {
   path: string;
   name: string;
+  /// Optional user-assigned color for visual differentiation; undefined = none.
+  color?: TabColor;
 }
 
 export type FileStatusKind =

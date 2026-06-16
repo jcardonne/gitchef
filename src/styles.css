@@ -20,6 +20,11 @@
   --diff-del-bg: rgba(247, 118, 142, 0.13);
   --hunk-fg: #6ea8fe;
   --hunk-bg: rgba(110, 168, 254, 0.08);
+  --tab-red: #f7768e;
+  --tab-amber: #f2a93b;
+  --tab-green: #2ea043;
+  --tab-blue: #6ea8fe;
+  --tab-purple: #bb9af7;
 }
 
 :root[data-theme="light"] {
@@ -39,6 +44,11 @@
   --diff-del-bg: rgba(207, 34, 46, 0.1);
   --hunk-fg: #0969da;
   --hunk-bg: rgba(9, 105, 218, 0.08);
+  --tab-red: #cf222e;
+  --tab-amber: #bf8700;
+  --tab-green: #1a7f37;
+  --tab-blue: #0969da;
+  --tab-purple: #8250df;
 }
 
 * {
@@ -1344,6 +1354,40 @@ button {
   background: var(--bg-elev2);
   color: var(--text);
 }
+
+/* user-assigned tab colors (Excel/Warp-style); palette ids = TAB_COLORS in types.ts */
+[data-tab-color="red"] {
+  --tab-color: var(--tab-red);
+}
+[data-tab-color="amber"] {
+  --tab-color: var(--tab-amber);
+}
+[data-tab-color="green"] {
+  --tab-color: var(--tab-green);
+}
+[data-tab-color="blue"] {
+  --tab-color: var(--tab-blue);
+}
+[data-tab-color="purple"] {
+  --tab-color: var(--tab-purple);
+}
+.tab[data-tab-color] {
+  position: relative;
+}
+.tab[data-tab-color]::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--tab-color);
+  border-radius: 6px 6px 0 0;
+}
+.tab[data-tab-color].active {
+  background: color-mix(in srgb, var(--tab-color) 16%, var(--bg-elev2));
+}
+.repo-host[data-tab-color] .toolbar {
+  box-shadow: inset 0 2px 0 var(--tab-color);
+}
 .tab.home {
   font-size: 14px;
   padding: 0 11px;
@@ -1488,6 +1532,12 @@ button {
 .home-inner > p {
   color: var(--text-dim);
   margin: 4px 0 16px;
+}
+.home-version {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--text-dim) 70%, transparent);
 }
 .home-open {
   width: auto;

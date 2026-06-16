@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "./api";
-import type { RepoInfo, Tab } from "./types";
+import type { RepoInfo, Tab, TabColor } from "./types";
 import * as store from "./storage";
 import TabBar from "./components/TabBar";
 import Home from "./components/Home";
@@ -15,9 +15,10 @@ export default function App() {
   // Restore last session synchronously as initial state, so the persist effect
   // below always sees the real tabs (no first-render empty-state clobber).
   const session = store.getSession();
-  const [tabs, setTabs] = useState<Tab[]>(() =>
-    session.paths.map((p) => ({ path: p, name: store.basename(p) }))
-  );
+  const [tabs, setTabs] = useState<Tab[]>(() => {
+    const colors = store.getTabColors();
+    return session.paths.map((p) => ({ path: p, name: store.basename(p), color: colors[p] }));
+  });
   const [activePath, setActivePath] = useState<string | null>(session.activePath);
   const [recents, setRecents] = useState(store.getRecents());
   const closedTabs = useRef<string[]>([]); // stack of recently closed tab paths
@@ -39,7 +40,9 @@ export default function App() {
 
   const openTab = (path: string) => {
     setTabs((prev) =>
-      prev.some((t) => t.path === path) ? prev : [...prev, { path, name: store.basename(path) }]
+      prev.some((t) => t.path === path)
+        ? prev
+        : [...prev, { path, name: store.basename(path), color: store.getTabColors()[path] }]
     );
     setActivePath(path);
   };
@@ -106,6 +109,13 @@ export default function App() {
       return next;
     });
 
+  // Assign or clear a tab's color; persisted per repo path so it survives
+  // close/reopen and relaunch.
+  const setTabColor = (path: string, color: TabColor | null) => {
+    store.setTabColor(path, color);
+    setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, color: color ?? undefined } : t)));
+  };
+
   // RepoView reports the real repo name once libgit2 opens it; refine the tab
   // label (was a path basename) and record the repo in recents.
   const onRepoLoaded = (path: string, info: RepoInfo) => {
@@ -114,8 +124,11 @@ export default function App() {
     refreshRecents();
   };
 
+  // Removing a repo from recents also prunes its stored tab color, so the
+  // gitchef.tabColors map can't accumulate stale entries.
   const onRemoveRecent = (path: string) => {
     store.removeRecent(path);
+    store.setTabColor(path, null);
     refreshRecents();
   };
 
@@ -148,6 +161,7 @@ export default function App() {
         onCloseOthers={closeOthers}
         onCloseToRight={closeToRight}
         onOpen={pickAndOpen}
+        onSetColor={setTabColor}
       />
 
       <div className="app-body">
@@ -164,6 +178,7 @@ export default function App() {
           <div
             key={t.path}
             className="repo-host"
+            data-tab-color={t.color}
             style={{ display: t.path === activePath ? "flex" : "none" }}
           >
             <RepoView path={t.path} isActive={t.path === activePath} onLoaded={onRepoLoaded} />

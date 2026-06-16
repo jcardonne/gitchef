@@ -1,12 +1,91 @@
 import { useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
-import type { Tab } from "../types";
+import { IconMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
+import { Image } from "@tauri-apps/api/image";
+import { TAB_COLORS, type Tab, type TabColor } from "../types";
 import * as api from "../api";
-import { getTheme, nextTheme, setTheme, type Theme } from "../theme";
+import { getTheme, nextTheme, resolvedTheme, setTheme, type Theme } from "../theme";
 
 const appWindow = getCurrentWindow();
 const isMac = navigator.platform.toLowerCase().includes("mac");
+
+/// Parse a `#rrggbb` CSS color into an [r,g,b] triple, or null when unrecognized.
+function parseHex(value: string): [number, number, number] | null {
+  const m = value.trim().match(/^#([0-9a-f]{6})$/i);
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+}
+
+/// Memoized swatch builder: a right-click must not regenerate the same dot (or
+/// re-allocate a native image resource for it) on every menu open. The hue
+/// depends on the theme, so the cache is keyed by color + selected + theme.
+const swatchCache = new Map<string, Promise<Image | undefined>>();
+
+function colorSwatch(color: TabColor | null, selected: boolean): Promise<Image | undefined> {
+  const key = `${color ?? "none"}:${selected ? 1 : 0}:${resolvedTheme()}`;
+  let swatch = swatchCache.get(key);
+  if (!swatch) {
+    swatch = buildSwatch(color, selected);
+    swatchCache.set(key, swatch);
+  }
+  return swatch;
+}
+
+/// Build a small RGBA dot icon for the Tab Color menu. The hue is read live from
+/// the `--tab-<id>` CSS variable so it tracks the active theme; `selected` draws
+/// an anti-aliased outer ring to mark the current choice, and a `null` color
+/// renders a hollow "no color" ring (the None entry). Returns undefined if the
+/// platform refuses to build the image, so the item degrades to text only.
+async function buildSwatch(color: TabColor | null, selected: boolean): Promise<Image | undefined> {
+  const size = 36;
+  const center = (size - 1) / 2;
+  const rFill = 10;
+  const rRingInner = 12.5;
+  const rRingOuter = 15.5;
+  const css = getComputedStyle(document.documentElement);
+  const fill = color ? parseHex(css.getPropertyValue(`--tab-${color}`)) : null;
+  const ring = parseHex(css.getPropertyValue("--text")) ?? [201, 209, 217];
+  const hollow = parseHex(css.getPropertyValue("--text-dim")) ?? [139, 148, 158];
+  const clamp = (x: number) => Math.max(0, Math.min(1, x));
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dist = Math.hypot(x - center, y - center);
+      let rgb: [number, number, number] | null = null;
+      let alpha = 0;
+      if (fill) {
+        alpha = clamp(rFill - dist + 0.5);
+        if (alpha > 0) rgb = fill;
+      } else {
+        const a = clamp(dist - (rFill - 2) + 0.5) * clamp(rFill - dist + 0.5);
+        if (a > 0) {
+          rgb = hollow;
+          alpha = a;
+        }
+      }
+      if (selected) {
+        const a = clamp(dist - rRingInner + 0.5) * clamp(rRingOuter - dist + 0.5);
+        if (a > 0) {
+          rgb = ring;
+          alpha = a;
+        }
+      }
+      if (rgb) {
+        const i = (y * size + x) * 4;
+        data[i] = rgb[0];
+        data[i + 1] = rgb[1];
+        data[i + 2] = rgb[2];
+        data[i + 3] = Math.round(alpha * 255);
+      }
+    }
+  }
+  try {
+    return await Image.new(data, size, size);
+  } catch {
+    return undefined;
+  }
+}
 
 /// Monochrome SVG theme icons (no emoji). `currentColor` -> follows text color.
 function ThemeIcon({ theme }: { theme: Theme }) {
@@ -52,6 +131,7 @@ interface Props {
   onCloseOthers: (path: string) => void;
   onCloseToRight: (path: string) => void;
   onOpen: () => void;
+  onSetColor: (path: string, color: TabColor | null) => void;
 }
 
 /// GitKraken-style repo tabs: a persistent Home tab, one chip per open repo
@@ -65,6 +145,7 @@ export default function TabBar({
   onCloseOthers,
   onCloseToRight,
   onOpen,
+  onSetColor,
 }: Props) {
   const dragFrom = useRef<number | null>(null);
   const [theme, setThemeState] = useState<Theme>(getTheme());
@@ -82,6 +163,25 @@ export default function TabBar({
         text: "Close to the Right",
         enabled: i < tabs.length - 1,
         action: () => onCloseToRight(t.path),
+      }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      Submenu.new({
+        text: "Tab Color",
+        items: await Promise.all([
+          ...TAB_COLORS.map(async (c) =>
+            IconMenuItem.new({
+              text: c.label,
+              icon: await colorSwatch(c.id, t.color === c.id),
+              action: () => onSetColor(t.path, c.id),
+            })
+          ),
+          PredefinedMenuItem.new({ item: "Separator" }),
+          IconMenuItem.new({
+            text: "None",
+            icon: await colorSwatch(null, !t.color),
+            action: () => onSetColor(t.path, null),
+          }),
+        ]),
       }),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: "Copy Repo Path", action: () => void api.copyText(t.path).catch(console.error) }),
@@ -118,6 +218,7 @@ export default function TabBar({
         <div
           key={t.path}
           className={`tab${t.path === activePath ? " active" : ""}`}
+          data-tab-color={t.color}
           draggable
           onDragStart={() => (dragFrom.current = i)}
           onDragOver={(e) => e.preventDefault()}

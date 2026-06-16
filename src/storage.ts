@@ -1,6 +1,8 @@
 // Lightweight persistence for recents + the open-tab session, backed by the
 // webview's localStorage. Pure frontend - no backend round-trips.
 
+import type { TabColor } from "./types";
+
 const RECENTS_KEY = "gitchef.recents";
 const SESSION_KEY = "gitchef.session";
 const VIEW_KEY = "gitchef.changesView";
@@ -151,4 +153,20 @@ export function saveSession(session: Session): void {
 /// Last path segment of a folder path - the tab label before the repo loads.
 export function basename(path: string): string {
   return path.replace(/[/\\]+$/, "").split(/[/\\]/).pop() || path;
+}
+
+const TAB_COLORS_KEY = "gitchef.tabColors";
+
+/// Per-repo tab colors keyed by repo path, so a color survives close/reopen and
+/// relaunch (tabs are restored by path). An absent path means no color.
+export function getTabColors(): Record<string, TabColor> {
+  return read<Record<string, TabColor>>(TAB_COLORS_KEY, {});
+}
+
+/// Assign (color) or clear (null) a tab's color and persist the change.
+export function setTabColor(path: string, color: TabColor | null): void {
+  const colors = getTabColors();
+  if (color) colors[path] = color;
+  else delete colors[path];
+  localStorage.setItem(TAB_COLORS_KEY, JSON.stringify(colors));
 }

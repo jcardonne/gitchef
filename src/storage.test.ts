@@ -92,3 +92,36 @@ describe("persistence round-trips", () => {
     expect(store.getSession()).toEqual({ paths: ["/x", "/y"], activePath: "/y" });
   });
 });
+
+describe("tab colors", () => {
+  it("returns an empty map when nothing is stored", () => {
+    expect(store.getTabColors()).toEqual({});
+  });
+
+  it("persists a color keyed by repo path and round-trips it", () => {
+    store.setTabColor("/repos/a", "blue");
+    store.setTabColor("/repos/b", "red");
+    expect(store.getTabColors()).toEqual({ "/repos/a": "blue", "/repos/b": "red" });
+  });
+
+  it("overwrites an existing color for the same path", () => {
+    store.setTabColor("/repos/a", "blue");
+    store.setTabColor("/repos/a", "green");
+    expect(store.getTabColors()).toEqual({ "/repos/a": "green" });
+  });
+
+  it("clears only the targeted path when color is null", () => {
+    store.setTabColor("/repos/a", "blue");
+    store.setTabColor("/repos/b", "red");
+    store.setTabColor("/repos/a", null);
+    const colors = store.getTabColors();
+    expect(colors["/repos/a"]).toBeUndefined();
+    expect(colors).toEqual({ "/repos/b": "red" });
+  });
+
+  it("is a no-op when clearing a path that has no color", () => {
+    store.setTabColor("/repos/a", "blue");
+    store.setTabColor("/repos/never", null);
+    expect(store.getTabColors()).toEqual({ "/repos/a": "blue" });
+  });
+});
