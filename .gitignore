@@ -4,3 +4,8 @@ src-tauri/target
 src-tauri/gen
 .DS_Store
 *.log
+
+# generated tsc/vite build artifacts (vite.config.ts is the source of truth)
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
