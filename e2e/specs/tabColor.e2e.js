@@ -26,8 +26,9 @@ async function openColoredRepo(dir, color) {
     await browser.execute(() => window.location.reload());
     await browser.pause(1500);
     try {
+      await $(".change-list .file-row").waitForExist({ timeout: 30000 });
+      await $(".commit-row:not(.wip-row)").waitForExist({ timeout: 30000 });
       await $(".tab[data-tab-color]").waitForExist({ timeout: 30000 });
-      await $(".repo-host .toolbar").waitForExist({ timeout: 30000 });
       return;
     } catch (e) {
       lastErr = e;
@@ -38,7 +39,7 @@ async function openColoredRepo(dir, color) {
 
 describe("GitChef tab colors", () => {
   before(async () => {
-    const repo = createFixtureRepo({ commits: 1, files: 1 });
+    const repo = createFixtureRepo();
     await openColoredRepo(repo.dir, "blue");
   });
 
