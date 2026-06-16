@@ -2,7 +2,7 @@ mod error;
 mod git;
 
 use error::AppResult;
-use git::{avatars, branch, diff, files, graph, ops, repo};
+use git::{avatars, branch, diff, files, graph, ops, repo, worktree};
 use git2::Repository;
 
 /// Open a repository by path. The backend holds NO active-repo state: every
@@ -58,6 +58,28 @@ fn list_branches(repo: String) -> AppResult<Vec<branch::BranchInfo>> {
 #[tauri::command(async)]
 fn list_tags(repo: String) -> AppResult<Vec<branch::TagInfo>> {
     branch::list_tags(&open(&repo)?)
+}
+
+#[tauri::command(async)]
+fn list_stashes(repo: String) -> AppResult<Vec<ops::StashInfo>> {
+    ops::list_stashes(&mut open(&repo)?)
+}
+
+#[tauri::command(async)]
+fn list_worktrees(repo: String) -> AppResult<Vec<worktree::WorktreeInfo>> {
+    worktree::list_worktrees(&open(&repo)?)
+}
+
+/// Per-worktree uncommitted-changes flags. Async: it opens and status-scans
+/// every worktree, so it runs off the main thread and on demand only.
+#[tauri::command(async)]
+fn worktree_wips(repo: String) -> AppResult<std::collections::HashMap<String, bool>> {
+    worktree::worktree_wips(&open(&repo)?)
+}
+
+#[tauri::command]
+fn add_worktree(repo: String, path: String, branch: String) -> AppResult<String> {
+    worktree::add_worktree(&open(&repo)?, &path, &branch)
 }
 
 #[tauri::command]
@@ -389,6 +411,10 @@ pub fn run() {
             apply_lines,
             save_commit_file_patch,
             open_terminal,
+            list_stashes,
+            list_worktrees,
+            worktree_wips,
+            add_worktree,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GitChef");

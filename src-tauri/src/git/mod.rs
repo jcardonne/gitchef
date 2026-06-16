@@ -5,6 +5,7 @@ pub mod files;
 pub mod graph;
 pub mod ops;
 pub mod repo;
+pub mod worktree;
 
 use crate::error::{AppError, AppResult};
 use std::path::Path;

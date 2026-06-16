@@ -366,7 +366,15 @@ button {
 
 /* ---------- sidebar ---------- */
 .sidebar-group {
-  margin-bottom: 14px;
+  margin-bottom: 6px;
+}
+.sidebar-group:last-child {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+}
+.sidebar-group + .sidebar-group {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
 }
 .sidebar-title {
   display: flex;
@@ -376,7 +384,7 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-dim);
-  padding: 5px 12px;
+  padding: 2px 12px;
   cursor: pointer;
   user-select: none;
 }
@@ -384,8 +392,8 @@ button {
   color: var(--text);
 }
 .chevron {
-  font-size: 9px;
-  display: inline-block;
+  flex: 0 0 auto;
+  display: block;
   transition: transform 0.12s ease;
 }
 .chevron.open {
@@ -401,15 +409,18 @@ button {
   flex: 1;
 }
 .group-count {
-  opacity: 0.55;
+  color: var(--tab-blue);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 .group-body {
   padding-bottom: 4px;
+  padding-left: 10px;
 }
 .branch-row.tag {
   cursor: pointer;
 }
-.branch-row.tag.selected {
+.branch-row.selected {
   background: var(--bg-elev2);
 }
 .tag-glyph {
@@ -422,7 +433,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 5px 14px;
+  padding: 2px 14px;
   cursor: pointer;
   gap: 6px;
 }
@@ -432,7 +443,8 @@ button {
 .branch-row.head {
   cursor: default;
 }
-.branch-row.head .branch-name {
+.branch-row.head .branch-name,
+.branch-row.worktree.current .branch-name {
   color: var(--accent);
   font-weight: 600;
 }
@@ -467,6 +479,54 @@ button {
 }
 .behind {
   color: var(--del);
+}
+
+/* sidebar: row dividers, header hover-actions, worktree + stash rows */
+.group-body .branch-row + .branch-row {
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+.group-actions {
+  display: none;
+  align-items: center;
+  gap: 2px;
+}
+.sidebar-title:hover .group-actions {
+  display: inline-flex;
+}
+.group-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.group-action:hover {
+  color: var(--text);
+  background: var(--bg-elev2);
+}
+.wt-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mod);
+  flex: 0 0 auto;
+}
+.wt-lock {
+  font-size: 10px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+.stash-time {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 /* ---------- commit graph ---------- */

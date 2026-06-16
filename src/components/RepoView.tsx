@@ -14,6 +14,8 @@ import type {
   StatusResult,
   TagInfo,
   WorkStats,
+  WorktreeInfo,
+  StashInfo,
 } from "../types";
 import { avatarUrl, type AvatarContext, hasUncommittedChange, relativeTime } from "../util";
 import Toolbar from "./Toolbar";
@@ -29,18 +31,23 @@ interface Props {
   path: string;
   isActive: boolean;
   onLoaded: (path: string, info: RepoInfo) => void;
+  /// Open another repo path as a tab (App-level). Used to open a worktree.
+  onOpenPath: (path: string) => void;
 }
 
 /// All the per-repository state and UI for one tab. Instances stay mounted while
 /// their tab exists, so switching tabs preserves scroll + selection. Each
 /// instance only talks to the backend while it is the active tab; on activation
 /// it re-points the shared backend at its own path before issuing commands.
-export default function RepoView({ path, isActive, onLoaded }: Props) {
+export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props) {
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   const [nodes, setNodes] = useState<CommitNode[]>([]);
   const [hiddenStashes, setHiddenStashes] = useState<string[]>([]);
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
+  const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
+  const [stashes, setStashes] = useState<StashInfo[]>([]);
+  const [wips, setWips] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<StatusResult>(EMPTY_STATUS);
   const [workStats, setWorkStats] = useState<WorkStats | null>(null);
 
@@ -210,12 +217,22 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
         setNodes(g);
         setBranches(b);
         setTags(t);
+        // Worktrees/stashes load off the awaited path: list_worktrees shells out
+        // to the git CLI, so a CLI failure must degrade only those two sections,
+        // never blank the graph/branches/tags (which would also block retry).
+        api.listWorktrees(path).then(setWorktrees).catch(() => {});
+        api.listStashes(path).then(setStashes).catch(() => {});
       }
       if (withStats) refreshStats();
       return s;
     },
     [path, graphLimit, refreshStats]
   );
+
+  // Per-worktree dirty ("WIP") indicators are an opt-in scan: each worktree is
+  // opened and status-walked, so this runs on demand (first load + the sidebar
+  // "refresh WIPs" button + after adding a worktree), never on the hot path.
+  const refreshWips = useCallback(() => api.worktreeWips(path).then(setWips), [path]);
 
   // Load another page of commits into the graph (search beyond the window).
   const loadMore = () =>
@@ -264,6 +281,7 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
         onLoaded(path, info);
         if (!loadedRef.current) {
           await refresh();
+          refreshWips().catch(() => {});
           loadedRef.current = true;
         }
       } catch (e) {
@@ -827,9 +845,10 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
     notify("Stash hidden (reopen to show)");
   };
 
-  const showStashMenu = async (node: CommitNode) => {
-    const sha = node.id;
-    const items = await Promise.all([
+  // Shared stash context-menu items. The graph variant appends a Separator +
+  // "Hide"; the sidebar variant uses them as-is.
+  const stashMenuItems = (sha: string, message: string) =>
+    Promise.all([
       MenuItem.new({ text: "Apply Stash", action: () => stashApply(sha) }),
       MenuItem.new({ text: "Pop Stash", action: () => stashPop(sha) }),
       MenuItem.new({ text: "Delete Stash", action: () => stashDrop(sha) }),
@@ -838,14 +857,48 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
         text: "Edit stash message…",
         action: () =>
           askName("Edit stash message", "stash message", (m) => stashEdit(sha, m), {
-            initial: node.summary,
+            initial: message,
             cta: "Save",
           }),
       }),
-      PredefinedMenuItem.new({ item: "Separator" }),
-      MenuItem.new({ text: "Hide", action: () => hideStash(sha) }),
     ]);
+
+  const showStashMenu = async (node: CommitNode) => {
+    const sha = node.id;
+    const items = [
+      ...(await stashMenuItems(sha, node.summary)),
+      await PredefinedMenuItem.new({ item: "Separator" }),
+      await MenuItem.new({ text: "Hide", action: () => hideStash(sha) }),
+    ];
     await (await Menu.new({ items })).popup();
+  };
+
+  const showSidebarStashMenu = async (stash: StashInfo) => {
+    const items = await stashMenuItems(stash.sha, stash.message);
+    await (await Menu.new({ items })).popup();
+  };
+
+  // --- worktree (sidebar) actions ---
+  const refreshWipsManually = () =>
+    refreshWips()
+      .then(() => notify("Refreshed worktree changes"))
+      .catch((e) => notify(String(e), true));
+
+  const addWorktreeFlow = async () => {
+    const dir = await api.pickRepoFolder("Choose the new worktree folder");
+    if (!dir) return;
+    askName(
+      "New worktree branch",
+      "branch (new or existing)",
+      (branch) =>
+        run(async () => {
+          const out = await api.addWorktree(path, dir, branch);
+          await refresh();
+          await refreshWips();
+          notify(out.trim() || `Added worktree at ${dir}`);
+        }),
+      { cta: "Add" }
+    );
   };
 
   const showCommitMenu = async (node: CommitNode) => {
@@ -1128,6 +1181,9 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
         <Sidebar
           branches={branches}
           tags={tags}
+          worktrees={worktrees}
+          stashes={stashes}
+          wips={wips}
           selectedCommit={selectedCommit}
           onCheckout={onCheckout}
           onMerge={onMerge}
@@ -1136,6 +1192,11 @@ export default function RepoView({ path, isActive, onLoaded }: Props) {
           onCheckoutTag={onCheckoutTag}
           onTagMenu={showTagMenu}
           onSectionMenu={showSectionMenu}
+          onOpenWorktree={onOpenPath}
+          onRefreshWips={refreshWipsManually}
+          onAddWorktree={() => void addWorktreeFlow()}
+          onSelectStash={selectCommit}
+          onStashMenu={showSidebarStashMenu}
         />
 
         <div className={`center${diff ? " has-diff" : ""}`}>

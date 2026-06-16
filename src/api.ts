@@ -9,14 +9,16 @@ import type {
   StatusResult,
   TagInfo,
   WorkStats,
+  StashInfo,
+  WorktreeInfo,
 } from "./types";
 
 /// Native folder picker - the "connect to my repos" entry point.
-export async function pickRepoFolder(): Promise<string | null> {
+export async function pickRepoFolder(title = "Open a Git repository"): Promise<string | null> {
   const selected = await open({
     directory: true,
     multiple: false,
-    title: "Open a Git repository",
+    title,
   });
   return typeof selected === "string" ? selected : null;
 }
@@ -33,6 +35,13 @@ export const commitAvatars = (repo: string, emails: string[]) =>
   invoke<Record<string, string>>("commit_avatars", { repo, emails });
 export const listBranches = (repo: string) => invoke<BranchInfo[]>("list_branches", { repo });
 export const listTags = (repo: string) => invoke<TagInfo[]>("list_tags", { repo });
+export const listStashes = (repo: string) => invoke<StashInfo[]>("list_stashes", { repo });
+export const listWorktrees = (repo: string) =>
+  invoke<WorktreeInfo[]>("list_worktrees", { repo });
+export const worktreeWips = (repo: string) =>
+  invoke<Record<string, boolean>>("worktree_wips", { repo });
+export const addWorktree = (repo: string, path: string, branch: string) =>
+  invoke<string>("add_worktree", { repo, path, branch });
 export const fileDiff = (repo: string, path: string, staged: boolean, full = false) =>
   invoke<FileDiff>("file_diff", { repo, path, staged, full });
 export const fileContent = (

@@ -1,6 +1,32 @@
 use super::{run_git, workdir};
 use crate::error::{AppError, AppResult};
 use git2::{BranchType, Repository};
+use serde::Serialize;
+
+#[derive(Serialize)]
+pub struct StashInfo {
+    pub sha: String,
+    pub index: usize,
+    pub message: String,
+    pub time: i64,
+}
+
+/// List the full stash stack (index 0 = newest). `stash_foreach` yields each
+/// entry's index/message/oid; commit times are looked up afterwards because the
+/// callback cannot re-borrow the repo while the walk holds it.
+pub fn list_stashes(repo: &mut Repository) -> AppResult<Vec<StashInfo>> {
+    let mut entries: Vec<(usize, git2::Oid, String)> = Vec::new();
+    repo.stash_foreach(|index, message, oid| {
+        entries.push((index, *oid, message.to_string()));
+        true
+    })?;
+    let mut out = Vec::with_capacity(entries.len());
+    for (index, oid, message) in entries {
+        let time = repo.find_commit(oid).map(|c| c.time().seconds()).unwrap_or(0);
+        out.push(StashInfo { sha: oid.to_string(), index, message, time });
+    }
+    Ok(out)
+}
 
 pub fn commit(repo: &Repository, message: &str) -> AppResult<String> {
     if message.trim().is_empty() {

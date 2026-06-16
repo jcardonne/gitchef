@@ -100,6 +100,22 @@ export interface TagInfo {
   target: string; // commit SHA the tag points at
 }
 
+export interface WorktreeInfo {
+  name: string;
+  path: string;
+  branch: string | null; // null when the worktree's HEAD is detached
+  is_main: boolean;
+  is_current: boolean; // the worktree this tab is opened on
+  locked: boolean;
+}
+
+export interface StashInfo {
+  sha: string; // the stash commit oid - what the stash actions address
+  index: number; // position in the stash stack (0 = newest)
+  message: string;
+  time: number; // unix seconds
+}
+
 // Origin char from libgit2: context, added, removed, the eof-newline markers,
 // and the file/hunk headers (filtered out before reaching DiffViewer).
 export type DiffLineOrigin = " " | "+" | "-" | ">" | "<" | "F" | "H";

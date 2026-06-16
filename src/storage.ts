@@ -20,15 +20,26 @@ export function setChangesView(view: ChangesView): void {
 
 const SIDEBAR_KEY = "gitchef.sidebarGroups";
 
-/// Expanded/collapsed state of the sidebar's Local / Remote / Tags sections.
+/// Expanded/collapsed state of the sidebar sections.
 export interface SidebarGroups {
   local: boolean;
   remote: boolean;
   tags: boolean;
+  worktrees: boolean;
+  stashes: boolean;
 }
 
+/// Defaults merged over any stored value, so sections added after a user's
+/// prefs were first written still default to open instead of undefined/closed.
 export function getSidebarGroups(): SidebarGroups {
-  return read<SidebarGroups>(SIDEBAR_KEY, { local: true, remote: true, tags: true });
+  return {
+    local: true,
+    remote: true,
+    tags: true,
+    worktrees: true,
+    stashes: true,
+    ...read<Partial<SidebarGroups>>(SIDEBAR_KEY, {}),
+  };
 }
 
 export function setSidebarGroups(groups: SidebarGroups): void {
