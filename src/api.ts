@@ -148,5 +148,7 @@ export const openDefault = (repo: string, path: string) =>
   invoke<void>("open_default", { repo, path });
 export const openInEditor = (repo: string, path: string) =>
   invoke<void>("open_in_editor", { repo, path });
+export const openCommitFileInEditor = (repo: string, sha: string, path: string) =>
+  invoke<void>("open_commit_file_in_editor", { repo, sha, path });
 export const openDifftool = (repo: string, path: string) =>
   invoke<void>("open_difftool", { repo, path });

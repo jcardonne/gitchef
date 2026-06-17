@@ -10,6 +10,23 @@ fn abs(repo: &Repository, rel: &str) -> AppResult<String> {
     Ok(workdir(repo)?.join(rel).to_string_lossy().into_owned())
 }
 
+/// The target itself if it exists on disk, otherwise its nearest existing
+/// ancestor directory. Lets "Show in Finder" still open somewhere useful for a
+/// commit's file that no longer exists in the working tree (deleted/renamed).
+fn nearest_existing(target: &str) -> std::path::PathBuf {
+    let mut p: &Path = Path::new(target);
+    if p.exists() {
+        return p.to_path_buf();
+    }
+    while let Some(parent) = p.parent() {
+        if parent.exists() {
+            return parent.to_path_buf();
+        }
+        p = parent;
+    }
+    Path::new(target).to_path_buf()
+}
+
 // --- bulk staging (multi-select) ---
 
 /// Stage a batch in ONE index write. The old per-path helper re-opened and
@@ -340,16 +357,34 @@ pub fn copy_text(text: &str) -> AppResult<()> {
 /// Reveal a file in the OS file manager (selecting it where supported).
 pub fn reveal_in_finder(repo: &Repository, path: &str) -> AppResult<()> {
     let target = abs(repo, path)?;
+    // The working-tree file may be gone (revealing a file from an old commit);
+    // fall back to the nearest existing folder so Finder still opens.
+    let exists = Path::new(&target).exists();
+    let reveal = nearest_existing(&target);
     #[cfg(target_os = "macos")]
-    Command::new("open").arg("-R").arg(&target).spawn()?;
+    {
+        // `-R` selects the file; without it we just open the folder.
+        if exists {
+            Command::new("open").arg("-R").arg(&reveal).spawn()?;
+        } else {
+            Command::new("open").arg(&reveal).spawn()?;
+        }
+    }
     #[cfg(target_os = "windows")]
-    Command::new("explorer").arg(format!("/select,{target}")).spawn()?;
+    {
+        if exists {
+            Command::new("explorer").arg(format!("/select,{}", reveal.display())).spawn()?;
+        } else {
+            Command::new("explorer").arg(&reveal).spawn()?;
+        }
+    }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let dir = std::path::Path::new(&target)
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| std::path::PathBuf::from(&target));
+        let dir = if exists {
+            reveal.parent().map(|p| p.to_path_buf()).unwrap_or(reveal.clone())
+        } else {
+            reveal.clone()
+        };
         Command::new("xdg-open").arg(dir).spawn()?;
     }
     Ok(())
@@ -403,29 +438,81 @@ pub fn open_default(repo: &Repository, path: &str) -> AppResult<()> {
 
 /// Open the file in the user's configured editor (git core.editor, else $VISUAL
 /// / $EDITOR). Spawned detached so GUI editors don't block the app.
-pub fn open_in_editor(repo: &Repository, path: &str) -> AppResult<()> {
-    let dir = workdir(repo)?;
+/// Resolve the user's editor and open `target` (absolute path) with it,
+/// falling back to the OS default text editor when none is configured.
+fn open_path_in_editor(dir: &Path, target: &str) -> AppResult<()> {
     let editor = run_git(dir, &["config", "core.editor"])
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .or_else(|| std::env::var("VISUAL").ok())
         .or_else(|| std::env::var("EDITOR").ok())
-        .ok_or_else(|| {
-            AppError::Msg("no editor configured (set git core.editor or $EDITOR)".into())
-        })?;
-    // Split "code --wait" into program + args and pass the file as a separate
-    // arg - never interpolate the path into a shell string (injection).
-    let mut parts = editor.split_whitespace();
-    let program = parts
-        .next()
-        .ok_or_else(|| AppError::Msg("empty editor configuration".into()))?;
-    Command::new(program)
-        .args(parts)
-        .arg(abs(repo, path)?)
-        .current_dir(dir)
-        .spawn()?;
+        .filter(|s| !s.trim().is_empty());
+
+    match editor {
+        Some(editor) => {
+            // Split "code --wait" into program + args and pass the file as a
+            // separate arg - never interpolate the path into a shell string.
+            let mut parts = editor.split_whitespace();
+            let program = parts
+                .next()
+                .ok_or_else(|| AppError::Msg("empty editor configuration".into()))?;
+            Command::new(program).args(parts).arg(target).current_dir(dir).spawn()?;
+        }
+        // GUI apps don't inherit the shell's $EDITOR and many users never set
+        // git core.editor, so fall back to the OS default text editor rather
+        // than failing outright.
+        None => {
+            #[cfg(target_os = "macos")]
+            Command::new("open").arg("-t").arg(target).spawn()?;
+            #[cfg(target_os = "windows")]
+            Command::new("cmd").args(["/C", "start", ""]).arg(target).spawn()?;
+            #[cfg(all(unix, not(target_os = "macos")))]
+            Command::new("xdg-open").arg(target).spawn()?;
+        }
+    }
     Ok(())
+}
+
+/// Open the working-tree file in the user's editor.
+pub fn open_in_editor(repo: &Repository, path: &str) -> AppResult<()> {
+    open_path_in_editor(workdir(repo)?, &abs(repo, path)?)
+}
+
+/// Open a file as it existed in commit `sha`. If the working-tree file is still
+/// present, open that (editable); otherwise extract the commit's blob to a temp
+/// file and open that snapshot - so a file renamed or deleted since the commit
+/// can still be inspected instead of erroring with "does not exist".
+pub fn open_commit_file_in_editor(repo: &Repository, sha: &str, path: &str) -> AppResult<()> {
+    let dir = workdir(repo)?;
+    let wt = abs(repo, path)?;
+    let target = if Path::new(&wt).exists() {
+        wt
+    } else {
+        extract_commit_blob(repo, sha, path)?
+    };
+    open_path_in_editor(dir, &target)
+}
+
+/// Write a commit's version of `path` to a temp file and return its path.
+fn extract_commit_blob(repo: &Repository, sha: &str, path: &str) -> AppResult<String> {
+    let commit = repo.find_commit(git2::Oid::from_str(sha)?)?;
+    let entry = commit.tree()?.get_path(Path::new(path))?;
+    let object = entry.to_object(repo)?;
+    let blob = object
+        .as_blob()
+        .ok_or_else(|| AppError::Msg("that path is not a file in the commit".into()))?;
+    // <tmp>/gitchef/<sha7>/<rel/path> keeps the real filename so the editor
+    // shows the right name and syntax highlighting.
+    let dest = std::env::temp_dir()
+        .join("gitchef")
+        .join(&sha[..sha.len().min(7)])
+        .join(path);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&dest, blob.content())?;
+    Ok(dest.to_string_lossy().into_owned())
 }
 
 pub fn open_difftool(repo: &Repository, path: &str) -> AppResult<()> {

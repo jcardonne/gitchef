@@ -294,6 +294,11 @@ fn open_in_editor(repo: String, path: String) -> AppResult<()> {
 }
 
 #[tauri::command]
+fn open_commit_file_in_editor(repo: String, sha: String, path: String) -> AppResult<()> {
+    files::open_commit_file_in_editor(&open(&repo)?, &sha, &path)
+}
+
+#[tauri::command]
 fn open_difftool(repo: String, path: String) -> AppResult<()> {
     files::open_difftool(&open(&repo)?, &path)
 }
@@ -404,6 +409,7 @@ pub fn run() {
             reveal_in_finder,
             open_default,
             open_in_editor,
+            open_commit_file_in_editor,
             open_difftool,
             reveal_path,
             stash_all,

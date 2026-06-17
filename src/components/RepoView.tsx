@@ -657,7 +657,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     if (!selectedCommit) return;
     const sha = selectedCommit;
     const items = await Promise.all([
-      MenuItem.new({ text: "Open in editor", action: () => run(async () => void (await api.openInEditor(path, file.path))) }),
+      MenuItem.new({ text: "Open in editor", action: () => run(async () => void (await api.openCommitFileInEditor(path, sha, file.path))) }),
       MenuItem.new({ text: "Show in Finder", action: () => run(async () => void (await api.revealInFinder(path, file.path))) }),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({
