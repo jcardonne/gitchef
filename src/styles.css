@@ -1406,6 +1406,7 @@ button {
   color: var(--text-dim);
   cursor: pointer;
   font-size: 12px;
+  transition: box-shadow 0.1s ease;
 }
 .tab:hover {
   color: var(--text);
@@ -1413,6 +1414,26 @@ button {
 .tab.active {
   background: var(--bg-elev2);
   color: var(--text);
+}
+/* reorderable tabs signal grab affordance; Home is click-only */
+.tab:not(.home) {
+  cursor: grab;
+}
+/* neighbours glide aside to open the landing gap while a tab is dragged */
+.tab.shifting {
+  transition: transform 0.15s ease;
+}
+/* the dragged tab is the real element following the pointer (clamped to the
+   strip), lifted above its neighbours */
+.tab.dragging {
+  cursor: grabbing;
+  position: relative;
+  z-index: 5;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+/* FLIP: glide tabs to their new positions after a reorder */
+.tab.flipping {
+  transition: transform 0.18s ease, box-shadow 0.1s ease;
 }
 
 /* user-assigned tab colors (Excel/Warp-style); palette ids = TAB_COLORS in types.ts */

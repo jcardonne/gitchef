@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { IconMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import { Image } from "@tauri-apps/api/image";
@@ -147,12 +147,152 @@ export default function TabBar({
   onOpen,
   onSetColor,
 }: Props) {
-  const dragFrom = useRef<number | null>(null);
+  // Reorder state. `dragging` = index of the tab being dragged (lifts/styles
+  // the source); `dropIdx` = the slot it would land in, an insertion index in
+  // 0..tabs.length so the gaps and the bar's end count as targets, not just
+  // landing exactly on another tab.
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [dropIdx, setDropIdx] = useState<number | null>(null);
   const [theme, setThemeState] = useState<Theme>(getTheme());
   const cycleTheme = () => {
     const next = nextTheme(theme);
     setTheme(next);
     setThemeState(next);
+  };
+
+  // FLIP animation: tabs glide to their new positions after a reorder.
+  // `tabEls` maps repo path -> DOM node; `flipFrom` holds each tab's screen
+  // rect captured the instant before the reorder, so the layout effect can
+  // invert the delta and transition it away.
+  const tabEls = useRef<Map<string, HTMLDivElement>>(new Map());
+  const flipFrom = useRef<Map<string, DOMRect>>(new Map());
+
+  useLayoutEffect(() => {
+    const from = flipFrom.current;
+    if (from.size === 0) return; // only runs after a real reorder
+    flipFrom.current = new Map();
+    tabEls.current.forEach((el, path) => {
+      const before = from.get(path);
+      if (!before) return;
+      const dx = before.left - el.getBoundingClientRect().left;
+      if (!dx) return;
+      el.style.transform = `translateX(${dx}px)`;
+      void el.offsetWidth; // force reflow so the cleared transform animates
+      el.classList.add("flipping");
+      el.style.transform = "";
+      const done = (ev: TransitionEvent) => {
+        if (ev.propertyName !== "transform") return;
+        el.classList.remove("flipping");
+        el.removeEventListener("transitionend", done);
+      };
+      el.addEventListener("transitionend", done);
+    });
+  });
+
+  // Live drag bookkeeping. Kept in a ref (not state) so pointer moves don't
+  // each trigger a React render - the dragged tab is translated imperatively.
+  const drag = useRef<{
+    from: number;
+    el: HTMLDivElement;
+    startX: number;
+    minDx: number; // clamp so the tab can't slide past the first/last slot,
+    maxDx: number; // i.e. it stays inside the tab strip and never the window
+    centers: number[]; // original tab midpoints, for the insertion slot
+    step: number; // dragged tab's footprint (width + gap); how far neighbours part
+    active: boolean; // true only once the pointer crosses the move threshold
+    slot: number;
+  } | null>(null);
+
+  const onTabPointerDown = (e: ReactPointerEvent<HTMLDivElement>, i: number) => {
+    if (e.button !== 0) return; // left button only; right opens the menu
+    const el = e.currentTarget;
+    const rects = tabs.map((t) => tabEls.current.get(t.path)!.getBoundingClientRect());
+    const self = rects[i];
+    // Gap between adjacent tabs (the flex `gap`), measured from a real neighbour.
+    const gap =
+      rects.length < 2 ? 0 : i < rects.length - 1 ? rects[i + 1].left - rects[i].right : rects[i].left - rects[i - 1].right;
+    el.setPointerCapture(e.pointerId); // keep receiving moves even off-window
+    drag.current = {
+      from: i,
+      el,
+      startX: e.clientX,
+      minDx: rects[0].left - self.left,
+      maxDx: rects[rects.length - 1].right - self.right,
+      centers: rects.map((r) => r.left + r.width / 2),
+      step: self.width + gap,
+      active: false,
+      slot: i,
+    };
+  };
+
+  const onTabPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    const raw = e.clientX - d.startX;
+    if (!d.active) {
+      if (Math.abs(raw) < 4) return; // tolerate jitter so a click stays a click
+      d.active = true;
+      setDragging(d.from);
+    }
+    // Move the real element, clamped to the strip - this is what keeps the tab
+    // in the bar instead of floating off as an OS drag image.
+    d.el.style.transform = `translateX(${Math.max(d.minDx, Math.min(d.maxDx, raw))}px)`;
+    let slot = tabs.length;
+    for (let k = 0; k < d.centers.length; k++) {
+      if (e.clientX < d.centers[k]) {
+        slot = k;
+        break;
+      }
+    }
+    if (slot !== d.slot) {
+      d.slot = slot;
+      setDropIdx(slot);
+    }
+  };
+
+  const onTabPointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    if (d.el.hasPointerCapture(e.pointerId)) d.el.releasePointerCapture(e.pointerId);
+    drag.current = null;
+    if (d.active) commitDrop(d);
+    else onActivate(tabs[d.from].path); // no real drag -> treat as a click
+    setDragging(null);
+    setDropIdx(null);
+  };
+
+  const onTabPointerCancel = () => {
+    const d = drag.current;
+    if (!d) return;
+    d.el.style.transform = "";
+    drag.current = null;
+    setDragging(null);
+    setDropIdx(null);
+  };
+
+  const commitDrop = (d: { from: number; el: HTMLDivElement; slot: number }) => {
+    // slot indexes the original array; once the dragged tab is spliced out,
+    // every slot after it shifts left by one.
+    const to = d.slot > d.from ? d.slot - 1 : d.slot;
+    // Arm the FLIP: capture rects now, while the dragged tab still carries its
+    // drop-position transform, so it glides from where it was dropped.
+    const rects = new Map<string, DOMRect>();
+    tabEls.current.forEach((el, path) => rects.set(path, el.getBoundingClientRect()));
+    flipFrom.current = rects;
+    d.el.style.transform = ""; // hand the offset over to the FLIP animation
+    if (to !== d.from) onReorder(d.from, to);
+  };
+
+  // How far tab `j` should slide to open a gap for the dragged tab. Every tab
+  // between the source and the current target shifts by one footprint toward
+  // the source; tabs outside that range stay put.
+  const neighborShift = (j: number): number => {
+    const d = drag.current;
+    if (d === null || dropIdx === null || !d.active || j === d.from) return 0;
+    const to = dropIdx > d.from ? dropIdx - 1 : dropIdx;
+    if (to > d.from) return j > d.from && j <= to ? -d.step : 0; // dragged right
+    if (to < d.from) return j >= to && j < d.from ? d.step : 0; // dragged left
+    return 0;
   };
 
   const showTabMenu = async (t: Tab, i: number) => {
@@ -217,18 +357,24 @@ export default function TabBar({
       {tabs.map((t, i) => (
         <div
           key={t.path}
-          className={`tab${t.path === activePath ? " active" : ""}`}
-          data-tab-color={t.color}
-          draggable
-          onDragStart={() => (dragFrom.current = i)}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={() => {
-            if (dragFrom.current !== null && dragFrom.current !== i) {
-              onReorder(dragFrom.current, i);
-            }
-            dragFrom.current = null;
+          ref={(el) => {
+            if (el) tabEls.current.set(t.path, el);
+            else tabEls.current.delete(t.path);
           }}
-          onClick={() => onActivate(t.path)}
+          className={
+            `tab${t.path === activePath ? " active" : ""}` +
+            `${dragging === i ? " dragging" : ""}` +
+            // Neighbours animate as they part to open the landing gap.
+            `${dragging !== null && dragging !== i ? " shifting" : ""}`
+          }
+          // Dragged tab is moved imperatively (lag-free); neighbours are shifted
+          // here via React so they slide to make room.
+          style={dragging !== null && dragging !== i ? { transform: `translateX(${neighborShift(i)}px)` } : undefined}
+          data-tab-color={t.color}
+          onPointerDown={(e) => onTabPointerDown(e, i)}
+          onPointerMove={onTabPointerMove}
+          onPointerUp={onTabPointerUp}
+          onPointerCancel={onTabPointerCancel}
           onContextMenu={(e) => {
             e.preventDefault();
             void showTabMenu(t, i);
@@ -238,6 +384,8 @@ export default function TabBar({
           <span className="tab-name">{t.name}</span>
           <span
             className="tab-close"
+            // Swallow pointerdown so clicking ✕ never arms a drag.
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               onClose(t.path);
