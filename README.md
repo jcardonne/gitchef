@@ -10,6 +10,20 @@
 
 GitChef is a desktop Git client built with [Tauri](https://tauri.app) and React. It pairs a tabbed, multi-repository workspace with a fast commit graph, inline diffs, and a focused staging flow, all inside a small native window.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/commit-graph.png" alt="GitChef commit graph with branches, tags, stashes, and per-author avatars next to a commit detail panel" width="100%" />
+  <br />
+  <em>Browse history as a commit graph - branches, tags, remotes, stashes, and real author avatars.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/staging-diff.png" alt="GitChef staging flow: inline diff viewer alongside the staging panel and commit composer" width="100%" />
+  <br />
+  <em>Stage changes and read inline diffs side by side, then commit - all in one view.</em>
+</p>
+
 ## Features
 
 - **Tabbed workspace** - keep multiple repositories open, color-code tabs to tell them apart, and switch between them.
