@@ -163,6 +163,7 @@ function ChangeList({
         const tf = orderedFiles[target];
         onSelectionChange(new Set([keyOf(tf)]));
         anchor.current = tf;
+        onShowDiff(tf); // mirror the commit-file list: arrow nav updates the preview
       }
     } else if (e.key === " ") {
       e.preventDefault();
