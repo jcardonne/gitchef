@@ -1,6 +1,7 @@
 use super::{run_git, workdir};
 use crate::error::{AppError, AppResult};
-use git2::{BranchType, Repository};
+use crate::git::repo;
+use git2::Repository;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -54,25 +55,14 @@ pub fn commit(repo: &Repository, message: &str) -> AppResult<String> {
 /// of git erroring with "has no upstream branch".
 pub fn push(repo: &Repository) -> AppResult<String> {
     let dir = workdir(repo)?;
-    let head = repo.head()?;
-    if !head.is_branch() {
+    if !repo.head()?.is_branch() {
         return run_git(dir, &["push"]); // detached HEAD: let git decide
     }
-    let branch_name = head.shorthand().unwrap_or("HEAD").to_string();
     // Push to the existing upstream only when it has the SAME name. Otherwise
     // (no upstream, or one pointing at a differently-named branch) publish the
     // current branch to origin/<name> and set tracking - this sidesteps the
     // push.default=simple "upstream does not match the name" failure.
-    let same_name_upstream = repo
-        .find_branch(&branch_name, BranchType::Local)
-        .ok()
-        .and_then(|b| b.upstream().ok())
-        .and_then(|u| u.get().name().map(str::to_string))
-        .and_then(|full| full.strip_prefix("refs/remotes/").map(str::to_string))
-        .and_then(|short| short.split_once('/').map(|(_remote, b)| b.to_string()))
-        .map(|up_branch| up_branch == branch_name)
-        .unwrap_or(false);
-    if same_name_upstream {
+    if repo::same_name_upstream(repo) {
         run_git(dir, &["push"])
     } else {
         run_git(dir, &["push", "-u", "origin", "HEAD"])

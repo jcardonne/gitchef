@@ -18,19 +18,16 @@ pub struct RepoInfo {
     /// True when the current branch tracks a same-name remote branch. Drives the
     /// toolbar's "Push" vs "Publish" affordance.
     pub has_upstream: bool,
-    /// Host of the primary remote (origin, else the first remote), lowercased -
-    /// e.g. "github.com", "gitlab.com", "gitlab.example.com". None when the repo
-    /// has no remote. Lets the UI build the GitLab avatar-API host.
-    pub remote_host: Option<String>,
-    /// Provider inferred from `remote_host` so the UI can pick an avatar source;
-    /// None for self-hosted / unknown hosts (the UI then falls back to Gravatar).
+    /// Provider inferred from the primary remote's host so the UI can pick an
+    /// avatar source; None for self-hosted / unknown hosts (the UI then falls
+    /// back to Gravatar).
     pub provider: Option<RemoteProvider>,
 }
 
 /// Whether the current branch has an upstream of the *same name* on a remote.
 /// No upstream, or one pointing at a differently-named branch, both return false
 /// - those are exactly the cases where push must `-u origin HEAD` to publish.
-fn same_name_upstream(repo: &Repository) -> bool {
+pub(crate) fn same_name_upstream(repo: &Repository) -> bool {
     let head = match repo.head() {
         Ok(h) if h.is_branch() => h,
         _ => return false,
@@ -202,9 +199,12 @@ pub fn info(repo: &Repository) -> AppResult<RepoInfo> {
         Err(_) => None, // unborn branch (fresh repo, no commits yet)
     };
     let has_upstream = same_name_upstream(repo);
-    let remote_host = primary_remote_url(repo).as_deref().and_then(host_from_url);
-    let provider = remote_host.as_deref().and_then(provider_for);
-    Ok(RepoInfo { path, name, head, has_upstream, remote_host, provider })
+    let provider = primary_remote_url(repo)
+        .as_deref()
+        .and_then(host_from_url)
+        .as_deref()
+        .and_then(provider_for);
+    Ok(RepoInfo { path, name, head, has_upstream, provider })
 }
 
 /// Working-tree status split into what's staged (index vs HEAD) and what's not

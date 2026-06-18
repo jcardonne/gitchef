@@ -9,11 +9,8 @@ export interface RepoInfo {
   // True when the current branch tracks a same-name remote branch; false means
   // push must publish (-u origin HEAD) first.
   has_upstream: boolean;
-  // Host of the primary remote (origin, else first remote), e.g. "github.com",
-  // "gitlab.com", "gitlab.example.com"; null when the repo has no remote.
-  remote_host: string | null;
-  // Provider inferred from remote_host, or null for self-hosted / unknown hosts
-  // (avatars then fall back to Gravatar).
+  // Provider inferred from the primary remote's host, or null for self-hosted /
+  // unknown hosts (avatars then fall back to Gravatar).
   provider: RemoteProvider | null;
 }
 
