@@ -972,6 +972,9 @@ button {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
 }
+.rename-from {
+  color: var(--text-dim);
+}
 .status-glyph {
   width: 16px;
   height: 16px;

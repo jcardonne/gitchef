@@ -46,6 +46,7 @@ export type FileStatusKind =
 
 export interface FileStatus {
   path: string;
+  old_path: string | null;
   status: FileStatusKind;
   staged: boolean;
 }
@@ -131,7 +132,9 @@ export interface DiffHunk {
 
 export interface FileDiff {
   path: string;
+  old_path: string | null;
   binary: boolean;
+  status: FileStatusKind;
   hunks: DiffHunk[];
   truncated: boolean;
 }

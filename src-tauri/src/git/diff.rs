@@ -1,7 +1,8 @@
 use crate::error::{AppError, AppResult};
-use git2::{DiffFormat, DiffOptions, Oid, Repository};
+use git2::{Delta, DiffFindOptions, DiffFormat, DiffOptions, Oid, Repository};
 use serde::Serialize;
 use std::path::Path;
+use super::repo::FileStatusKind;
 
 #[derive(Serialize)]
 pub struct DiffLine {
@@ -21,6 +22,10 @@ pub struct DiffHunk {
 pub struct FileDiff {
     pub path: String,
     pub binary: bool,
+    pub status: FileStatusKind,
+    /// Rename source (pre-rename path) when `status` is `renamed`; `None`
+    /// otherwise. Lets the commit/compare file list show "old -> new".
+    pub old_path: Option<String>,
     pub hunks: Vec<DiffHunk>,
     /// True when the diff was capped; the UI offers a "Load full file" action.
     pub truncated: bool,
@@ -28,8 +33,21 @@ pub struct FileDiff {
 
 impl FileDiff {
     /// A content-less diff (no hunks) - used for "no changes" and binary files.
-    fn empty(path: &str, binary: bool) -> Self {
-        Self { path: path.to_string(), binary, hunks: Vec::new(), truncated: false }
+    fn empty(path: &str, binary: bool, status: FileStatusKind) -> Self {
+        Self { path: path.to_string(), binary, status, old_path: None, hunks: Vec::new(), truncated: false }
+    }
+}
+
+/// Map a libgit2 delta to the UI's file-status kind. Copies surface as new
+/// files; unmodified/ignored/unreadable never appear in the diffs we build.
+fn delta_kind(delta: Delta) -> FileStatusKind {
+    match delta {
+        Delta::Added | Delta::Untracked | Delta::Copied => FileStatusKind::New,
+        Delta::Deleted => FileStatusKind::Deleted,
+        Delta::Renamed => FileStatusKind::Renamed,
+        Delta::Typechange => FileStatusKind::Typechange,
+        Delta::Conflicted => FileStatusKind::Conflicted,
+        _ => FileStatusKind::Modified,
     }
 }
 
@@ -72,9 +90,17 @@ fn diff_to_files(diff: &git2::Diff, max: usize) -> AppResult<Vec<FileDiff>> {
             .unwrap_or_default();
 
         if files.last().map(|f| f.path != path).unwrap_or(true) {
+            let st = delta.status();
+            let old_path = if matches!(st, Delta::Renamed) {
+                delta.old_file().path().map(|p| p.to_string_lossy().into_owned())
+            } else {
+                None
+            };
             files.push(FileDiff {
                 path: path.clone(),
                 binary: delta.flags().is_binary(),
+                status: delta_kind(st),
+                old_path,
                 hunks: Vec::new(),
                 truncated: false,
             });
@@ -148,7 +174,7 @@ pub fn file_diff(repo: &Repository, path: &str, staged: bool, full: bool) -> App
     if is_new_in_head(repo, path) {
         return whole_file_as_added(repo, path, max);
     }
-    Ok(structured.unwrap_or_else(|| FileDiff::empty(path, false)))
+    Ok(structured.unwrap_or_else(|| FileDiff::empty(path, false, FileStatusKind::Modified)))
 }
 
 /// True if `path` does not exist in the HEAD tree (i.e. it's a new file).
@@ -164,7 +190,7 @@ fn is_new_in_head(repo: &Repository, path: &str) -> bool {
 fn whole_file_as_added(repo: &Repository, path: &str, max: usize) -> AppResult<FileDiff> {
     let bytes = std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default();
     if bytes.iter().take(8000).any(|&b| b == 0) {
-        return Ok(FileDiff::empty(path, true));
+        return Ok(FileDiff::empty(path, true, FileStatusKind::New));
     }
     let text = String::from_utf8_lossy(&bytes);
     let total = text.lines().count();
@@ -188,6 +214,8 @@ fn whole_file_as_added(repo: &Repository, path: &str, max: usize) -> AppResult<F
     Ok(FileDiff {
         path: path.to_string(),
         binary: false,
+        status: FileStatusKind::New,
+        old_path: None,
         hunks: vec![DiffHunk { header, lines }],
         truncated: total > shown,
     })
@@ -252,13 +280,24 @@ fn read_file_bytes(
     Ok(std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default())
 }
 
+/// Rename detection for the commit + compare file lists. Without it libgit2
+/// reports a rename as a delete+add pair; `find_similar` collapses that pair
+/// into one `Renamed` delta. `for_untracked` lets a move into a not-yet-staged
+/// path still pair with its tracked source (matters for `compare_workdir`).
+fn find_renames() -> DiffFindOptions {
+    let mut opts = DiffFindOptions::new();
+    opts.renames(true).for_untracked(true);
+    opts
+}
+
 /// Diff between a commit and the current working tree (incl. staged changes).
 pub fn compare_workdir(repo: &Repository, sha: &str) -> AppResult<Vec<FileDiff>> {
     let oid = Oid::from_str(sha).map_err(|e| AppError::Msg(format!("invalid commit id: {e}")))?;
     let tree = repo.find_commit(oid)?.tree()?;
     let mut opts = DiffOptions::new();
     opts.include_untracked(true).recurse_untracked_dirs(true);
-    let diff = repo.diff_tree_to_workdir_with_index(Some(&tree), Some(&mut opts))?;
+    let mut diff = repo.diff_tree_to_workdir_with_index(Some(&tree), Some(&mut opts))?;
+    diff.find_similar(Some(&mut find_renames()))?;
     diff_to_files(&diff, MAX_DIFF_LINES)
 }
 
@@ -269,7 +308,8 @@ pub fn commit_diff(repo: &Repository, id: &str) -> AppResult<Vec<FileDiff>> {
     let tree = commit.tree()?;
     let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
     let mut opts = DiffOptions::new();
-    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))?;
+    let mut diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))?;
+    diff.find_similar(Some(&mut find_renames()))?;
     diff_to_files(&diff, MAX_DIFF_LINES)
 }
 
@@ -373,4 +413,32 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
     }
+    #[test]
+    fn commit_diff_collapses_a_rename() {
+        let dir = tmp("rename");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("old.txt"), "alpha\nbeta\ngamma\n").unwrap();
+        run_git(&dir, &["add", "old.txt"]).unwrap();
+        run_git(&dir, &["commit", "-m", "add"]).unwrap();
+        // Pure rename (100% similar) -> must surface as one Renamed entry, not a
+        // delete + add pair, once find_similar runs in commit_diff.
+        run_git(&dir, &["mv", "old.txt", "new.txt"]).unwrap();
+        run_git(&dir, &["commit", "-m", "rename"]).unwrap();
+        let sha = run_git(&dir, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+
+        let files = super::commit_diff(&fresh(&dir), &sha).unwrap();
+        let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(files.len(), 1, "rename should collapse to one row, got {paths:?}");
+        assert_eq!(files[0].path, "new.txt");
+        assert_eq!(files[0].old_path.as_deref(), Some("old.txt"));
+        assert!(
+            matches!(files[0].status, crate::git::repo::FileStatusKind::Renamed),
+            "expected Renamed status"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
 }

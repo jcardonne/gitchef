@@ -1,5 +1,5 @@
 use crate::error::AppResult;
-use git2::{DiffOptions, Repository, Status, StatusOptions};
+use git2::{DiffDelta, DiffOptions, Repository, Status, StatusOptions};
 use serde::Serialize;
 use std::path::Path;
 
@@ -62,6 +62,9 @@ pub enum FileStatusKind {
 #[derive(Serialize)]
 pub struct FileStatus {
     pub path: String,
+    /// Pre-rename path when `status` is `renamed` (else `None`). Lets the UI show
+    /// "old -> new" and stage/unstage/discard both sides of the rename together.
+    pub old_path: Option<String>,
     pub status: FileStatusKind,
     pub staged: bool,
 }
@@ -214,7 +217,9 @@ pub fn status(repo: &Repository) -> AppResult<StatusResult> {
     let mut opts = StatusOptions::new();
     opts.include_untracked(true)
         .recurse_untracked_dirs(true)
-        .include_ignored(false);
+        .include_ignored(false)
+        .renames_head_to_index(true)
+        .renames_index_to_workdir(true);
     let statuses = repo.statuses(Some(&mut opts))?;
 
     let mut staged = Vec::new();
@@ -224,7 +229,7 @@ pub fn status(repo: &Repository) -> AppResult<StatusResult> {
         let path = entry.path().unwrap_or_default().to_string();
 
         if s.is_conflicted() {
-            unstaged.push(FileStatus { path, status: FileStatusKind::Conflicted, staged: false });
+            unstaged.push(FileStatus { path, old_path: None, status: FileStatusKind::Conflicted, staged: false });
             continue;
         }
         if s.intersects(
@@ -234,7 +239,9 @@ pub fn status(repo: &Repository) -> AppResult<StatusResult> {
                 | Status::INDEX_RENAMED
                 | Status::INDEX_TYPECHANGE,
         ) {
-            staged.push(FileStatus { path: path.clone(), status: label_status(s, true), staged: true });
+            let kind = label_status(s, true);
+            let (path, old_path) = side_paths(entry.head_to_index(), kind, &path);
+            staged.push(FileStatus { path, old_path, status: kind, staged: true });
         }
         if s.intersects(
             Status::WT_NEW
@@ -243,7 +250,9 @@ pub fn status(repo: &Repository) -> AppResult<StatusResult> {
                 | Status::WT_RENAMED
                 | Status::WT_TYPECHANGE,
         ) {
-            unstaged.push(FileStatus { path, status: label_status(s, false), staged: false });
+            let kind = label_status(s, false);
+            let (path, old_path) = side_paths(entry.index_to_workdir(), kind, &path);
+            unstaged.push(FileStatus { path, old_path, status: kind, staged: false });
         }
     }
     Ok(StatusResult { staged, unstaged })
@@ -268,6 +277,31 @@ fn label_status(s: Status, staged: bool) -> FileStatusKind {
     } else {
         FileStatusKind::Modified
     }
+}
+
+/// Resolve one status side (staged or unstaged) to (path, rename-source) from
+/// THAT side's diff delta. The entry's own `path()` is unreliable for the new
+/// name - libgit2 returns the OLD name whenever anything is staged - so read the
+/// path from the delta's `new_file` (falling back to `old_file`, then the entry
+/// path). `old_path` is set only for an actual rename.
+fn side_paths(
+    delta: Option<DiffDelta<'_>>,
+    kind: FileStatusKind,
+    fallback: &str,
+) -> (String, Option<String>) {
+    let Some(d) = delta else {
+        return (fallback.to_string(), None);
+    };
+    let path = d
+        .new_file()
+        .path()
+        .or_else(|| d.old_file().path())
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| fallback.to_string());
+    let old_path = matches!(kind, FileStatusKind::Renamed)
+        .then(|| d.old_file().path().map(|p| p.to_string_lossy().into_owned()))
+        .flatten();
+    (path, old_path)
 }
 
 #[cfg(test)]
@@ -317,4 +351,61 @@ mod tests {
             assert_eq!(remote_path_from_url(url).as_deref(), want, "remote_path_from_url({url})");
         }
     }
+    #[test]
+    fn status_detects_staged_and_unstaged_renames() {
+        let dir = std::env::temp_dir().join(format!(
+            "gitchef-renstat-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let git = |args: &[&str]| crate::git::run_git(&dir, args).unwrap();
+        Repository::init(&dir).unwrap();
+        git(&["config", "user.email", "t@t.t"]);
+        git(&["config", "user.name", "t"]);
+        std::fs::write(dir.join("old.txt"), "alpha\nbeta\ngamma\ndelta\n").unwrap();
+        git(&["add", "old.txt"]);
+        git(&["commit", "-m", "init"]);
+
+        // Unstaged rename: move on disk only; the new path is untracked.
+        std::fs::rename(dir.join("old.txt"), dir.join("new.txt")).unwrap();
+        let st = status(&Repository::open(&dir).unwrap()).unwrap();
+        let r = st
+            .unstaged
+            .iter()
+            .find(|f| matches!(f.status, FileStatusKind::Renamed))
+            .expect("unstaged rename detected");
+        assert_eq!(r.path, "new.txt");
+        assert_eq!(r.old_path.as_deref(), Some("old.txt"));
+
+        // Stage it -> the rename moves to the staged side.
+        git(&["add", "-A"]);
+        let st = status(&Repository::open(&dir).unwrap()).unwrap();
+        let r = st
+            .staged
+            .iter()
+            .find(|f| matches!(f.status, FileStatusKind::Renamed))
+            .expect("staged rename detected");
+        assert_eq!(r.path, "new.txt");
+        assert_eq!(r.old_path.as_deref(), Some("old.txt"));
+
+        // Rename staged, then edit the new file: the unstaged row must point at
+        // the NEW path (libgit2's entry.path() returns the old name once
+        // anything is staged), not resurrect the old one.
+        std::fs::write(dir.join("new.txt"), "alpha\nBETA\ngamma\ndelta\n").unwrap();
+        let st = status(&Repository::open(&dir).unwrap()).unwrap();
+        let m = st
+            .unstaged
+            .iter()
+            .find(|f| matches!(f.status, FileStatusKind::Modified))
+            .expect("unstaged modify detected");
+        assert_eq!(m.path, "new.txt", "modify must point at the new name");
+        assert_eq!(m.old_path, None);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
 }
