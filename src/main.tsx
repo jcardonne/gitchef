@@ -6,6 +6,12 @@ import "./styles.css";
 
 initTheme(); // set data-theme before first paint (no flash)
 
+// Tag the OS so CSS can round the window corners on macOS. The window is
+// borderless (custom titlebar), so the OS won't round the frame itself.
+if (navigator.platform.toLowerCase().includes("mac")) {
+  document.documentElement.dataset.os = "mac";
+}
+
 if (import.meta.env.PROD) {
   window.addEventListener(
     "contextmenu",

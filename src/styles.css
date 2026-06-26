@@ -68,6 +68,18 @@ body,
   user-select: none;
 }
 
+/* macOS: the window is borderless (custom titlebar), so the OS won't round the
+   frame. A transparent window + a clipped, rounded #root yields the native
+   rounded corners + drop shadow. Mac-gated so Windows' corner-flush controls
+   stay square. Requires app.macOSPrivateApi + the macos-private-api feature. */
+:root[data-os="mac"],
+:root[data-os="mac"] body {
+  background: transparent;
+}
+:root[data-os="mac"] #root {
+  border-radius: 10px;
+}
+
 /* Re-enable selection only where it's wanted: diff content + commit message. */
 .diff-scroll,
 textarea,

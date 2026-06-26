@@ -10,6 +10,7 @@
     "beforeBuildCommand": "pnpm build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "GitChef",
@@ -18,6 +19,7 @@
         "minWidth": 940,
         "minHeight": 600,
         "decorations": false,
+        "transparent": true,
         "dragDropEnabled": false
       }
     ],
