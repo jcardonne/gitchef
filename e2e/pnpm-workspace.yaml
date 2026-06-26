@@ -1,0 +1,13 @@
+# Standalone workspace root for the e2e project. Without this file pnpm walks
+# up, treats the repo-root pnpm-workspace.yaml as the workspace root, and
+# `pnpm install` here skips e2e/node_modules (wdio "not found" in CI). It also
+# carries build-script decisions, since pnpm 11 ignores the package.json
+# `pnpm` field. Dual key spans the pnpm 10 (CI) / 11 (local) split.
+onlyBuiltDependencies: # pnpm 10
+  - esbuild
+allowBuilds: # pnpm 11+
+  esbuild: true
+  # Unused driver managers (e2e drives WebKit via tauri-driver); deny their
+  # postinstall binary downloads instead of leaving them "undecided".
+  edgedriver: false
+  geckodriver: false

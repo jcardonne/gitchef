@@ -1,0 +1,14 @@
+# Build scripts are blocked by default (supply-chain hardening): a dependency
+# may NOT run install/postinstall scripts unless approved here. Keep minimal.
+# esbuild's script links its platform binary. Two keys span the pnpm split:
+# CI pins pnpm 10 (onlyBuiltDependencies); local/corepack runs pnpm 11, which
+# renamed that setting to allowBuilds. Each version ignores the other's key.
+onlyBuiltDependencies: # pnpm 10
+  - esbuild
+allowBuilds: # pnpm 11+
+  esbuild: true
+
+# Delay installing newly published versions so a freshly-compromised release
+# (usually caught within ~an hour) can't land immediately. 1440 = 24h. This is
+# pnpm 11's default; set explicitly to document intent and enable strict mode.
+minimumReleaseAge: 1440
