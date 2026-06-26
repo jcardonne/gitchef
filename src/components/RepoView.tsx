@@ -17,13 +17,14 @@ import type {
   WorktreeInfo,
   StashInfo,
 } from "../types";
-import { avatarUrl, type AvatarContext, hasUncommittedChange, relativeTime } from "../util";
+import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, relativeTime } from "../util";
 import Toolbar from "./Toolbar";
 import Sidebar from "./Sidebar";
 import GraphView from "./GraphView";
 import StagingPanel from "./StagingPanel";
 import DiffViewer from "./DiffViewer";
 import FileView from "./FileView";
+import { StatusIcon } from "./ChangeList";
 
 const EMPTY_STATUS: StatusResult = { staged: [], unstaged: [] };
 
@@ -999,7 +1000,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // --- uncommitted-changes (WIP) row actions ---
   const stageAllChanges = () =>
     run(async () => {
-      await api.stagePaths(path, status.unstaged.map((f) => f.path));
+      await api.stagePaths(path, affectedPaths(status.unstaged));
       await refresh({ history: false, stats: false });
       notify("Staged all changes");
     });
@@ -1016,8 +1017,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         { title: "Discard all changes", kind: "warning" }
       );
       if (!ok) return;
-      if (status.staged.length) await api.unstagePaths(path, status.staged.map((f) => f.path));
-      const all = [...new Set([...status.unstaged, ...status.staged].map((f) => f.path))];
+      if (status.staged.length) await api.unstagePaths(path, affectedPaths(status.staged));
+      const all = affectedPaths([...status.unstaged, ...status.staged]);
       await api.discardPaths(path, all);
       await refresh({ history: false });
       notify("Discarded all changes");
@@ -1317,13 +1318,18 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                         if (el && selectedPath === f.path) el.scrollIntoView({ block: "nearest" });
                       }}
                       className={`file-row${selectedPath === f.path ? " selected" : ""}`}
+                      title={f.old_path ? `${f.old_path} → ${f.path}` : undefined}
                       onClick={() => selectCommitFile(f)}
                       onContextMenu={(e) => {
                         e.preventDefault();
                         void showCommitFileMenu(f);
                       }}
                     >
-                      <span className="file-path">{f.path}</span>
+                      <StatusIcon status={f.status} />
+                      <span className="file-path">
+                        {f.old_path && <span className="rename-from">{f.old_path} → </span>}
+                        {f.path}
+                      </span>
                     </div>
                   ))}
                 </div>

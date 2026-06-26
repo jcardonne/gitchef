@@ -3,7 +3,7 @@ import { buildTree, flattenVisible, filesIn, type TreeFolder, type TreeNode } fr
 import type { FileStatus } from "./types";
 
 // Fixture + assertion label reused across every block (status is irrelevant here).
-const file = (path: string): FileStatus => ({ path, status: "modified", staged: false });
+const file = (path: string): FileStatus => ({ path, old_path: null, status: "modified", staged: false });
 const label = (n: TreeNode): string => (n.type === "folder" ? `d:${n.path}` : `f:${n.file.path}`);
 
 describe("buildTree", () => {

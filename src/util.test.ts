@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { avatarUrl, noreplyAvatarUrl } from "./util";
+import { affectedPaths, avatarUrl, noreplyAvatarUrl } from "./util";
+import type { FileStatus } from "./types";
 
 describe("noreplyAvatarUrl", () => {
   it("derives a GitHub avatar from the modern id-form no-reply", () => {
@@ -70,5 +71,22 @@ describe("avatarUrl precedence", () => {
     expect(await avatarUrl("500+gh@users.noreply.github.com", { accounts: new Map() })).toBe(
       "https://avatars.githubusercontent.com/u/500?s=32"
     );
+  });
+});
+
+const fs = (path: string, old_path: string | null = null): FileStatus => ({
+  path,
+  old_path,
+  status: old_path ? "renamed" : "modified",
+  staged: false,
+});
+
+describe("affectedPaths", () => {
+  it("includes a rename's source alongside its new path", () => {
+    expect(affectedPaths([fs("new.txt", "old.txt")]).sort()).toEqual(["new.txt", "old.txt"]);
+  });
+
+  it("returns only the path for non-renames and dedupes repeats", () => {
+    expect(affectedPaths([fs("a.ts"), fs("a.ts")])).toEqual(["a.ts"]);
   });
 });
