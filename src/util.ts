@@ -1,4 +1,4 @@
-import type { FileStatusKind, StatusResult } from "./types";
+import type { FileStatus, FileStatusKind, StatusResult } from "./types";
 
 // Single-letter status badge shown next to each changed file.
 export const STATUS_GLYPH: Record<FileStatusKind, string> = {
@@ -107,4 +107,16 @@ export function hasUncommittedChange(status: StatusResult, path: string): boolea
     status.staged.some((f) => f.path === path) ||
     status.unstaged.some((f) => f.path === path)
   );
+}
+
+/// The git paths a stage/unstage/discard must touch for these files. A renamed
+/// file needs BOTH its new path and its rename source (`old_path`) so the old
+/// name's deletion and the new name's addition always move together.
+export function affectedPaths(files: FileStatus[]): string[] {
+  const paths = new Set<string>();
+  for (const f of files) {
+    paths.add(f.path);
+    if (f.old_path) paths.add(f.old_path);
+  }
+  return [...paths];
 }

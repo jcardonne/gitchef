@@ -7,6 +7,7 @@ import { getChangesView, setChangesView, type ChangesView } from "../storage";
 import { useRepo, type RefreshOpts } from "../repoContext";
 import ChangeList from "./ChangeList";
 import { comboHint } from "../shortcuts";
+import { affectedPaths } from "../util";
 
 interface Props {
   status: StatusResult;
@@ -60,12 +61,12 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
 
   const stageFiles = (fs: FileStatus[]) =>
     run(async () => {
-      await api.stagePaths(repoPath, fs.map((f) => f.path));
+      await api.stagePaths(repoPath, affectedPaths(fs));
       await afterMutation({ history: false, stats: false });
     });
   const unstageFiles = (fs: FileStatus[]) =>
     run(async () => {
-      await api.unstagePaths(repoPath, fs.map((f) => f.path));
+      await api.unstagePaths(repoPath, affectedPaths(fs));
       await afterMutation({ history: false, stats: false });
     });
   const quickToggle = (f: FileStatus) => (f.staged ? unstageFiles([f]) : stageFiles([f]));
@@ -127,7 +128,7 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
         kind: "warning",
       });
       if (!ok) return;
-      await api.discardPaths(repoPath, group.map((f) => f.path));
+      await api.discardPaths(repoPath, affectedPaths(group));
       await afterMutation({ history: false });
     });
   const discardAllLocalChanges = () =>
@@ -140,8 +141,8 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
         }
       );
       if (!ok) return;
-      if (status.staged.length) await api.unstagePaths(repoPath, status.staged.map((f) => f.path));
-      await api.discardPaths(repoPath, allLocalFiles.map((f) => f.path));
+      if (status.staged.length) await api.unstagePaths(repoPath, affectedPaths(status.staged));
+      await api.discardPaths(repoPath, affectedPaths([...status.unstaged, ...status.staged]));
       await afterMutation({ history: false });
     });
   const createPatch = (f: FileStatus) =>

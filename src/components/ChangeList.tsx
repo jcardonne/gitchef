@@ -188,12 +188,23 @@ function ChangeList({
 
   const fileRow = (f: FileStatus, depth: number, label: string) => {
     const index = indexOf.get(f) ?? 0;
+    const oldBase = f.old_path ? f.old_path.split("/").pop() ?? f.old_path : null;
+    // Tree view shows basenames, but a same-name move (a/x.ts -> b/x.ts) would
+    // read "x.ts -> x.ts"; fall back to the full old path in that case.
+    const renameFrom = !f.old_path
+      ? null
+      : view === "tree"
+        ? oldBase === label
+          ? f.old_path
+          : oldBase
+        : f.old_path;
     return (
       <div
         key={keyOf(f)}
         className={`file-row${selected.has(keyOf(f)) ? " selected" : ""}`}
         style={{ paddingLeft: BASE_PAD + depth * INDENT }}
         data-idx={index}
+        title={f.old_path ? `${f.old_path} → ${f.path}` : undefined}
         onClick={(e) => handleClick(f, index, e)}
         tabIndex={0}
         onKeyDown={(e) => handleKey(f, index, e)}
@@ -204,7 +215,10 @@ function ChangeList({
         }}
       >
         <StatusIcon status={f.status} />
-        <span className="file-path">{label}</span>
+        <span className="file-path">
+          {renameFrom && <span className="rename-from">{renameFrom} → </span>}
+          {label}
+        </span>
         <button
           className={`mini-btn row-action${staged ? "" : " row-stage"}`}
           tabIndex={-1}
@@ -258,7 +272,7 @@ function visibleFiles(visible: { node: { type: string } }[]): FileStatus[] {
     .map((v) => (v.node as TreeFile).file);
 }
 
-function StatusIcon({ status }: { status: FileStatusKind }) {
+export function StatusIcon({ status }: { status: FileStatusKind }) {
   const label = STATUS_LABEL[status];
   return (
     <span className={`status-glyph s-${status}`} title={label} aria-label={label}>
