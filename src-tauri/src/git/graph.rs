@@ -90,8 +90,13 @@ pub fn commit_graph(repo: &Repository, limit: usize) -> AppResult<Vec<CommitNode
         if nodes.len() >= limit {
             break;
         }
-        let oid = oid_res?;
-        let commit = repo.find_commit(oid)?;
+        // A single unreadable object must not blank the whole graph. This shows
+        // up with a stale/inconsistent commit-graph file, a shallow or partial
+        // (blobless/treeless) clone, or light corruption. The walk yields an Err
+        // when it can't reach an object and then ends, so stop and render what we
+        // have; a commit whose object is missing is skipped, keeping the rest.
+        let Ok(oid) = oid_res else { break };
+        let Ok(commit) = repo.find_commit(oid) else { continue };
         let author = commit.author();
         nodes.push(CommitNode {
             id: oid.to_string(),
@@ -158,5 +163,68 @@ fn assign_lanes(nodes: &mut [CommitNode]) {
 
         node.lane = lane;
         node.color = lane;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::commit_graph;
+    use crate::git::run_git;
+    use git2::Repository;
+    use std::path::{Path, PathBuf};
+
+    fn tmp(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let mut p = std::env::temp_dir();
+        p.push(format!("gitchef-{tag}-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn commit(dir: &Path, msg: &str) -> String {
+        run_git(dir, &["commit", "-q", "--allow-empty", "-m", msg]).unwrap();
+        run_git(dir, &["rev-parse", "HEAD"]).unwrap().trim().to_string()
+    }
+
+    fn init(dir: &Path) {
+        Repository::init(dir).unwrap();
+        run_git(dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(dir, &["config", "user.name", "t"]).unwrap();
+    }
+
+    #[test]
+    fn walks_all_commits_newest_first() {
+        let dir = tmp("graph-walk");
+        init(&dir);
+        commit(&dir, "a");
+        commit(&dir, "b");
+        let head = commit(&dir, "c");
+        let nodes = commit_graph(&Repository::open(&dir).unwrap(), 500).unwrap();
+        assert_eq!(nodes.len(), 3);
+        assert_eq!(nodes[0].id, head); // newest first
+        assert_eq!(nodes[0].summary, "c");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_missing_object_degrades_instead_of_erroring() {
+        let dir = tmp("graph-missing");
+        init(&dir);
+        let root = commit(&dir, "root");
+        commit(&dir, "b");
+        commit(&dir, "c");
+        // Delete the root commit's loose object so the walk hits an unreadable
+        // object. The contract: degrade to a best-effort (here empty, since the
+        // topological sort can't be completed) graph, never Err - so the UI shows
+        // a graph, not an error toast. Pre-fix this returned GIT_ENOTFOUND.
+        let obj = dir.join(".git/objects").join(&root[..2]).join(&root[2..]);
+        std::fs::remove_file(&obj).unwrap();
+        let nodes = commit_graph(&Repository::open(&dir).unwrap(), 500)
+            .expect("a missing object must not fail the whole graph");
+        assert!(nodes.len() < 3, "degraded, not the full history: {}", nodes.len());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
