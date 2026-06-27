@@ -16,6 +16,7 @@ interface Props {
   onContext: (f: FileStatus) => void;
   onFolderContext: (files: FileStatus[], folderPath: string) => void;
   onQuickToggle: (f: FileStatus) => void;
+  recentlyMoved?: Set<string>;
 }
 
 const INDENT = 14;
@@ -42,6 +43,7 @@ function ChangeList({
   onContext,
   onFolderContext,
   onQuickToggle,
+  recentlyMoved,
 }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   // Shift-range anchor stored as the file itself (not an index), so collapsing a
@@ -201,7 +203,7 @@ function ChangeList({
     return (
       <div
         key={keyOf(f)}
-        className={`file-row${selected.has(keyOf(f)) ? " selected" : ""}`}
+        className={`file-row${selected.has(keyOf(f)) ? " selected" : ""}${recentlyMoved?.has(f.path) ? " just-moved" : ""}`}
         style={{ paddingLeft: BASE_PAD + depth * INDENT }}
         data-idx={index}
         title={f.old_path ? `${f.old_path} → ${f.path}` : undefined}

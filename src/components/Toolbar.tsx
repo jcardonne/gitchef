@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { BranchInfo, RepoInfo } from "../types";
 import { getPullDefault, setPullDefault, type PullAction } from "../storage";
 import { comboHint } from "../shortcuts";
@@ -6,6 +6,7 @@ import { comboHint } from "../shortcuts";
 interface Props {
   repo: RepoInfo;
   busy: boolean;
+  activeAction: string | null;
   branches: BranchInfo[];
   onCheckout: (name: string) => void;
   onPullAction: (action: PullAction) => void;
@@ -55,8 +56,14 @@ const BranchIcon = () => (
   </svg>
 );
 const Caret = () => (
-  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M4 6l4 4 4-4" />
+  </svg>
+);
+const Spinner = () => (
+  <svg {...svg} className="spinner">
+    <circle cx="8" cy="8" r="6" strokeOpacity={0.25} />
+    <path d="M8 2a6 6 0 0 1 6 6" />
   </svg>
 );
 
@@ -71,6 +78,7 @@ const PULL_OPTIONS: { key: PullAction; label: string }[] = [
 export default function Toolbar({
   repo,
   busy,
+  activeAction,
   branches,
   onCheckout,
   onPullAction,
@@ -81,6 +89,11 @@ export default function Toolbar({
   const [branchQuery, setBranchQuery] = useState("");
   const [pullOpen, setPullOpen] = useState(false);
   const [pullDefault, setPullDefaultState] = useState<PullAction>(getPullDefault());
+  useEffect(() => {
+    const sync = () => setPullDefaultState(getPullDefault());
+    window.addEventListener("gitchef:prefs", sync);
+    return () => window.removeEventListener("gitchef:prefs", sync);
+  }, []);
 
   const locals = branches.filter((b) => !b.is_remote);
   const filtered = locals.filter((b) =>
@@ -145,7 +158,7 @@ export default function Toolbar({
           onClick={() => onPullAction(pullDefault)}
           title={`${pullDefault === "fetch" ? "Fetch" : "Pull"} (${comboHint(["mod", "shift", "L"])})`}
         >
-          {pullDefault === "fetch" ? <FetchIcon /> : <PullIcon />}
+          {activeAction === "pull" ? <Spinner /> : pullDefault === "fetch" ? <FetchIcon /> : <PullIcon />}
           {pullDefault === "fetch" ? "Fetch" : "Pull"}
         </button>
         <button className="tool-btn split-caret" disabled={busy} onClick={() => setPullOpen((o) => !o)}>
@@ -173,7 +186,7 @@ export default function Toolbar({
         onClick={onPush}
         title={`${repo.has_upstream ? "Push" : "Publish branch: push and set upstream"} (${comboHint(["mod", "shift", "P"])})`}
       >
-        <PushIcon />
+        {activeAction === "push" ? <Spinner /> : <PushIcon />}
         {repo.has_upstream ? "Push" : "Publish"}
       </button>
       <button className="tool-btn" disabled={busy} onClick={onNewBranch}>

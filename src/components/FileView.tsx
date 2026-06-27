@@ -1,5 +1,6 @@
 import { useVirtual } from "../useVirtual";
 import type { FileContent } from "../types";
+import EmptyState, { DocIcon, BinaryIcon } from "./EmptyState";
 
 const ROW_H = 18; // must match .diff-line height in CSS
 
@@ -18,9 +19,9 @@ export default function FileView({ content }: Props) {
     content
   );
 
-  if (!content) return <div className="empty-hint">Select a file to view it.</div>;
-  if (content.binary) return <div className="empty-hint">Binary file - no preview.</div>;
-  if (content.lines.length === 0) return <div className="empty-hint">Empty file.</div>;
+  if (!content) return <EmptyState icon={<DocIcon />} title="No file selected" hint="Pick a file from the list to view it." />;
+  if (content.binary) return <EmptyState icon={<BinaryIcon />} title="Binary file" hint="No preview available." />;
+  if (content.lines.length === 0) return <EmptyState icon={<DocIcon />} title="Empty file" hint="This file has no content." />;
 
   const lines = content.lines;
 

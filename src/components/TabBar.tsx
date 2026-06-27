@@ -4,7 +4,7 @@ import { IconMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu } from "@taur
 import { Image } from "@tauri-apps/api/image";
 import { TAB_COLORS, type Tab, type TabColor } from "../types";
 import * as api from "../api";
-import { getTheme, nextTheme, resolvedTheme, setTheme, type Theme } from "../theme";
+import { resolvedTheme, type Theme } from "../theme";
 
 const appWindow = getCurrentWindow();
 const isMac = navigator.platform.toLowerCase().includes("mac");
@@ -132,6 +132,9 @@ interface Props {
   onCloseToRight: (path: string) => void;
   onOpen: () => void;
   onSetColor: (path: string, color: TabColor | null) => void;
+  theme: Theme;
+  onCycleTheme: () => void;
+  onOpenSettings: () => void;
 }
 
 /// GitKraken-style repo tabs: a persistent Home tab, one chip per open repo
@@ -146,6 +149,9 @@ export default function TabBar({
   onCloseToRight,
   onOpen,
   onSetColor,
+  theme,
+  onCycleTheme,
+  onOpenSettings,
 }: Props) {
   // Reorder state. `dragging` = index of the tab being dragged (lifts/styles
   // the source); `dropIdx` = the slot it would land in, an insertion index in
@@ -153,12 +159,6 @@ export default function TabBar({
   // landing exactly on another tab.
   const [dragging, setDragging] = useState<number | null>(null);
   const [dropIdx, setDropIdx] = useState<number | null>(null);
-  const [theme, setThemeState] = useState<Theme>(getTheme());
-  const cycleTheme = () => {
-    const next = nextTheme(theme);
-    setTheme(next);
-    setThemeState(next);
-  };
 
   // FLIP animation: tabs glide to their new positions after a reorder.
   // `tabEls` maps repo path -> DOM node; `flipFrom` holds each tab's screen
@@ -340,11 +340,23 @@ export default function TabBar({
 
       <div
         className="theme-btn"
-        onClick={cycleTheme}
+        onClick={onCycleTheme}
         title={`Theme: ${theme} (click to cycle light / dark / system)`}
       >
         <ThemeIcon theme={theme} />
       </div>
+
+      <button
+        className="settings-btn"
+        onClick={onOpenSettings}
+        title="Settings (Cmd/Ctrl+,)"
+        aria-label="Settings"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
 
       <div
         className={`tab home${activePath === null ? " active" : ""}`}
@@ -391,7 +403,7 @@ export default function TabBar({
               onClose(t.path);
             }}
           >
-            ✕
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
           </span>
         </div>
       ))}

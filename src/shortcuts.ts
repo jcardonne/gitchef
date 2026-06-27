@@ -41,6 +41,10 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     ],
   },
   {
+    title: "Commit graph (when focused)",
+    items: [{ label: "Move between commits", combo: ["ArrowUp", "ArrowDown"] }],
+  },
+  {
     title: "Sync",
     items: [
       { label: "Push", combo: ["mod", "shift", "P"] },
@@ -62,7 +66,10 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
   },
   {
     title: "General",
-    items: [{ label: "Show keyboard combos", combo: ["mod", "/"] }],
+    items: [
+      { label: "Open Settings", combo: ["mod", ","] },
+      { label: "Show keyboard combos", combo: ["mod", "/"] },
+    ],
   },
 ];
 

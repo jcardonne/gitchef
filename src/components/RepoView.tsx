@@ -25,6 +25,7 @@ import StagingPanel from "./StagingPanel";
 import DiffViewer from "./DiffViewer";
 import FileView from "./FileView";
 import { StatusIcon } from "./ChangeList";
+import RepoSkeleton from "./RepoSkeleton";
 
 const EMPTY_STATUS: StatusResult = { staged: [], unstaged: [] };
 
@@ -74,6 +75,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [compareMode, setCompareMode] = useState(false);
 
   const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState<string | null>(null);
   const [graphLimit, setGraphLimit] = useState(500);
   const [searchOpen, setSearchOpen] = useState(false);
   const [rightWidth, setRightWidth] = useState(getRightPanelWidth);
@@ -164,14 +166,16 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   }, [isActive]);
 
   const run = useCallback(
-    async (fn: () => Promise<void>) => {
+    async (fn: () => Promise<void>, action?: string) => {
       setBusy(true);
+      setActiveAction(action ?? null);
       try {
         await fn();
       } catch (e) {
         notify(String(e), true);
       } finally {
         setBusy(false);
+        setActiveAction(null);
       }
     },
     [notify]
@@ -435,7 +439,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       if (previewedPath && !hasUncommittedChange(next, previewedPath)) {
         closeDiff();
       }
-    });
+    }, "commit");
 
   // Re-read RepoInfo (HEAD may have moved) and reload all repo data. Used after
   // any operation that can change the branch or history.
@@ -479,13 +483,13 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         await reload();
         notify(out.trim() || "Pulled");
       }
-    });
+    }, "pull");
   const onPush = () =>
     run(async () => {
       await api.push(path);
       await refresh();
       notify("Pushed");
-    });
+    }, "push");
 
   // Keyboard: push / pull on the active tab.
   useEffect(() => {
@@ -1158,12 +1162,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   }, [isActive, rightTab, commitFiles, selectedPath, selectedCommit]);
 
   const repoActions = useMemo(
-    () => ({ repoPath: path, busy, run, refresh, notify }),
-    [path, busy, run, refresh, notify]
+    () => ({ repoPath: path, busy, activeAction, run, refresh, notify }),
+    [path, busy, activeAction, run, refresh, notify]
   );
 
   if (!repo) {
-    return <div className="repo-loading empty-hint">Loading {path}…</div>;
+    return <RepoSkeleton />;
   }
 
   return (
@@ -1171,6 +1175,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       <Toolbar
         repo={repo}
         busy={busy}
+        activeAction={activeAction}
         branches={branches}
         onCheckout={onCheckout}
         onPullAction={onPullAction}
@@ -1204,11 +1209,11 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           {diff && (
             <div className="center-diff">
               <button
-                className="mini-btn center-diff-close"
+                className="center-diff-close"
                 onClick={closeDiff}
                 title="Close preview"
               >
-                ✕
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
               </button>
               <div className="preview-header">
                 <span className="preview-path">{selectedPath}</span>
