@@ -12,23 +12,6 @@ fn open(path: &str) -> AppResult<Repository> {
     Ok(Repository::open(path)?)
 }
 
-// TEMP instrumentation (remove after diagnosing the first-open commit_graph
-// stall): time each load-path command body to stderr. Debug-only, so it runs in
-// the e2e `tauri build --debug` (surfaces in CI logs) but is absent from release
-// builds. A `start` with no matching `end` => the body wedged; NO `start` at all
-// => the command was never scheduled (Tauri's ~2-thread tokio pool was starved).
-// The thread id exposes that worker-pool saturation.
-fn timed<T>(name: &str, f: impl FnOnce() -> T) -> T {
-    if !cfg!(debug_assertions) {
-        return f();
-    }
-    let t = std::time::Instant::now();
-    eprintln!("[t] {name} start thread={:?}", std::thread::current().id());
-    let r = f();
-    eprintln!("[t] {name} end {}ms", t.elapsed().as_millis());
-    r
-}
-
 #[tauri::command]
 fn open_repo(path: String) -> AppResult<repo::RepoInfo> {
     repo::info(&open(&path)?)
@@ -43,7 +26,7 @@ fn commit_avatars(
     repo: String,
     emails: Vec<String>,
 ) -> AppResult<std::collections::HashMap<String, String>> {
-    timed("commit_avatars", || avatars::resolve(&app, &repo, emails))
+    avatars::resolve(&app, &repo, emails)
 }
 
 // The working-tree reads + bulk index ops below do heavy/blocking libgit2 work
@@ -54,48 +37,44 @@ fn commit_avatars(
 // spawned future is Send.
 #[tauri::command(async)]
 fn repo_status(repo: String) -> AppResult<repo::StatusResult> {
-    timed("repo_status", || repo::status(&open(&repo)?))
+    repo::status(&open(&repo)?)
 }
 
 #[tauri::command(async)]
 fn work_stats(repo: String) -> AppResult<repo::WorkStats> {
-    timed("work_stats", || repo::work_stats(&open(&repo)?))
+    repo::work_stats(&open(&repo)?)
 }
 
 #[tauri::command(async)]
 fn commit_graph(repo: String, limit: Option<usize>) -> AppResult<Vec<graph::CommitNode>> {
-    let r = timed("commit_graph", || graph::commit_graph(&open(&repo)?, limit.unwrap_or(500)));
-    if cfg!(debug_assertions) {
-        eprintln!("[t] commit_graph -> {:?} nodes", r.as_ref().map(|v| v.len()));
-    }
-    r
+    graph::commit_graph(&open(&repo)?, limit.unwrap_or(500))
 }
 
 #[tauri::command(async)]
 fn list_branches(repo: String) -> AppResult<Vec<branch::BranchInfo>> {
-    timed("list_branches", || branch::list_branches(&open(&repo)?))
+    branch::list_branches(&open(&repo)?)
 }
 
 #[tauri::command(async)]
 fn list_tags(repo: String) -> AppResult<Vec<branch::TagInfo>> {
-    timed("list_tags", || branch::list_tags(&open(&repo)?))
+    branch::list_tags(&open(&repo)?)
 }
 
 #[tauri::command(async)]
 fn list_stashes(repo: String) -> AppResult<Vec<ops::StashInfo>> {
-    timed("list_stashes", || ops::list_stashes(&mut open(&repo)?))
+    ops::list_stashes(&mut open(&repo)?)
 }
 
 #[tauri::command(async)]
 fn list_worktrees(repo: String) -> AppResult<Vec<worktree::WorktreeInfo>> {
-    timed("list_worktrees", || worktree::list_worktrees(&open(&repo)?))
+    worktree::list_worktrees(&open(&repo)?)
 }
 
 /// Per-worktree uncommitted-changes flags. Async: it opens and status-scans
 /// every worktree, so it runs off the main thread and on demand only.
 #[tauri::command(async)]
 fn worktree_wips(repo: String) -> AppResult<std::collections::HashMap<String, bool>> {
-    timed("worktree_wips", || worktree::worktree_wips(&open(&repo)?))
+    worktree::worktree_wips(&open(&repo)?)
 }
 
 #[tauri::command]

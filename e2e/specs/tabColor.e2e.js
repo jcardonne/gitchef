@@ -34,18 +34,7 @@ async function openColoredRepo(dir, color) {
       lastErr = e;
     }
   }
-  // TEMP diagnostic: snapshot the graph DOM so the CI failure says WHY no rows
-  // painted (empty data vs a 0-height/0-band virtualizer vs no container).
-  const diag = await browser.execute(() => ({
-    anyCommitRow: document.querySelectorAll(".commit-row").length,
-    realCommitRow: document.querySelectorAll(".commit-row:not(.wip-row)").length,
-    graphRows: !!document.querySelector(".graph-rows"),
-    graphSvgH: document.querySelector(".graph-svg")?.getAttribute("height") ?? null,
-    centerGraphH: document.querySelector(".center-graph")?.clientHeight ?? -1,
-    fileRows: document.querySelectorAll(".change-list .file-row").length,
-    emptyState: !!document.querySelector(".empty-state"),
-  })).catch(() => null);
-  throw new Error(`${lastErr?.message ?? lastErr} | diag=${JSON.stringify(diag)}`);
+  throw lastErr;
 }
 
 describe("GitChef tab colors", () => {
