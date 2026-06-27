@@ -2584,3 +2584,46 @@ button {
 :root[data-density="compact"] {
   --row-h: 36px;
 }
+
+/* ---------- settings multi-toggle (graph columns) ---------- */
+.settings-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.settings-toggle {
+  padding: 6px 13px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-elev);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.settings-toggle.on {
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-elev));
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* ---------- tooltip ---------- */
+.tooltip {
+  position: fixed;
+  z-index: 100;
+  max-width: 280px;
+  padding: 5px 9px;
+  background: var(--bg-elev2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: var(--shadow-float);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 0.12s var(--ease), transform 0.12s var(--ease);
+}
+.tooltip.show {
+  opacity: 1;
+  transform: none;
+}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { PALETTES, getDensity, setDensity, type Palette, type Theme, type Density } from "../theme";
-import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, type PullAction } from "../storage";
+import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, notifyPrefs, type PullAction, type GraphColumnVisibility } from "../storage";
 import { SHORTCUT_SECTIONS, comboHint, keyLabel } from "../shortcuts";
 import { useKeycapPresses } from "../useKeycapPresses";
 
@@ -37,6 +37,14 @@ const SORTS: { label: string; asc: boolean }[] = [
   { label: "Oldest first", asc: true },
 ];
 
+const COLUMNS: { key: keyof GraphColumnVisibility; label: string }[] = [
+  { key: "graph", label: "Group" },
+  { key: "message", label: "Message" },
+  { key: "author", label: "Author" },
+  { key: "sha", label: "SHA" },
+  { key: "date", label: "Date" },
+];
+
 const SECTIONS: { id: Section; label: string }[] = [
   { id: "appearance", label: "Appearance" },
   { id: "general", label: "General" },
@@ -51,6 +59,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
   const [density, setDensityState] = useState(getDensity);
   const [pullDefault, setPullState] = useState(getPullDefault);
   const [sortAsc, setSortState] = useState(getSortAsc);
+  const [cols, setColsState] = useState(getGraphColumnVisibility);
   useKeycapPresses(section === "keyboard");
 
   const changeDensity = (d: Density) => {
@@ -64,6 +73,14 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
   const changeSort = (asc: boolean) => {
     setSortAsc(asc);
     setSortState(asc);
+  };
+  const toggleCol = (key: keyof GraphColumnVisibility) => {
+    const visible = Object.values(cols).filter(Boolean).length;
+    if (cols[key] && visible <= 1) return; // always keep at least one column
+    const next = { ...cols, [key]: !cols[key] };
+    setGraphColumnVisibility(next);
+    notifyPrefs();
+    setColsState(next);
   };
 
   useEffect(() => {
@@ -182,6 +199,22 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                   {SORTS.map((o) => (
                     <button key={o.label} className={sortAsc === o.asc ? "active" : ""} onClick={() => changeSort(o.asc)}>
                       {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <div className="settings-field-label">Graph columns</div>
+                <div className="settings-field-hint">Show or hide commit graph columns.</div>
+                <div className="settings-toggles">
+                  {COLUMNS.map((c) => (
+                    <button
+                      key={c.key}
+                      className={`settings-toggle${cols[c.key] ? " on" : ""}`}
+                      onClick={() => toggleCol(c.key)}
+                    >
+                      {c.label}
                     </button>
                   ))}
                 </div>
