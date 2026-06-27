@@ -1,0 +1,16 @@
+Satoshi
+=======
+
+Designed by the Indian Type Foundry (ITF).
+Obtained from Fontshare: https://www.fontshare.com/fonts/satoshi
+
+Licensed under the Fontshare / ITF Free Font License, which permits use in
+desktop, web, and application projects (including embedding in software).
+Full license terms: https://www.fontshare.com/licenses/itf-ffl
+
+Bundled in this directory:
+  - Satoshi-Medium.woff2  (weight 500)
+  - Satoshi-Bold.woff2    (weight 700)
+
+Used only on GitChef brand surfaces (wordmark, headings); the rest of the UI
+uses the platform system font stack.

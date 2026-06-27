@@ -8,6 +8,8 @@ import RepoView from "./components/RepoView";
 import UpdateToast from "./components/UpdateToast";
 import { runSilentUpdate, type UpdateStatus } from "./updater";
 import ShortcutsModal from "./components/ShortcutsModal";
+import Settings from "./components/Settings";
+import { getTheme, getPalette, setTheme, setPalette, nextTheme, type Theme, type Palette } from "./theme";
 
 /// App shell: owns the open tabs + recents, routes between the Home tab and one
 /// mounted RepoView per open repository. All repo state lives inside RepoView.
@@ -23,6 +25,17 @@ export default function App() {
   const [recents, setRecents] = useState(store.getRecents());
   const closedTabs = useRef<string[]>([]); // stack of recently closed tab paths
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [theme, setThemeState] = useState<Theme>(getTheme());
+  const [palette, setPaletteState] = useState<Palette>(getPalette());
+  const changeTheme = (t: Theme) => {
+    setTheme(t);
+    setThemeState(t);
+  };
+  const changePalette = (p: Palette) => {
+    setPalette(p);
+    setPaletteState(p);
+  };
 
   // Check Cloudflare for a newer signed build once, on launch (prod only).
   // Progress surfaces in a small toast; on success the app relaunches itself.
@@ -35,6 +48,11 @@ export default function App() {
   useEffect(() => {
     store.saveSession({ paths: tabs.map((t) => t.path), activePath });
   }, [tabs, activePath]);
+
+  // Navigating to any tab (click, keyboard, open/close) dismisses the Settings overlay.
+  useEffect(() => {
+    setSettingsOpen(false);
+  }, [activePath]);
 
   const refreshRecents = () => setRecents(store.getRecents());
 
@@ -94,6 +112,9 @@ export default function App() {
       } else if (mod && (key === "/" || key === ":")) {
         e.preventDefault();
         setShortcutsOpen((v) => !v);
+      } else if (mod && key === ",") {
+        e.preventDefault();
+        setSettingsOpen((v) => !v);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -155,13 +176,19 @@ export default function App() {
       <TabBar
         tabs={tabs}
         activePath={activePath}
-        onActivate={setActivePath}
+        onActivate={(p) => {
+          setActivePath(p);
+          setSettingsOpen(false);
+        }}
         onClose={closeTab}
         onReorder={reorder}
         onCloseOthers={closeOthers}
         onCloseToRight={closeToRight}
         onOpen={pickAndOpen}
         onSetColor={setTabColor}
+        theme={theme}
+        onCycleTheme={() => changeTheme(nextTheme(theme))}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <div className="app-body">
@@ -184,6 +211,15 @@ export default function App() {
             <RepoView path={t.path} isActive={t.path === activePath} onLoaded={onRepoLoaded} onOpenPath={openTab} />
           </div>
         ))}
+        {settingsOpen && (
+          <Settings
+            theme={theme}
+            palette={palette}
+            onChangeTheme={changeTheme}
+            onChangePalette={changePalette}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
       </div>
 
       <UpdateToast status={updateStatus} />

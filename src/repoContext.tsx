@@ -18,7 +18,8 @@ export interface RefreshOpts {
 export interface RepoActions {
   repoPath: string;
   busy: boolean;
-  run: (fn: () => Promise<void>) => void;
+  activeAction: string | null;
+  run: (fn: () => Promise<void>, action?: string) => void;
   refresh: (opts?: RefreshOpts) => Promise<StatusResult>;
   notify: (msg: string, error?: boolean) => void;
 }

@@ -19,7 +19,7 @@ interface Props {
 /// The commit composer + changes browser. Owns the List/Tree view, the
 /// multi-file selection, bulk (un)stage, and the per-file right-click menu.
 export default function StagingPanel({ status, onSelectFile, onCommit, isActive }: Props) {
-  const { repoPath, busy, run, refresh, notify } = useRepo();
+  const { repoPath, busy, activeAction, run, refresh, notify } = useRepo();
   const [view, setView] = useState<ChangesView>(getChangesView());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
@@ -28,6 +28,16 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
   const deferredQuery = useDeferredValue(query);
   const [message, setMessage] = useState("");
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const [movedPaths, setMovedPaths] = useState<Set<string>>(new Set());
+  const moveTimer = useRef<number>();
+  // Flash files that just changed staged-state so the eye can follow the move
+  // across the two lists (a true cross-list FLIP fights the virtualizer).
+  const markMoved = (paths: string[]) => {
+    setMovedPaths(new Set(paths));
+    clearTimeout(moveTimer.current);
+    moveTimer.current = window.setTimeout(() => setMovedPaths(new Set()), 650);
+  };
+  useEffect(() => () => clearTimeout(moveTimer.current), []);
 
   // Stable identity (keys never depend on closure state) so the selUnstaged/
   // selStaged memos below don't bust on every render.
@@ -63,11 +73,13 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
     run(async () => {
       await api.stagePaths(repoPath, affectedPaths(fs));
       await afterMutation({ history: false, stats: false });
+      markMoved(fs.map((f) => f.path));
     });
   const unstageFiles = (fs: FileStatus[]) =>
     run(async () => {
       await api.unstagePaths(repoPath, affectedPaths(fs));
       await afterMutation({ history: false, stats: false });
+      markMoved(fs.map((f) => f.path));
     });
   const quickToggle = (f: FileStatus) => (f.staged ? unstageFiles([f]) : stageFiles([f]));
 
@@ -295,7 +307,7 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
               title="Clear search"
               aria-label="Clear search"
             >
-              x
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
             </button>
           )}
         </div>
@@ -309,65 +321,80 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
         </div>
       </div>
 
-      <div className="staging-section">
-        <div className="section-head">
-          <span>Unstaged ({sectionCount(unstagedFiles.length, status.unstaged.length)})</span>
-          <button
-            className="mini-btn"
-            disabled={!unstagedFiles.length}
-            onClick={() => stageFiles(selUnstaged.length > 1 ? selUnstaged : unstagedFiles)}
-            title={`Stage all or selection (${comboHint(["mod", "shift", "S"])})`}
-          >
-            {selUnstaged.length > 1
-              ? `Stage (${selUnstaged.length})`
-              : hasSearch
-                ? "Stage visible"
-                : "Stage all"}
-          </button>
+      {status.unstaged.length === 0 && status.staged.length === 0 ? (
+        <div className="empty-state">
+          <svg width="30" height="30" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="8" cy="8" r="5.7" />
+            <path d="M5.5 8.2l1.7 1.7 3.3-3.5" />
+          </svg>
+          <div className="empty-state-title">Working tree clean</div>
+          <div className="empty-state-hint">No changes to commit. Edit files and they'll show up here.</div>
         </div>
-        <ChangeList
-          files={unstagedFiles}
-          staged={false}
-          view={view}
-          selected={selected}
-          keyOf={keyOf}
-          onSelectionChange={setSelected}
-          onShowDiff={(f) => onSelectFile(f.path, false)}
-          onContext={showFileMenu}
-          onFolderContext={showFolderMenu}
-          onQuickToggle={quickToggle}
-        />
-      </div>
+      ) : (
+        <>
+          <div className="staging-section">
+            <div className="section-head">
+              <span>Unstaged ({sectionCount(unstagedFiles.length, status.unstaged.length)})</span>
+              <button
+                className="mini-btn"
+                disabled={!unstagedFiles.length}
+                onClick={() => stageFiles(selUnstaged.length > 1 ? selUnstaged : unstagedFiles)}
+                title={`Stage all or selection (${comboHint(["mod", "shift", "S"])})`}
+              >
+                {selUnstaged.length > 1
+                  ? `Stage (${selUnstaged.length})`
+                  : hasSearch
+                    ? "Stage visible"
+                    : "Stage all"}
+              </button>
+            </div>
+            <ChangeList
+              files={unstagedFiles}
+              staged={false}
+              view={view}
+              selected={selected}
+              keyOf={keyOf}
+              onSelectionChange={setSelected}
+              onShowDiff={(f) => onSelectFile(f.path, false)}
+              onContext={showFileMenu}
+              onFolderContext={showFolderMenu}
+              onQuickToggle={quickToggle}
+              recentlyMoved={movedPaths}
+            />
+          </div>
 
-      <div className="staging-section">
-        <div className="section-head">
-          <span>Staged ({sectionCount(stagedFiles.length, status.staged.length)})</span>
-          <button
-            className="mini-btn"
-            disabled={!stagedFiles.length}
-            onClick={() => unstageFiles(selStaged.length > 1 ? selStaged : stagedFiles)}
-            title={`Unstage all or selection (${comboHint(["mod", "shift", "U"])})`}
-          >
-            {selStaged.length > 1
-              ? `Unstage (${selStaged.length})`
-              : hasSearch
-                ? "Unstage visible"
-                : "Unstage all"}
-          </button>
-        </div>
-        <ChangeList
-          files={stagedFiles}
-          staged
-          view={view}
-          selected={selected}
-          keyOf={keyOf}
-          onSelectionChange={setSelected}
-          onShowDiff={(f) => onSelectFile(f.path, true)}
-          onContext={showFileMenu}
-          onFolderContext={showFolderMenu}
-          onQuickToggle={quickToggle}
-        />
-      </div>
+          <div className="staging-section">
+            <div className="section-head">
+              <span>Staged ({sectionCount(stagedFiles.length, status.staged.length)})</span>
+              <button
+                className="mini-btn"
+                disabled={!stagedFiles.length}
+                onClick={() => unstageFiles(selStaged.length > 1 ? selStaged : stagedFiles)}
+                title={`Unstage all or selection (${comboHint(["mod", "shift", "U"])})`}
+              >
+                {selStaged.length > 1
+                  ? `Unstage (${selStaged.length})`
+                  : hasSearch
+                    ? "Unstage visible"
+                    : "Unstage all"}
+              </button>
+            </div>
+            <ChangeList
+              files={stagedFiles}
+              staged
+              view={view}
+              selected={selected}
+              keyOf={keyOf}
+              onSelectionChange={setSelected}
+              onShowDiff={(f) => onSelectFile(f.path, true)}
+              onContext={showFileMenu}
+              onFolderContext={showFolderMenu}
+              onQuickToggle={quickToggle}
+              recentlyMoved={movedPaths}
+            />
+          </div>
+        </>
+      )}
 
       <div className="commit-box">
         <textarea
@@ -382,6 +409,12 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
           onClick={handleCommit}
           title={`Commit (${comboHint(["mod", "Enter"])})`}
         >
+          {activeAction === "commit" && (
+            <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
+              <path d="M8 2a6 6 0 0 1 6 6" />
+            </svg>
+          )}
           Commit {status.staged.length ? `(${status.staged.length})` : ""}
         </button>
       </div>

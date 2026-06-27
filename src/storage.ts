@@ -98,8 +98,15 @@ export function getPullDefault(): PullAction {
   const v = localStorage.getItem(PULL_KEY);
   return v === "fetch" || v === "ff-only" || v === "rebase" ? v : "ff";
 }
+/// Broadcast that a persisted preference changed so already-mounted views can
+/// re-read it. Guarded for the non-DOM (vitest) environment.
+export function notifyPrefs(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("gitchef:prefs"));
+}
+
 export function setPullDefault(action: PullAction): void {
   localStorage.setItem(PULL_KEY, action);
+  notifyPrefs();
 }
 
 /// Graph sort direction: false = newest first (default), true = oldest first.
@@ -108,6 +115,7 @@ export function getSortAsc(): boolean {
 }
 export function setSortAsc(asc: boolean): void {
   localStorage.setItem(SORT_KEY, asc ? "1" : "0");
+  notifyPrefs();
 }
 
 export function getRightPanelWidth(): number {

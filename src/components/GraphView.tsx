@@ -12,7 +12,10 @@ import {
   type GraphColumnVisibility,
 } from "../storage";
 
-const ROW_H = 48;
+function readRowH(): number {
+  const v = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--row-h"), 10);
+  return Number.isFinite(v) && v > 0 ? v : 48;
+}
 const LANE_W = 16;
 const DOT_R = 5;
 const AVATAR_R = 8; // committer avatar disc radius (~16px, fits one lane)
@@ -76,6 +79,15 @@ export default function GraphView({
     setSortAscState(next);
     setSortAsc(next);
   };
+  const [ROW_H, setRowH] = useState(readRowH);
+  useEffect(() => {
+    const sync = () => {
+      setRowH(readRowH());
+      setSortAscState(getSortAsc());
+    };
+    window.addEventListener("gitchef:prefs", sync);
+    return () => window.removeEventListener("gitchef:prefs", sync);
+  }, []);
 
   // Display order: newest-first by default, reversed for "oldest first". Lanes
   // (x) are order-independent, so reversing rows just flips the DAG vertically.
@@ -223,7 +235,7 @@ export default function GraphView({
       evt.removeEventListener("scroll", recompute);
       ro.disconnect();
     };
-  }, [hasGraph]);
+  }, [hasGraph, ROW_H]);
 
   const vStart = Math.min(band.start, total);
   const vEnd = Math.min(band.end, total);
@@ -296,8 +308,41 @@ export default function GraphView({
   const y = (i: number) => (i + offset) * ROW_H + ROW_H / 2;
   const wipY = ROW_H / 2;
 
+  const scrollRowIntoView = (i: number) => {
+    const sc = scRef.current;
+    const g = graphRef.current;
+    if (!sc || !g) return;
+    const gTop = g.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+    const rowTop = gTop + (i + offset) * ROW_H;
+    if (rowTop < sc.scrollTop) sc.scrollTop = rowTop;
+    else if (rowTop + ROW_H > sc.scrollTop + sc.clientHeight) sc.scrollTop = rowTop + ROW_H - sc.clientHeight;
+  };
+
+  // Arrow / j-k navigation through the displayed commits while the graph is focused.
+  const onGraphKey = (e: React.KeyboardEvent) => {
+    const down = e.key === "ArrowDown" || e.key === "j";
+    const up = e.key === "ArrowUp" || e.key === "k";
+    if ((!down && !up) || !displayed.length) return;
+    e.preventDefault();
+    const cur = selectedId ? index.get(selectedId) : undefined;
+    const next = cur === undefined ? 0 : Math.max(0, Math.min(displayed.length - 1, cur + (down ? 1 : -1)));
+    if (next === cur) return;
+    onSelect(displayed[next].id);
+    scrollRowIntoView(next);
+  };
+
   if (!hasGraph) {
-    return <div className="empty-hint">No commits yet.</div>;
+    return (
+      <div className="empty-state">
+        <svg width="30" height="30" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="8" cy="3" r="1.6" />
+          <circle cx="8" cy="13" r="1.6" />
+          <path d="M8 4.6v6.8" />
+        </svg>
+        <div className="empty-state-title">No commits yet</div>
+        <div className="empty-state-hint">Make your first commit and your history will appear here.</div>
+      </div>
+    );
   }
 
   return (
@@ -331,13 +376,13 @@ export default function GraphView({
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h12l-4.5 5.5V13L6.5 14.5V8.5z" /></svg>
           </button>
           <button className="search-nav" disabled={!matchList.length} onClick={() => step(-1)} title="Previous (Shift+Enter)">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10l4-4 4 4" /></svg>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10l4-4 4 4" /></svg>
           </button>
           <button className="search-nav" disabled={!matchList.length} onClick={() => step(1)} title="Next (Enter)">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4" /></svg>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4" /></svg>
           </button>
           <button className="search-nav" onClick={closeSearch} title="Close (Esc)">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
           </button>
         </div>
       )}
@@ -393,7 +438,7 @@ export default function GraphView({
           </div>
         )}
       </div>
-      <div className="graph" ref={graphRef} style={{ minWidth: visibleCols.graph ? graphColW : 0 }}>
+      <div className="graph" ref={graphRef} tabIndex={0} onKeyDown={onGraphKey} style={{ minWidth: visibleCols.graph ? graphColW : 0 }}>
       {visibleCols.graph && (
         <svg
           className="graph-svg"
