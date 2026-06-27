@@ -9,7 +9,7 @@ import UpdateToast from "./components/UpdateToast";
 import { runSilentUpdate, type UpdateStatus } from "./updater";
 import ShortcutsModal from "./components/ShortcutsModal";
 import Settings from "./components/Settings";
-import { getTheme, getPalette, setTheme, setPalette, nextTheme, type Theme, type Palette } from "./theme";
+import { getTheme, getPalette, setTheme, setPalette, type Theme, type Palette } from "./theme";
 import { useTooltips } from "./useTooltips";
 
 /// App shell: owns the open tabs + recents, routes between the Home tab and one
@@ -190,8 +190,6 @@ export default function App() {
         onCloseToRight={closeToRight}
         onOpen={pickAndOpen}
         onSetColor={setTabColor}
-        theme={theme}
-        onCycleTheme={() => changeTheme(nextTheme(theme))}
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
