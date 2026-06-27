@@ -20,12 +20,6 @@ export const config = {
   port: 4444,
   specs: ["./specs/**/*.e2e.js"],
   maxInstances: 1,
-  // The first heavy repo-open on a cold CI runner (uncached debug binary +
-  // WebKit libs, cold libgit2 walk) can still blow the 30s waits despite the
-  // tiny 00-warmup spec. Retry the file once; deferred re-queues it last, so it
-  // re-runs in a now-warm session - the same remedy as re-running the job by hand.
-  specFileRetries: 1,
-  specFileRetriesDeferred: true,
   capabilities: [
     {
       maxInstances: 1,
