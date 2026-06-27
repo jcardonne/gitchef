@@ -4,7 +4,7 @@ import { IconMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu } from "@taur
 import { Image } from "@tauri-apps/api/image";
 import { TAB_COLORS, type Tab, type TabColor } from "../types";
 import * as api from "../api";
-import { resolvedTheme, type Theme } from "../theme";
+import { resolvedTheme } from "../theme";
 
 const appWindow = getCurrentWindow();
 const isMac = navigator.platform.toLowerCase().includes("mac");
@@ -87,41 +87,6 @@ async function buildSwatch(color: TabColor | null, selected: boolean): Promise<I
   }
 }
 
-/// Monochrome SVG theme icons (no emoji). `currentColor` -> follows text color.
-function ThemeIcon({ theme }: { theme: Theme }) {
-  const svg = {
-    width: 15,
-    height: 15,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 2,
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
-  } as const;
-  if (theme === "light") {
-    return (
-      <svg {...svg}>
-        <circle cx="12" cy="12" r="4" />
-        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
-      </svg>
-    );
-  }
-  if (theme === "dark") {
-    return (
-      <svg {...svg}>
-        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-      </svg>
-    );
-  }
-  return (
-    <svg {...svg}>
-      <rect x="2" y="3" width="20" height="14" rx="2" />
-      <path d="M8 21h8M12 17v4" />
-    </svg>
-  );
-}
-
 interface Props {
   tabs: Tab[];
   activePath: string | null; // null = Home
@@ -132,12 +97,10 @@ interface Props {
   onCloseToRight: (path: string) => void;
   onOpen: () => void;
   onSetColor: (path: string, color: TabColor | null) => void;
-  theme: Theme;
-  onCycleTheme: () => void;
   onOpenSettings: () => void;
 }
 
-/// GitKraken-style repo tabs: a persistent Home tab, one chip per open repo
+/// GitKraken-style repo tabs: a persistent Home button, one chip per open repo
 /// (draggable to reorder, ✕ to close), and a + to open another repository.
 export default function TabBar({
   tabs,
@@ -149,8 +112,6 @@ export default function TabBar({
   onCloseToRight,
   onOpen,
   onSetColor,
-  theme,
-  onCycleTheme,
   onOpenSettings,
 }: Props) {
   // Reorder state. `dragging` = index of the tab being dragged (lifts/styles
@@ -338,33 +299,21 @@ export default function TabBar({
         <img className="brand-mark" src="/logo.png" alt="" /> GitChef
       </div>
 
-      <div
-        className="theme-btn"
-        onClick={onCycleTheme}
-        title={`Theme: ${theme} (click to cycle light / dark / system)`}
-      >
-        <ThemeIcon theme={theme} />
-      </div>
-
       <button
-        className="settings-btn"
-        onClick={onOpenSettings}
-        title="Settings (Cmd/Ctrl+,)"
-        aria-label="Settings"
+        className={`home-btn${activePath === null ? " active" : ""}`}
+        onClick={() => onActivate(null)}
+        title="Home"
+        aria-label="Home"
+        aria-current={activePath === null ? "page" : undefined}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 10.5 12 3l9 7.5" />
+          <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
+          <path d="M9.5 21v-6h5v6" />
         </svg>
       </button>
 
-      <div
-        className={`tab home${activePath === null ? " active" : ""}`}
-        onClick={() => onActivate(null)}
-        title="Home"
-      >
-        ⌂
-      </div>
+      <div className="tabbar-sep" aria-hidden="true" />
 
       {tabs.map((t, i) => (
         <div
@@ -421,6 +370,18 @@ export default function TabBar({
         }}
         onDoubleClick={() => void appWindow.toggleMaximize()}
       />
+
+      <button
+        className="settings-btn"
+        onClick={onOpenSettings}
+        title="Settings (Cmd/Ctrl+,)"
+        aria-label="Settings"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
 
       {!isMac && <WindowControls platform="windows" />}
     </div>

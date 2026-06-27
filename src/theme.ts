@@ -83,11 +83,6 @@ export function setDensity(density: Density): void {
   notifyPrefs();
 }
 
-/// Cycle order for the TabBar button: light -> dark -> system -> light.
-export function nextTheme(t: Theme): Theme {
-  return t === "light" ? "dark" : t === "dark" ? "system" : "light";
-}
-
 /// Apply on boot and keep "system" in sync with the OS.
 export function initTheme(): void {
   applyAppearance();
