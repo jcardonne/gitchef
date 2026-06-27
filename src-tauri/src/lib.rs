@@ -64,7 +64,11 @@ fn work_stats(repo: String) -> AppResult<repo::WorkStats> {
 
 #[tauri::command(async)]
 fn commit_graph(repo: String, limit: Option<usize>) -> AppResult<Vec<graph::CommitNode>> {
-    timed("commit_graph", || graph::commit_graph(&open(&repo)?, limit.unwrap_or(500)))
+    let r = timed("commit_graph", || graph::commit_graph(&open(&repo)?, limit.unwrap_or(500)));
+    if cfg!(debug_assertions) {
+        eprintln!("[t] commit_graph -> {:?} nodes", r.as_ref().map(|v| v.len()));
+    }
+    r
 }
 
 #[tauri::command(async)]
