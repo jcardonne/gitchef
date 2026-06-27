@@ -84,6 +84,7 @@ export default function GraphView({
     const sync = () => {
       setRowH(readRowH());
       setSortAscState(getSortAsc());
+      setVisibleCols(getGraphColumnVisibility());
     };
     window.addEventListener("gitchef:prefs", sync);
     return () => window.removeEventListener("gitchef:prefs", sync);

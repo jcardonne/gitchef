@@ -10,6 +10,7 @@ import { runSilentUpdate, type UpdateStatus } from "./updater";
 import ShortcutsModal from "./components/ShortcutsModal";
 import Settings from "./components/Settings";
 import { getTheme, getPalette, setTheme, setPalette, nextTheme, type Theme, type Palette } from "./theme";
+import { useTooltips } from "./useTooltips";
 
 /// App shell: owns the open tabs + recents, routes between the Home tab and one
 /// mounted RepoView per open repository. All repo state lives inside RepoView.
@@ -43,6 +44,9 @@ export default function App() {
   useEffect(() => {
     void runSilentUpdate(setUpdateStatus);
   }, []);
+
+  // App-wide custom tooltips, driven off native title attributes.
+  useTooltips();
 
   // Persist the session whenever tabs or focus change.
   useEffect(() => {
