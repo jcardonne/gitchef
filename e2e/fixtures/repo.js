@@ -15,6 +15,13 @@ export function createFixtureRepo({ commits = 300, files = 600 } = {}) {
   git(["config", "user.email", "e2e@gitchef.test"]);
   git(["config", "user.name", "GitChef E2E"]);
   git(["config", "commit.gpgsign", "false"]);
+  // The 300-commit build below trips git's `gc --auto`, which writes a
+  // commit-graph file; libgit2's revwalk then reads it mid-write and fails with
+  // "object not found", blanking the graph. Keep these throwaway repos plain:
+  // no background gc, and have libgit2 walk real objects, not a commit-graph.
+  git(["config", "gc.auto", "0"]);
+  git(["config", "maintenance.auto", "false"]);
+  git(["config", "core.commitGraph", "false"]);
 
   writeFileSync(join(dir, "README.md"), "# fixture\n");
   git(["add", "README.md"]);
