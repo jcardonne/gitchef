@@ -39,7 +39,9 @@ async function openColoredRepo(dir, color) {
 
 describe("GitChef tab colors", () => {
   before(async () => {
-    const repo = createFixtureRepo();
+    // This spec only checks tab-color persistence/stripe, not history depth, so
+    // a tiny repo is enough - and it avoids a needless heavy commit-graph walk.
+    const repo = createFixtureRepo({ commits: 3, files: 2 });
     await openColoredRepo(repo.dir, "blue");
   });
 
