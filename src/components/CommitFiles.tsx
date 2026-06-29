@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FileDiff } from "../types";
 import { getChangesView, setChangesView, type ChangesView } from "../storage";
 import { buildTree, flattenVisible } from "../fileTree";
-import { StatusIcon } from "./ChangeList";
+import { StatusIcon, renameLabel } from "./ChangeList";
 
 interface Props {
   files: FileDiff[];
@@ -24,6 +24,15 @@ export default function CommitFiles({ files, selectedPath, onSelect, onContext }
   // New commit -> new file set -> start fully expanded.
   useEffect(() => setCollapsed(new Set()), [files]);
 
+  // Scroll the selected row into view only when the selection changes - NOT via
+  // an inline ref (which re-fires on every re-render, snapping the list back
+  // whenever an unrelated parent state update lands). A row in a collapsed tree
+  // folder isn't mounted, so its scroll is simply skipped.
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  useEffect(() => {
+    if (selectedPath) rowRefs.current.get(selectedPath)?.scrollIntoView({ block: "nearest" });
+  }, [selectedPath]);
+
   const changeView = (v: ChangesView) => {
     setView(v);
     setChangesView(v);
@@ -36,21 +45,13 @@ export default function CommitFiles({ files, selectedPath, onSelect, onContext }
     });
 
   const fileRow = (f: FileDiff, depth: number, label: string) => {
-    const oldBase = f.old_path ? f.old_path.split("/").pop() ?? f.old_path : null;
-    // Tree view shows basenames; a same-name move (a/x -> b/x) would read
-    // "x -> x", so fall back to the full old path there.
-    const renameFrom = !f.old_path
-      ? null
-      : view === "tree"
-        ? oldBase === label
-          ? f.old_path
-          : oldBase
-        : f.old_path;
+    const renameFrom = renameLabel(f.old_path, label, view);
     return (
       <div
         key={f.path}
         ref={(el) => {
-          if (el && selectedPath === f.path) el.scrollIntoView({ block: "nearest" });
+          if (el) rowRefs.current.set(f.path, el);
+          else rowRefs.current.delete(f.path);
         }}
         className={`file-row${selectedPath === f.path ? " selected" : ""}`}
         style={{ paddingLeft: BASE_PAD + depth * INDENT }}

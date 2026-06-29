@@ -1134,6 +1134,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     !!workSel && workFileStatus !== "conflicted" && !(!workSel.staged && workFileStatus === "new");
 
   // While inspecting a commit's files: ↑/↓ move between files, Escape deselects.
+  // Nav walks the flat commitFiles order; the diff preview always updates. In
+  // tree view, stepping into a manually-collapsed folder still previews the file
+  // but shows no row highlight (the row is unmounted) - acceptable edge case.
   useEffect(() => {
     if (!isActive || rightTab !== "commit" || commitFiles.length === 0) return;
     const onKey = (e: KeyboardEvent) => {
