@@ -147,3 +147,37 @@ export interface FileContent {
   lines: string[];
   truncated: boolean;
 }
+
+/// An in-progress git operation paused mid-flight (conflicts or an `edit` stop).
+/// `kind` is null when the working tree is clean (nothing paused).
+export type SequencerKind = "rebase" | "merge" | "cherry_pick" | "revert";
+
+export interface SequencerState {
+  kind: SequencerKind | null;
+  current: number; // step n of total (rebase only; 0 when unknown)
+  total: number;
+  onto: string | null; // short oid being replayed onto
+  head_name: string | null; // branch being rebased
+}
+
+/// A conflicted file split into plain context and conflict blocks. `base` is set
+/// only when the file carries diff3 markers (`|||||||`).
+export type ConflictSegment =
+  | { kind: "context"; lines: string[] }
+  | { kind: "conflict"; ours: string[]; theirs: string[]; base: string[] | null };
+
+export interface ConflictFile {
+  path: string;
+  segments: ConflictSegment[];
+}
+
+/// One line of an interactive-rebase plan. `message` carries the new commit
+/// message for a `reword` (null otherwise).
+export type RebaseAction = "pick" | "reword" | "edit" | "squash" | "fixup" | "drop";
+
+export interface TodoItem {
+  action: RebaseAction;
+  sha: string;
+  summary: string;
+  message: string | null;
+}

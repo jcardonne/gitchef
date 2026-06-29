@@ -11,6 +11,7 @@ import type {
   FileContent,
   FileDiff,
   RepoInfo,
+  SequencerState,
   StatusResult,
   TagInfo,
   WorkStats,
@@ -23,6 +24,9 @@ import Sidebar from "./Sidebar";
 import GraphView from "./GraphView";
 import StagingPanel from "./StagingPanel";
 import DiffViewer from "./DiffViewer";
+import ConflictViewer from "./ConflictViewer";
+import SequencerBanner from "./SequencerBanner";
+import RebasePlan from "./RebasePlan";
 import FileView from "./FileView";
 import RepoSkeleton from "./RepoSkeleton";
 import CommitFiles from "./CommitFiles";
@@ -52,6 +56,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [wips, setWips] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<StatusResult>(EMPTY_STATUS);
   const [workStats, setWorkStats] = useState<WorkStats | null>(null);
+  // A paused rebase/merge/cherry-pick/revert (null = clean tree), driving the
+  // banner. `rebasePlanBase` opens the interactive-rebase plan modal.
+  const [seq, setSeq] = useState<SequencerState | null>(null);
+  const [rebasePlanBase, setRebasePlanBase] = useState<{ base: string; label: string } | null>(null);
 
   const [rightTab, setRightTab] = useState<"changes" | "commit">("changes");
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
@@ -217,6 +225,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         : null;
       const s = await statusP;
       setStatus(s);
+      // Cheap (a few .git file checks); always refreshed so the banner appears
+      // after an op and clears the moment the last conflict is staged.
+      api.sequencerState(path).then(setSeq).catch(() => {});
       if (historyP) {
         const [g, b, t] = await historyP;
         setNodes(g);
@@ -533,6 +544,17 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       await reload();
       notify(out.trim() || `Rebased ${headBranch} onto ${branchName}`);
     });
+  // Drive the in-progress operation (continue / skip / abort). reload() refetches
+  // status + sequencer state, so the banner updates or disappears on its own.
+  const seqAct = (action: api.SequencerAction, label: string) =>
+    run(async () => {
+      const out = await api.sequencerAct(path, action);
+      await reload();
+      notify(out.trim() || label);
+    }, label);
+  // Stable identity so RebasePlan's fetch effect doesn't re-run (refetching the
+  // plan) on every RepoView re-render while the modal is open.
+  const closeRebasePlan = useCallback(() => setRebasePlanBase(null), []);
   const setBranchUpstream = (localName: string, upstreamName: string) =>
     run(async () => {
       const out = await api.setUpstream(path, localName, upstreamName);
@@ -707,6 +729,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
             MenuItem.new({
               text: `Rebase ${headBranch} onto ${branch.name}`,
               action: () => rebaseOntoBranch(branch.name),
+            }),
+            MenuItem.new({
+              text: `Rebase ${headBranch} onto ${branch.name} (interactive)...`,
+              action: () => setRebasePlanBase({ base: branch.name, label: branch.name }),
             }),
             PredefinedMenuItem.new({ item: "Separator" }),
           ]
@@ -927,6 +953,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: "Cherry-pick commit", action: () => cherryPick(sha) }),
       MenuItem.new({ text: "Revert commit", action: () => revertCommit(sha) }),
+      MenuItem.new({
+        text: "Rebase commits after this, interactively…",
+        action: () => setRebasePlanBase({ base: sha, label: short }),
+      }),
       Submenu.new({
         text: `Reset ${headBranch} to here`,
         items: await Promise.all([
@@ -1125,6 +1155,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     await (await Menu.new({ items })).popup();
   };
 
+  // Files still carrying conflict markers gate the sequencer banner's Continue.
+  const conflictCount = status.unstaged.filter((f) => f.status === "conflicted").length;
+
   // Hunk staging needs a tracked index diff to carve from: gate out untracked
   // (unstaged "new") files and conflicted files, where it can't work.
   const workFileStatus = workSel
@@ -1132,6 +1165,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     : undefined;
   const hunkMenuEnabled =
     !!workSel && workFileStatus !== "conflicted" && !(!workSel.staged && workFileStatus === "new");
+  // A selected conflicted file shows the resolver instead of the diff. Gated
+  // independently of `diff` so it opens even before/without a fileDiff result.
+  const showConflict = !!workSel && workFileStatus === "conflicted";
 
   // While inspecting a commit's files: ↑/↓ move between files, Escape deselects.
   // Nav walks the flat commitFiles order; the diff preview always updates. In
@@ -1186,6 +1222,17 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         onNewBranch={() => askName("New branch", "branch-name", onCreateBranch)}
       />
 
+      {seq?.kind && (
+        <SequencerBanner
+          state={seq}
+          conflictCount={conflictCount}
+          busy={busy}
+          onContinue={() => seqAct("--continue", "Continued")}
+          onSkip={() => seqAct("--skip", "Skipped")}
+          onAbort={() => seqAct("--abort", "Aborted")}
+        />
+      )}
+
       <div className="main">
         <Sidebar
           branches={branches}
@@ -1208,8 +1255,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           onStashMenu={showSidebarStashMenu}
         />
 
-        <div className={`center${diff ? " has-diff" : ""}`}>
-          {diff && (
+        <div className={`center${diff || showConflict ? " has-diff" : ""}`}>
+          {(diff || showConflict) && (
             <div className="center-diff">
               <button
                 className="center-diff-close"
@@ -1234,7 +1281,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                     File
                   </button>
                 </div>
-                {((previewMode === "diff" && diff.truncated && workSel) ||
+                {((previewMode === "diff" && diff?.truncated && workSel) ||
                   (previewMode === "file" && fileContent?.truncated)) && (
                   <button
                     className="mini-btn"
@@ -1246,7 +1293,17 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                 )}
               </div>
               {previewMode === "diff" ? (
-                <DiffViewer diff={diff} onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined} />
+                workSel && workFileStatus === "conflicted" ? (
+                  <ConflictViewer
+                    path={workSel.path}
+                    onResolved={() => {
+                      closeDiff();
+                      void refresh({ history: false });
+                    }}
+                  />
+                ) : (
+                  <DiffViewer diff={diff} onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined} />
+                )
               ) : (
                 <FileView content={fileContent} />
               )}
@@ -1352,6 +1409,15 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           onClose={() => setNamePrompt(null)}
           initial={namePrompt.initial}
           cta={namePrompt.cta}
+        />
+      )}
+
+      {rebasePlanBase && (
+        <RebasePlan
+          base={rebasePlanBase.base}
+          baseLabel={rebasePlanBase.label}
+          onClose={closeRebasePlan}
+          onStarted={() => void reload()}
         />
       )}
     </RepoContext.Provider>

@@ -3,11 +3,14 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   BranchInfo,
   CommitNode,
+  ConflictFile,
   FileContent,
   FileDiff,
   RepoInfo,
+  SequencerState,
   StatusResult,
   TagInfo,
+  TodoItem,
   WorkStats,
   StashInfo,
   WorktreeInfo,
@@ -69,6 +72,23 @@ export const fastForwardTo = (repo: string, branch: string) =>
   invoke<string>("fast_forward_to", { repo, branch });
 export const rebaseOnto = (repo: string, branch: string) =>
   invoke<string>("rebase_onto", { repo, branch });
+
+// --- sequencer (rebase/merge/cherry-pick/revert) + conflict resolution ---
+export const sequencerState = (repo: string) =>
+  invoke<SequencerState>("sequencer_state", { repo });
+export type SequencerAction = "--continue" | "--skip" | "--abort";
+export const sequencerAct = (repo: string, action: SequencerAction) =>
+  invoke<string>("sequencer_act", { repo, action });
+export const conflictBlocks = (repo: string, path: string) =>
+  invoke<ConflictFile>("conflict_blocks", { repo, path });
+export const resolveConflict = (repo: string, path: string, choices: string[]) =>
+  invoke<void>("resolve_conflict", { repo, path, choices });
+export const takeConflictSide = (repo: string, path: string, side: "ours" | "theirs") =>
+  invoke<void>("take_conflict_side", { repo, path, side });
+export const rebasePlan = (repo: string, base: string) =>
+  invoke<TodoItem[]>("rebase_plan", { repo, base });
+export const rebaseInteractive = (repo: string, base: string, plan: TodoItem[]) =>
+  invoke<string>("rebase_interactive", { repo, base, plan });
 export const renameBranch = (repo: string, oldName: string, newName: string) =>
   invoke<string>("rename_branch", { repo, oldName, newName });
 export const deleteBranch = (repo: string, name: string, isRemote: boolean, force = false) =>
