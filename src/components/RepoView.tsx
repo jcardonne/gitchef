@@ -24,8 +24,8 @@ import GraphView from "./GraphView";
 import StagingPanel from "./StagingPanel";
 import DiffViewer from "./DiffViewer";
 import FileView from "./FileView";
-import { StatusIcon } from "./ChangeList";
 import RepoSkeleton from "./RepoSkeleton";
+import CommitFiles from "./CommitFiles";
 
 const EMPTY_STATUS: StatusResult = { staged: [], unstaged: [] };
 
@@ -1263,6 +1263,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
               onSelect={selectCommit}
               onCommitMenu={showCommitMenu}
               workStats={workStats}
+              dirtyFiles={new Set([...status.staged, ...status.unstaged].map((f) => f.path)).size}
               workActive={rightTab === "changes" && !selectedCommit}
               onSelectWork={selectWork}
               onWorkMenu={showWorkMenu}
@@ -1314,30 +1315,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                 {selectedCommitNode && (
                   <CommitDetails commit={selectedCommitNode} avatarUrl={selectedCommitAvatar} />
                 )}
-                <div className="commit-files">
-                  {commitFiles.length === 0 && <div className="empty-hint">No file changes.</div>}
-                  {commitFiles.map((f) => (
-                    <div
-                      key={f.path}
-                      ref={(el) => {
-                        if (el && selectedPath === f.path) el.scrollIntoView({ block: "nearest" });
-                      }}
-                      className={`file-row${selectedPath === f.path ? " selected" : ""}`}
-                      title={f.old_path ? `${f.old_path} → ${f.path}` : undefined}
-                      onClick={() => selectCommitFile(f)}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        void showCommitFileMenu(f);
-                      }}
-                    >
-                      <StatusIcon status={f.status} />
-                      <span className="file-path">
-                        {f.old_path && <span className="rename-from">{f.old_path} → </span>}
-                        {f.path}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <CommitFiles
+                  files={commitFiles}
+                  selectedPath={selectedPath}
+                  onSelect={selectCommitFile}
+                  onContext={(f) => void showCommitFileMenu(f)}
+                />
               </div>
             )}
           </div>
