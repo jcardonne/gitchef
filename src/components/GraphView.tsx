@@ -37,6 +37,7 @@ interface Props {
   onBranchMenu: (branchName: string, isRemote: boolean, targetSha: string) => void;
   onTagMenu: (tagName: string, targetSha: string) => void;
   workStats: WorkStats | null;
+  dirtyFiles: number;
   workActive: boolean;
   onSelectWork: () => void;
   onWorkMenu: () => void;
@@ -59,6 +60,7 @@ export default function GraphView({
   onBranchMenu,
   onTagMenu,
   workStats,
+  dirtyFiles,
   workActive,
   onSelectWork,
   onWorkMenu,
@@ -195,7 +197,10 @@ export default function GraphView({
   );
 
   // A WIP node sits in row 0; commits shift down by one row when it's shown.
-  const hasWip = !!workStats && workStats.files > 0 && !filtering;
+  // Visibility follows `dirtyFiles` (the file list, always fresh), NOT workStats:
+  // the auto refresh skips the costly work_stats diff, so gating on it would hide
+  // the node when changes arrive via an external edit. workStats only feeds +/-.
+  const hasWip = dirtyFiles > 0 && !filtering;
   const offset = hasWip ? 1 : 0;
   const wipLane = displayed[0]?.lane ?? 0;
   const wipColor = laneColor(displayed[0]?.color ?? 0);
@@ -568,7 +573,7 @@ export default function GraphView({
 
       <div className="graph-rows" onMouseLeave={() => setTraceId(null)}>
         <div aria-hidden style={{ height: padTop }} />
-        {wipVisible && workStats && (
+        {wipVisible && (
           <div
             className={`commit-row wip-row${workActive ? " selected" : ""}`}
             style={{ height: ROW_H }}
@@ -591,10 +596,14 @@ export default function GraphView({
               </div>
             )}
             <div className="col-wip">
-              <span className="wip-add">+{workStats.insertions}</span>
-              <span className="wip-del">-{workStats.deletions}</span>
+              {workStats && (
+                <>
+                  <span className="wip-add">+{workStats.insertions}</span>
+                  <span className="wip-del">-{workStats.deletions}</span>
+                </>
+              )}
               <span className="wip-files">
-                {workStats.files} file{workStats.files === 1 ? "" : "s"}
+                {dirtyFiles} file{dirtyFiles === 1 ? "" : "s"}
               </span>
             </div>
           </div>

@@ -1,23 +1,26 @@
 import type { FileStatus } from "./types";
 
-export interface TreeFile {
+// Generic over the file payload (only `path` is read here) so the same tree
+// machinery groups working-tree changes (FileStatus) AND a commit's files
+// (FileDiff). Defaults to FileStatus so existing call sites need no change.
+export interface TreeFile<F = FileStatus> {
   type: "file";
-  file: FileStatus;
+  file: F;
 }
-export interface TreeFolder {
+export interface TreeFolder<F = FileStatus> {
   type: "folder";
   name: string;
   path: string;
-  children: TreeNode[];
+  children: TreeNode<F>[];
 }
-export type TreeNode = TreeFile | TreeFolder;
+export type TreeNode<F = FileStatus> = TreeFile<F> | TreeFolder<F>;
 
 /// Build a folder hierarchy from flat file paths, folders before files, sorted.
-export function buildTree(files: FileStatus[]): TreeNode[] {
-  const root: TreeFolder = { type: "folder", name: "", path: "", children: [] };
+export function buildTree<F extends { path: string }>(files: F[]): TreeNode<F>[] {
+  const root: TreeFolder<F> = { type: "folder", name: "", path: "", children: [] };
   // Full-path -> folder map, so finding/creating a parent folder is O(1). The
   // old `children.find` scan made a single flat directory of N files O(N^2).
-  const folders = new Map<string, TreeFolder>([["", root]]);
+  const folders = new Map<string, TreeFolder<F>>([["", root]]);
 
   for (const file of files) {
     const parts = file.path.split("/");
@@ -46,7 +49,7 @@ export function buildTree(files: FileStatus[]): TreeNode[] {
 // dominant cost when sorting tens of thousands of siblings.
 const collator = new Intl.Collator();
 
-function sort(folder: TreeFolder): void {
+function sort<F extends { path: string }>(folder: TreeFolder<F>): void {
   folder.children.sort((a, b) => {
     if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
     const an = a.type === "folder" ? a.name : a.file.path;
@@ -57,12 +60,12 @@ function sort(folder: TreeFolder): void {
 }
 
 /// Depth-first list of currently visible nodes, skipping collapsed subtrees.
-export function flattenVisible(
-  nodes: TreeNode[],
+export function flattenVisible<F extends { path: string }>(
+  nodes: TreeNode<F>[],
   collapsed: Set<string>,
   depth = 0
-): { node: TreeNode; depth: number }[] {
-  const out: { node: TreeNode; depth: number }[] = [];
+): { node: TreeNode<F>; depth: number }[] {
+  const out: { node: TreeNode<F>; depth: number }[] = [];
   for (const node of nodes) {
     out.push({ node, depth });
     if (node.type === "folder" && !collapsed.has(node.path)) {
@@ -73,9 +76,9 @@ export function flattenVisible(
 }
 
 /// Every file in a folder subtree (depth-first) - used for folder bulk actions.
-export function filesIn(folder: TreeFolder): FileStatus[] {
-  const out: FileStatus[] = [];
-  const walk = (nodes: TreeNode[]) => {
+export function filesIn<F extends { path: string }>(folder: TreeFolder<F>): F[] {
+  const out: F[] = [];
+  const walk = (nodes: TreeNode<F>[]) => {
     for (const n of nodes) {
       if (n.type === "file") out.push(n.file);
       else walk(n.children);
