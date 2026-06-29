@@ -9,6 +9,12 @@ allowBuilds: # pnpm 11+
   esbuild: true
 
 # Delay installing newly published versions so a freshly-compromised release
-# (usually caught within ~an hour) can't land immediately. 1440 = 24h. This is
-# pnpm 11's default; set explicitly to document intent and enable strict mode.
-minimumReleaseAge: 1440
+# (most are caught within days) can't land immediately. 20160 = 14 days. Setting
+# it explicitly turns on strict mode, so a too-fresh version errors out instead
+# of silently installing. Only applies when RESOLVING new versions (pnpm add /
+# update / a changed range) - a frozen lockfile install is unaffected.
+# Need a patch sooner than 14 days? Allowlist that one package below, e.g.:
+#   minimumReleaseAgeExclude:
+#     - some-package          # by name (all versions)
+#     - 'some-package@1.2.3'  # or a specific version
+minimumReleaseAge: 20160 # 14 days
