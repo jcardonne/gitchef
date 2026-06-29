@@ -2,7 +2,7 @@ mod error;
 mod git;
 
 use error::AppResult;
-use git::{avatars, branch, diff, files, graph, ops, repo, worktree};
+use git::{avatars, branch, conflict, diff, files, graph, ops, rebase, repo, sequencer, worktree};
 use git2::Repository;
 
 /// Open a repository by path. The backend holds NO active-repo state: every
@@ -146,6 +146,47 @@ fn fast_forward_to(repo: String, branch: String) -> AppResult<String> {
 #[tauri::command]
 fn rebase_onto(repo: String, branch: String) -> AppResult<String> {
     ops::rebase_onto(&open(&repo)?, &branch)
+}
+
+// --- sequencer (rebase/merge/cherry-pick/revert) + conflict resolution ---
+
+#[tauri::command]
+fn sequencer_state(repo: String) -> AppResult<sequencer::SequencerState> {
+    sequencer::state(&open(&repo)?)
+}
+
+#[tauri::command]
+fn sequencer_act(repo: String, action: String) -> AppResult<String> {
+    sequencer::act(&open(&repo)?, &action)
+}
+
+#[tauri::command(async)]
+fn conflict_blocks(repo: String, path: String) -> AppResult<conflict::ConflictFile> {
+    conflict::parse(&open(&repo)?, &path)
+}
+
+#[tauri::command]
+fn resolve_conflict(repo: String, path: String, choices: Vec<String>) -> AppResult<()> {
+    conflict::resolve(&open(&repo)?, &path, &choices)
+}
+
+#[tauri::command]
+fn take_conflict_side(repo: String, path: String, side: String) -> AppResult<()> {
+    conflict::take_side(&open(&repo)?, &path, &side)
+}
+
+#[tauri::command(async)]
+fn rebase_plan(repo: String, base: String) -> AppResult<Vec<rebase::TodoItem>> {
+    rebase::plan(&open(&repo)?, &base)
+}
+
+#[tauri::command(async)]
+fn rebase_interactive(
+    repo: String,
+    base: String,
+    plan: Vec<rebase::TodoItem>,
+) -> AppResult<String> {
+    rebase::run_interactive(&open(&repo)?, &base, plan)
 }
 
 #[tauri::command]
@@ -336,6 +377,13 @@ fn apply_lines(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // During an interactive rebase, git re-launches THIS binary as its sequence
+    // editor (to inject the todo) and as the `exec` reword hook. Handle those
+    // invocations and exit before booting Tauri - they must never open a window.
+    if rebase::run_cli_hook() {
+        return;
+    }
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
@@ -383,6 +431,13 @@ pub fn run() {
             merge,
             fast_forward_to,
             rebase_onto,
+            sequencer_state,
+            sequencer_act,
+            conflict_blocks,
+            resolve_conflict,
+            take_conflict_side,
+            rebase_plan,
+            rebase_interactive,
             rename_branch,
             delete_branch,
             set_upstream,

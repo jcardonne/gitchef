@@ -42,3 +42,42 @@ export function createFixtureRepo({ commits = 300, files = 600 } = {}) {
 
   return { dir, commits, files };
 }
+
+/// Build a repo left PAUSED mid-rebase with one conflicted file, so the app
+/// opens straight into the sequencer banner + conflict resolver (the native
+/// branch-menu trigger isn't reachable from the webview, so we set up the
+/// conflict with real git here and let the UI drive the resolution + continue).
+export function createConflictRepo() {
+  const dir = mkdtempSync(join(tmpdir(), "gitchef-e2e-conflict-"));
+  const git = (args) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+
+  git(["init", "-q", "-b", "main"]);
+  git(["config", "user.email", "e2e@gitchef.test"]);
+  git(["config", "user.name", "GitChef E2E"]);
+  git(["config", "commit.gpgsign", "false"]);
+  git(["config", "gc.auto", "0"]);
+
+  writeFileSync(join(dir, "file.txt"), "line1\nbase\nline3\n");
+  git(["add", "."]);
+  git(["commit", "-q", "-m", "base"]);
+
+  // feature edits the middle line one way...
+  git(["checkout", "-q", "-b", "feature"]);
+  writeFileSync(join(dir, "file.txt"), "line1\nfeature change\nline3\n");
+  git(["add", "."]);
+  git(["commit", "-q", "-m", "feature edit"]);
+
+  // ...main edits the same line another way -> replaying feature conflicts.
+  git(["checkout", "-q", "main"]);
+  writeFileSync(join(dir, "file.txt"), "line1\nmain change\nline3\n");
+  git(["add", "."]);
+  git(["commit", "-q", "-m", "main edit"]);
+
+  git(["checkout", "-q", "feature"]);
+  try {
+    git(["-c", "core.editor=true", "rebase", "main"]);
+  } catch {
+    // expected: the rebase stops on the conflict, leaving .git/rebase-merge
+  }
+  return { dir };
+}

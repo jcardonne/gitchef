@@ -1,4 +1,4 @@
-use super::{run_git, workdir};
+use super::{run_git, sequencer, workdir};
 use crate::error::{AppError, AppResult};
 use crate::git::repo;
 use git2::Repository;
@@ -69,19 +69,29 @@ pub fn push(repo: &Repository) -> AppResult<String> {
     }
 }
 pub fn pull(repo: &Repository, mode: &str) -> AppResult<String> {
-    let arg = match mode {
-        "ff" => "--ff",
-        "ff-only" => "--ff-only",
-        "rebase" => "--rebase",
-        other => return Err(AppError::Msg(format!("unknown pull mode: {other}"))),
-    };
-    run_git(workdir(repo)?, &["pull", arg])
+    let dir = workdir(repo)?;
+    match mode {
+        "ff" => run_git(dir, &["pull", "--ff"]),
+        "ff-only" => run_git(dir, &["pull", "--ff-only"]),
+        // A rebasing pull can pause on conflicts like any rebase, so it goes
+        // through the sequencer (which tolerates that pause). --autostash lets
+        // it run over a dirty tree and re-applies the changes afterwards.
+        "rebase" => sequencer::run_step(
+            repo,
+            &["pull", "--rebase", "--autostash"],
+            &[("GIT_EDITOR", "true")],
+        ),
+        other => Err(AppError::Msg(format!("unknown pull mode: {other}"))),
+    }
 }
 pub fn fetch(repo: &Repository) -> AppResult<String> {
     run_git(workdir(repo)?, &["fetch", "--all", "--prune"])
 }
 pub fn merge(repo: &Repository, branch: &str) -> AppResult<String> {
-    run_git(workdir(repo)?, &["merge", branch])
+    // --autostash so a dirty tree doesn't block the merge; GIT_EDITOR=true keeps
+    // the merge-commit message non-interactive. A conflict pauses (state=Merge)
+    // and the sequencer banner takes over rather than surfacing an error.
+    sequencer::run_step(repo, &["merge", "--autostash", branch], &[("GIT_EDITOR", "true")])
 }
 
 pub fn fast_forward_to(repo: &Repository, branch: &str) -> AppResult<String> {
@@ -89,7 +99,9 @@ pub fn fast_forward_to(repo: &Repository, branch: &str) -> AppResult<String> {
 }
 
 pub fn rebase_onto(repo: &Repository, branch: &str) -> AppResult<String> {
-    run_git(workdir(repo)?, &["rebase", branch])
+    // --autostash rebases over a dirty tree; a conflict pauses the rebase and
+    // the sequencer banner drives continue/skip/abort instead of erroring.
+    sequencer::run_step(repo, &["rebase", "--autostash", branch], &[("GIT_EDITOR", "true")])
 }
 
 /// Stash every change (tracked + untracked) off the working tree.
@@ -100,11 +112,12 @@ pub fn stash_all(repo: &Repository) -> AppResult<String> {
 // --- commit-centric operations (via git CLI for conflict/working-tree safety) ---
 
 pub fn cherry_pick(repo: &Repository, sha: &str) -> AppResult<String> {
-    run_git(workdir(repo)?, &["cherry-pick", sha])
+    // A conflict pauses (state=CherryPick) and the banner takes over.
+    sequencer::run_step(repo, &["cherry-pick", sha], &[("GIT_EDITOR", "true")])
 }
 
 pub fn revert_commit(repo: &Repository, sha: &str) -> AppResult<String> {
-    run_git(workdir(repo)?, &["revert", "--no-edit", sha])
+    sequencer::run_step(repo, &["revert", "--no-edit", sha], &[("GIT_EDITOR", "true")])
 }
 
 pub fn reset_to(repo: &Repository, sha: &str, mode: &str) -> AppResult<String> {

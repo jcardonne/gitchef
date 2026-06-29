@@ -1,10 +1,13 @@
 pub mod avatars;
 pub mod branch;
+pub mod conflict;
 pub mod diff;
 pub mod files;
 pub mod graph;
 pub mod ops;
+pub mod rebase;
 pub mod repo;
+pub mod sequencer;
 pub mod worktree;
 
 use crate::error::{AppError, AppResult};
@@ -24,6 +27,8 @@ pub fn short_oid(oid: git2::Oid) -> String {
 /// Run the system `git` binary inside `dir`. Used for operations where shelling
 /// out is more robust than libgit2: network + auth (push/pull/fetch), merge,
 /// and checkout (which mutates the working tree with all of git's safety rails).
+/// Errs on a non-zero exit. The sequencer (`sequencer::run_step`) builds its own
+/// Command instead because it needs env vars AND pause-tolerant exit handling.
 pub fn run_git(dir: &Path, args: &[&str]) -> AppResult<String> {
     let out = std::process::Command::new("git")
         .current_dir(dir)
