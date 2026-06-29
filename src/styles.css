@@ -1279,6 +1279,11 @@ button {
 .commit-files {
   padding: 4px 0;
 }
+.commit-files-head {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 12px 0;
+}
 
 /* ---------- diff ---------- */
 .diff {
@@ -1348,6 +1353,12 @@ button {
   background: var(--hunk-bg);
   white-space: nowrap;
   overflow: hidden;
+}
+/* Grow to the widest line so each row's add/del background spans the FULL
+   scroll width, not just the viewport - otherwise the colour stops mid-line
+   when you scroll right (the rows would only be as wide as the visible port). */
+.diff-rows {
+  min-width: max-content;
 }
 .diff-line {
   display: flex;

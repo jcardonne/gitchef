@@ -190,16 +190,7 @@ function ChangeList({
 
   const fileRow = (f: FileStatus, depth: number, label: string) => {
     const index = indexOf.get(f) ?? 0;
-    const oldBase = f.old_path ? f.old_path.split("/").pop() ?? f.old_path : null;
-    // Tree view shows basenames, but a same-name move (a/x.ts -> b/x.ts) would
-    // read "x.ts -> x.ts"; fall back to the full old path in that case.
-    const renameFrom = !f.old_path
-      ? null
-      : view === "tree"
-        ? oldBase === label
-          ? f.old_path
-          : oldBase
-        : f.old_path;
+    const renameFrom = renameLabel(f.old_path, label, view);
     return (
       <div
         key={keyOf(f)}
@@ -272,6 +263,21 @@ function visibleFiles(visible: { node: { type: string } }[]): FileStatus[] {
   return visible
     .filter((v) => v.node.type === "file")
     .map((v) => (v.node as TreeFile).file);
+}
+
+/// The "renamed from" label for a file row, shared by the staging and commit
+/// views. List view shows the full old path; tree view shows just the old
+/// basename - unless a same-name move (a/x -> b/x) would render "x -> x", where
+/// the full old path disambiguates.
+export function renameLabel(
+  oldPath: string | null,
+  label: string,
+  view: ChangesView
+): string | null {
+  if (!oldPath) return null;
+  if (view !== "tree") return oldPath;
+  const base = oldPath.split("/").pop() ?? oldPath;
+  return base === label ? oldPath : base;
 }
 
 export function StatusIcon({ status }: { status: FileStatusKind }) {

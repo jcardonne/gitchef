@@ -85,3 +85,15 @@ describe("filesIn", () => {
     expect(filesIn(empty)).toEqual([]);
   });
 });
+
+describe("generic over the file payload", () => {
+  it("groups any { path } shape, preserving the original objects (e.g. commit FileDiff)", () => {
+    // Minimal FileDiff-like payload: carries fields FileStatus doesn't.
+    const diff = (path: string) => ({ path, binary: false, hunks: [] });
+    const tree = buildTree([diff("src/a.ts"), diff("src/b.ts"), diff("README.md")]);
+    const src = tree[0] as TreeFolder<ReturnType<typeof diff>>;
+    expect(src.path).toBe("src");
+    // The leaf is the SAME object we put in - hunks/binary survive the grouping.
+    expect(src.children[0]).toEqual({ type: "file", file: diff("src/a.ts") });
+  });
+});

@@ -119,7 +119,7 @@ export default function DiffViewer({ diff, onHunkMenu }: Props) {
   return (
     <div className="diff">
       <div className="diff-scroll" ref={ref}>
-        <div style={{ paddingTop: padTop, paddingBottom: padBottom }}>
+        <div className="diff-rows" style={{ paddingTop: padTop, paddingBottom: padBottom }}>
           {rows.slice(start, end).map((row, i) => {
             if ("hunk" in row) {
               return (
