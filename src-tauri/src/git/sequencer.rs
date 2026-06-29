@@ -133,3 +133,64 @@ pub fn act(repo: &Repository, action: &str) -> AppResult<String> {
     }
     run_step(repo, &[cmd, action], &[("GIT_EDITOR", "true")])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{act, state, SequencerKind};
+    use crate::git::{conflict, ops, run_git};
+    use git2::Repository;
+    use std::path::{Path, PathBuf};
+
+    fn tmp(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let mut p = std::env::temp_dir();
+        p.push(format!("gitchef-{tag}-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&p).unwrap();
+        p
+    }
+
+    fn commit(dir: &Path, body: &str, msg: &str) {
+        std::fs::write(dir.join("f.txt"), body).unwrap();
+        run_git(dir, &["add", "."]).unwrap();
+        run_git(dir, &["commit", "-m", msg]).unwrap();
+    }
+
+    // The whole backend conflict lifecycle on a real repo: a conflicting rebase
+    // PAUSES (not errors), state() reports it, resolve() clears the conflict, and
+    // act("--continue") finishes - exactly what the banner drives.
+    #[test]
+    fn rebase_conflict_pauses_then_resolves_and_continues() {
+        let dir = tmp("seq");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        commit(&dir, "base\n", "base");
+        // Don't assume the default branch name (master vs main): capture it.
+        let main = run_git(&dir, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap().trim().to_string();
+        run_git(&dir, &["checkout", "-q", "-b", "feature"]).unwrap();
+        commit(&dir, "feature\n", "feature edit");
+        run_git(&dir, &["checkout", "-q", &main]).unwrap();
+        commit(&dir, "main\n", "main edit");
+        run_git(&dir, &["checkout", "-q", "feature"]).unwrap();
+
+        let repo = Repository::open(&dir).unwrap();
+        // Replaying feature onto the base branch conflicts on f.txt. Must NOT error.
+        ops::rebase_onto(&repo, &main).unwrap();
+
+        let st = state(&repo).unwrap();
+        assert!(matches!(st.kind, Some(SequencerKind::Rebase)), "paused in a rebase");
+        assert!(st.total >= 1, "progress populated: {}/{}", st.current, st.total);
+
+        // Resolve the only conflict block (take one side) and continue.
+        conflict::resolve(&repo, "f.txt", &["ours".to_string()]).unwrap();
+        act(&repo, "--continue").unwrap();
+
+        assert!(state(&repo).unwrap().kind.is_none(), "rebase finished, tree clean");
+        let f = std::fs::read_to_string(dir.join("f.txt")).unwrap();
+        assert!(!f.contains("<<<<<<<"), "no conflict markers left: {f:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
