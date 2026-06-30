@@ -49,6 +49,12 @@ fn sh_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+/// A non-empty custom message for a todo item, else None (empty = keep git's
+/// default: the original message for reword, the auto-combined one for squash).
+fn custom_message(it: &TodoItem) -> Option<&str> {
+    it.message.as_deref().filter(|s| !s.is_empty())
+}
+
 pub fn run_interactive(repo: &Repository, base: &str, plan: Vec<TodoItem>) -> AppResult<String> {
     // Refuse to start over a paused operation: starting `rebase -i` would fail
     // anyway, and wiping the scratch dir below would destroy reword message
@@ -69,21 +75,40 @@ pub fn run_interactive(repo: &Repository, base: &str, plan: Vec<TodoItem>) -> Ap
     std::fs::remove_dir_all(&scratch).ok();
     std::fs::create_dir_all(&scratch)?;
 
+    // Emit an `exec` line that amends the just-replayed commit's message, by
+    // writing the message to a scratch file our --gitchef-reword hook reads. Used
+    // for reword and for a squash whose combined message the user customized.
+    let amend_line = |sha: &str, message: &str| -> AppResult<String> {
+        let msg = scratch.join(format!("{sha}.msg"));
+        std::fs::write(&msg, message)?;
+        Ok(format!(
+            "exec {} --gitchef-reword {}\n",
+            sh_quote(&exe),
+            sh_quote(&msg.to_string_lossy())
+        ))
+    };
     let mut todo = String::new();
     for it in &plan {
         match it.action.as_str() {
             "drop" => continue, // omitting the line drops the commit
+            // reword = pick, then amend the message via exec (a bare `reword`
+            // would open an editor). An empty message means no rename: plain pick.
             "reword" => {
                 todo.push_str(&format!("pick {}\n", it.sha));
-                let msg = scratch.join(format!("{}.msg", it.sha));
-                std::fs::write(&msg, it.message.clone().unwrap_or_default())?;
-                todo.push_str(&format!(
-                    "exec {} --gitchef-reword {}\n",
-                    sh_quote(&exe),
-                    sh_quote(&msg.to_string_lossy())
-                ));
+                if let Some(m) = custom_message(it) {
+                    todo.push_str(&amend_line(&it.sha, m)?);
+                }
             }
-            a @ ("pick" | "edit" | "squash" | "fixup") => {
+            // squash melds into the previous commit; git auto-combines the
+            // messages (GIT_EDITOR=true accepts that). A custom message overrides
+            // the combined result via the same amend exec.
+            "squash" => {
+                todo.push_str(&format!("squash {}\n", it.sha));
+                if let Some(m) = custom_message(it) {
+                    todo.push_str(&amend_line(&it.sha, m)?);
+                }
+            }
+            a @ ("pick" | "edit" | "fixup") => {
                 todo.push_str(&format!("{a} {}\n", it.sha));
             }
             other => {

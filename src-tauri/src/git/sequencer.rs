@@ -21,6 +21,8 @@ pub enum SequencerKind {
 pub struct SequencerState {
     /// None when the working tree is clean (no operation paused mid-flight).
     pub kind: Option<SequencerKind>,
+    /// True for `rebase -i`, so the banner can label it "interactive".
+    pub interactive: bool,
     /// Step `current` of `total` (rebase only; 0 when unknown).
     pub current: usize,
     pub total: usize,
@@ -46,7 +48,7 @@ fn kind_of(state: RepositoryState) -> Option<SequencerKind> {
 
 /// Read git's on-disk rebase metadata for progress + target display. Modern git
 /// uses the `rebase-merge` backend; `rebase-apply` is the legacy am-based one.
-fn rebase_meta(gitdir: &Path) -> (usize, usize, Option<String>, Option<String>) {
+fn rebase_meta(gitdir: &Path) -> (bool, usize, usize, Option<String>, Option<String>) {
     let dir = {
         let rm = gitdir.join("rebase-merge");
         let ra = gitdir.join("rebase-apply");
@@ -55,7 +57,7 @@ fn rebase_meta(gitdir: &Path) -> (usize, usize, Option<String>, Option<String>) 
         } else if ra.is_dir() {
             ra
         } else {
-            return (0, 0, None, None);
+            return (false, 0, 0, None, None);
         }
     };
     let read = |name: &str| {
@@ -64,6 +66,7 @@ fn rebase_meta(gitdir: &Path) -> (usize, usize, Option<String>, Option<String>) 
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
     };
+    let interactive = dir.join("interactive").exists();
     let parse = |v: Option<String>| v.and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
     let current = parse(read("msgnum").or_else(|| read("next")));
     let total = parse(read("end").or_else(|| read("last")));
@@ -73,16 +76,16 @@ fn rebase_meta(gitdir: &Path) -> (usize, usize, Option<String>, Option<String>) 
             .map(str::to_string)
             .unwrap_or(s)
     });
-    (current, total, onto, head_name)
+    (interactive, current, total, onto, head_name)
 }
 
 pub fn state(repo: &Repository) -> AppResult<SequencerState> {
     let kind = kind_of(repo.state());
-    let (current, total, onto, head_name) = match kind {
+    let (interactive, current, total, onto, head_name) = match kind {
         Some(SequencerKind::Rebase) => rebase_meta(repo.path()),
-        _ => (0, 0, None, None),
+        _ => (false, 0, 0, None, None),
     };
-    Ok(SequencerState { kind, current, total, onto, head_name })
+    Ok(SequencerState { kind, interactive, current, total, onto, head_name })
 }
 
 /// Run a sequencing git command (rebase / merge / cherry-pick / revert and their

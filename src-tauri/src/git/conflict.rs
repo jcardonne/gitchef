@@ -145,6 +145,10 @@ pub fn resolve(repo: &Repository, path: &str, choices: &[String]) -> AppResult<(
                         out.extend(ours.iter().cloned());
                         out.extend(theirs.iter().cloned());
                     }
+                    "both_reversed" => {
+                        out.extend(theirs.iter().cloned());
+                        out.extend(ours.iter().cloned());
+                    }
                     "neither" => {}
                     other => return Err(AppError::Msg(format!("unknown choice: {other}"))),
                 }
@@ -252,6 +256,10 @@ mod tests {
                             out.extend(ours.iter().cloned());
                             out.extend(theirs.iter().cloned());
                         }
+                        "both_reversed" => {
+                            out.extend(theirs.iter().cloned());
+                            out.extend(ours.iter().cloned());
+                        }
                         _ => {}
                     },
                 }
@@ -261,6 +269,7 @@ mod tests {
         assert_eq!(build("ours"), "keep\nours line\ntail\n");
         assert_eq!(build("theirs"), "keep\ntheirs line\ntail\n");
         assert_eq!(build("both"), "keep\nours line\ntheirs line\ntail\n");
+        assert_eq!(build("both_reversed"), "keep\ntheirs line\nours line\ntail\n");
         assert_eq!(build("neither"), "keep\ntail\n");
     }
 

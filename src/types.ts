@@ -154,6 +154,7 @@ export type SequencerKind = "rebase" | "merge" | "cherry_pick" | "revert";
 
 export interface SequencerState {
   kind: SequencerKind | null;
+  interactive: boolean; // true for an interactive rebase
   current: number; // step n of total (rebase only; 0 when unknown)
   total: number;
   onto: string | null; // short oid being replayed onto
