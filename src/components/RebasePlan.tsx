@@ -83,10 +83,10 @@ export default function RebasePlan({ base, baseLabel, onClose, onStarted }: Prop
 
   const start = () => {
     if (!plan || !valid) return;
-    // Only reword carries a message; everything else sends null.
+    // reword and squash can carry a custom message; everything else sends null.
     const payload = plan.map((it) => ({
       ...it,
-      message: it.action === "reword" ? it.message : null,
+      message: it.action === "reword" || it.action === "squash" ? it.message : null,
     }));
     run(async () => {
       await api.rebaseInteractive(repoPath, base, payload);
@@ -144,11 +144,15 @@ export default function RebasePlan({ base, baseLabel, onClose, onStarted }: Prop
                     </option>
                   ))}
                 </select>
-                {item.action === "reword" && (
+                {(item.action === "reword" || item.action === "squash") && (
                   <input
                     className="rebase-reword"
                     value={item.message ?? ""}
-                    placeholder="New commit message"
+                    placeholder={
+                      item.action === "squash"
+                        ? "Custom combined message (optional)"
+                        : "New commit message"
+                    }
                     onChange={(e) => setMessage(i, e.target.value)}
                   />
                 )}

@@ -35,6 +35,7 @@ export default function SequencerBanner({
 
   let detail = VERB[state.kind];
   if (state.kind === "rebase") {
+    if (state.interactive) detail += " (interactive)";
     if (state.head_name) detail += ` ${state.head_name}`;
     if (state.onto) detail += ` onto ${state.onto}`;
     if (state.total) detail += ` - step ${state.current}/${state.total}`;

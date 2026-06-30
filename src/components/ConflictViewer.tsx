@@ -3,8 +3,9 @@ import type { ConflictFile, ConflictSegment } from "../types";
 import * as api from "../api";
 import { useRepo } from "../repoContext";
 
-// One choice per conflict block, in document order. "both" = ours then theirs.
-type Choice = "ours" | "theirs" | "both" | "neither";
+// One choice per conflict block, in document order. "both" = ours then theirs;
+// "both_reversed" = theirs then ours (toggled by the bar).
+type Choice = "ours" | "theirs" | "both" | "both_reversed" | "neither";
 
 const ACTIONS: { value: Choice; label: string }[] = [
   { value: "ours", label: "Accept current" },
@@ -29,6 +30,8 @@ export default function ConflictViewer({ path, onResolved }: Props) {
   const [file, setFile] = useState<ConflictFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [choices, setChoices] = useState<(Choice | undefined)[]>([]);
+  // Order applied when "Accept both" is clicked (current-first vs incoming-first).
+  const [reverseBoth, setReverseBoth] = useState(false);
   const reqId = useRef(0);
 
   useEffect(() => {
@@ -94,6 +97,13 @@ export default function ConflictViewer({ path, onResolved }: Props) {
         <button className="mini-btn" disabled={busy} onClick={() => takeSide("theirs")}>
           Take all incoming
         </button>
+        <button
+          className="mini-btn"
+          onClick={() => setReverseBoth((v) => !v)}
+          title="Order used when accepting both sides of a block"
+        >
+          Both: {reverseBoth ? "incoming first" : "current first"}
+        </button>
         <span className="conflict-spacer" />
         <button className="mini-btn" disabled={!ready} onClick={() => resolve(choices as string[])}>
           Mark resolved
@@ -110,6 +120,7 @@ export default function ConflictViewer({ path, onResolved }: Props) {
                   key={i}
                   seg={seg}
                   choice={choices[idx]}
+                  reverseBoth={reverseBoth}
                   onChoose={(c) =>
                     setChoices((prev) => {
                       const next = prev.slice();
@@ -130,27 +141,36 @@ export default function ConflictViewer({ path, onResolved }: Props) {
 function ConflictBlock({
   seg,
   choice,
+  reverseBoth,
   onChoose,
 }: {
   seg: Extract<ConflictSegment, { kind: "conflict" }>;
   choice: Choice | undefined;
+  reverseBoth: boolean;
   onChoose: (c: Choice) => void;
 }) {
   const chosen = choice !== undefined;
-  const inOurs = choice === "ours" || choice === "both";
-  const inTheirs = choice === "theirs" || choice === "both";
+  const isBoth = choice === "both" || choice === "both_reversed";
+  const inOurs = choice === "ours" || isBoth;
+  const inTheirs = choice === "theirs" || isBoth;
   return (
     <div className="conflict-block">
       <div className="conflict-actions">
-        {ACTIONS.map((a) => (
-          <button
-            key={a.value}
-            className={`mini-btn${choice === a.value ? " chosen" : ""}`}
-            onClick={() => onChoose(a.value)}
-          >
-            {a.label}
-          </button>
-        ))}
+        {ACTIONS.map((a) => {
+          // "Accept both" stores ours-first or theirs-first per the bar toggle;
+          // its highlight covers either both-variant.
+          const value = a.value === "both" ? (reverseBoth ? "both_reversed" : "both") : a.value;
+          const isChosen = a.value === "both" ? isBoth : choice === value;
+          return (
+            <button
+              key={a.value}
+              className={`mini-btn${isChosen ? " chosen" : ""}`}
+              onClick={() => onChoose(value)}
+            >
+              {a.label}
+            </button>
+          );
+        })}
       </div>
       <div className={`conflict-side${chosen && !inOurs ? " dim" : ""}`}>
         <div className="conflict-head ours">Current (ours)</div>
