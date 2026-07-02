@@ -958,6 +958,16 @@ button {
   margin-right: 5px;
   flex: 0 0 auto;
 }
+/* Shown when a resolved avatar image fails to load: a lane-colored initial. */
+.author-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+}
 .wip-row .commit-summary {
   font-style: italic;
   color: var(--text-dim);

@@ -147,6 +147,10 @@ export default function GraphView({
   // Resolve each unique committer's avatar (GitHub / GitLab / Gravatar per the
   // repo's provider; cached in util).
   const [avatars, setAvatars] = useState<Map<string, string>>(new Map());
+  // Resolved URLs that failed to load (e.g. a renamed account behind the legacy
+  // no-reply .png redirect); the row shows a colored initial instead of a broken
+  // <img>. The SVG dot already degrades to its lane-colored backdrop.
+  const [failedAvatars, setFailedAvatars] = useState<Set<string>>(new Set());
   useEffect(() => {
     let alive = true;
     const emails = [...new Set(nodes.map((n) => n.email).filter(Boolean))];
@@ -645,7 +649,23 @@ export default function GraphView({
               )}
               {visibleCols.author && (
                 <div className="col-author" style={{ flex: `0 0 ${authorW}px` }}>
-                  {url && <img className="author-avatar" src={url} alt="" />}
+                  {url &&
+                    (failedAvatars.has(url) ? (
+                      <span
+                        className="author-avatar author-avatar-fallback"
+                        style={{ background: laneColor(n.color) }}
+                        aria-hidden="true"
+                      >
+                        {n.author.trim().charAt(0).toUpperCase() || "?"}
+                      </span>
+                    ) : (
+                      <img
+                        className="author-avatar"
+                        src={url}
+                        alt=""
+                        onError={() => setFailedAvatars((s) => new Set(s).add(url))}
+                      />
+                    ))}
                   <span className="col-author-name">{n.author}</span>
                 </div>
               )}

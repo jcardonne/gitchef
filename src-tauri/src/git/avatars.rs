@@ -177,18 +177,35 @@ struct GhUser {
     avatar_url: String,
 }
 
+/// Percent-encode each segment of a repo path for use in a URL path, keeping '/'
+/// as the separator. Owner/repo names are normally URL-safe; this stops a
+/// hand-crafted remote from smuggling query/path characters into the API call.
+fn encode_path(path: &str) -> String {
+    path.split('/')
+        .map(|seg| {
+            seg.bytes()
+                .map(|b| match b {
+                    b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                        (b as char).to_string()
+                    }
+                    _ => format!("%{b:02X}"),
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
 fn fetch_github(target: &RemoteTarget, wanted: &HashSet<String>) -> AppResult<HashMap<String, String>> {
     let token = provider_token("github", &target.host);
+    let path = encode_path(&target.path);
     let mut out = HashMap::new();
     let mut remaining = wanted.len();
     for page in 1..=MAX_PAGES {
         if remaining == 0 {
             break;
         }
-        let url = format!(
-            "https://api.github.com/repos/{}/commits?per_page=100&page={page}",
-            target.path
-        );
+        let url = format!("https://api.github.com/repos/{path}/commits?per_page=100&page={page}");
         let mut req = ureq::get(&url)
             .set("Accept", "application/vnd.github+json")
             .set("User-Agent", "GitChef")
@@ -425,6 +442,14 @@ mod tests {
             "https://avatars.githubusercontent.com/u/1?v=4&s=64"
         );
         assert_eq!(sized_github("https://x/a.png"), "https://x/a.png?s=64");
+    }
+
+    #[test]
+    fn encodes_path_segments_keeping_slash() {
+        assert_eq!(encode_path("owner/repo"), "owner/repo"); // safe names untouched
+        assert_eq!(encode_path("grp/sub/repo"), "grp/sub/repo"); // nested groups keep '/'
+        assert_eq!(encode_path("a.b_c-d~e"), "a.b_c-d~e"); // unreserved set untouched
+        assert_eq!(encode_path("o wner/re?po"), "o%20wner/re%3Fpo"); // space + query char
     }
 
     #[test]

@@ -1433,11 +1433,21 @@ function CommitDetails({
 }) {
   const description = commitDescription(commit);
   const absoluteTime = new Date(commit.time * 1000).toLocaleString();
+  // Fall back to the placeholder if the resolved avatar 404s (e.g. a renamed
+  // account behind the legacy no-reply .png redirect). Reset when the commit
+  // (and thus the avatar) changes.
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  useEffect(() => setAvatarFailed(false), [avatarUrl]);
   return (
     <div className="commit-detail-card">
       <div className="commit-detail-main">
-        {avatarUrl ? (
-          <img className="commit-detail-avatar" src={avatarUrl} alt="" />
+        {avatarUrl && !avatarFailed ? (
+          <img
+            className="commit-detail-avatar"
+            src={avatarUrl}
+            alt=""
+            onError={() => setAvatarFailed(true)}
+          />
         ) : (
           <div className="commit-detail-avatar placeholder" />
         )}
