@@ -110,7 +110,7 @@ pub fn resolve(
     let head = repo.head().ok().and_then(|h| h.shorthand().map(str::to_string));
 
     let fetched = match target.provider {
-        RemoteProvider::Github => fetch_github(&target, &missing),
+        RemoteProvider::Github => fetch_github(&target, head.as_deref(), &missing),
         RemoteProvider::Gitlab => fetch_gitlab(&target, head.as_deref(), &missing),
     };
 
@@ -196,40 +196,81 @@ fn encode_path(path: &str) -> String {
         .join("/")
 }
 
-fn fetch_github(target: &RemoteTarget, wanted: &HashSet<String>) -> AppResult<HashMap<String, String>> {
+fn fetch_github(
+    target: &RemoteTarget,
+    head: Option<&str>,
+    wanted: &HashSet<String>,
+) -> AppResult<HashMap<String, String>> {
     let token = provider_token("github", &target.host);
     let path = encode_path(&target.path);
     let mut out = HashMap::new();
     let mut remaining = wanted.len();
+
+    // Scan the current branch first: its commit list includes the base branch's
+    // history, so one pass covers both the branch's own authors and the shared
+    // history - resolving authors that only appear on a feature branch, which a
+    // default-branch-only scan misses. Then fall back to the default branch (no
+    // `sha`) for any stragglers, which ALSO covers the "HEAD isn't on the remote"
+    // case: an unpushed branch 404s and adds nothing, and the default scan stands.
+    //
+    // Error semantics differ on purpose: a Status error (404 unpushed ref, or a
+    // rate-limit) makes scan_commits `break` and return Ok, so the default scan
+    // still runs. A transport error propagates via `?` and aborts the WHOLE fetch
+    // so resolve() caches nothing and retries next time - deliberately NOT falling
+    // through to cache a partial result, which would negative-cache feature-branch
+    // authors the aborted head scan never got to.
+    if let Some(h) = head {
+        scan_commits(&path, Some(&encode_path(h)), token.as_deref(), wanted, &mut out, &mut remaining)?;
+    }
+    if remaining > 0 {
+        scan_commits(&path, None, token.as_deref(), wanted, &mut out, &mut remaining)?;
+    }
+    Ok(out)
+}
+
+/// Page through a repo's commits (optionally pinned to `sha` = a branch/ref),
+/// taking avatars for still-wanted emails. Stops on the last page, once nothing
+/// is left to resolve, or on a Status error (rate-limit / missing ref) - keeping
+/// what it already has rather than failing the whole resolve.
+fn scan_commits(
+    path: &str,
+    sha: Option<&str>,
+    token: Option<&str>,
+    wanted: &HashSet<String>,
+    out: &mut HashMap<String, String>,
+    remaining: &mut usize,
+) -> AppResult<()> {
     for page in 1..=MAX_PAGES {
-        if remaining == 0 {
+        if *remaining == 0 {
             break;
         }
-        let url = format!("https://api.github.com/repos/{path}/commits?per_page=100&page={page}");
+        let mut url = format!("https://api.github.com/repos/{path}/commits?per_page=100&page={page}");
+        if let Some(s) = sha {
+            url.push_str("&sha=");
+            url.push_str(s);
+        }
         let mut req = ureq::get(&url)
             .set("Accept", "application/vnd.github+json")
             .set("User-Agent", "GitChef")
             .set("X-GitHub-Api-Version", "2022-11-28");
-        if let Some(t) = &token {
+        if let Some(t) = token {
             req = req.set("Authorization", &format!("Bearer {t}"));
         }
         let commits: Vec<GhCommit> = match req.call() {
             Ok(r) => r.into_json()?,
-            // Rate-limited (403/429) or 404/409 (empty/missing): stop, keep what
-            // we have rather than failing the whole resolve.
             Err(ureq::Error::Status(_, _)) => break,
             Err(ureq::Error::Transport(_)) => return Err(AppError::Msg("github request failed".into())),
         };
         let n = commits.len();
         for c in commits {
-            take(&mut out, &mut remaining, wanted, c.commit.author.email, c.author.map(|u| sized_github(&u.avatar_url)));
-            take(&mut out, &mut remaining, wanted, c.commit.committer.email, c.committer.map(|u| sized_github(&u.avatar_url)));
+            take(out, remaining, wanted, c.commit.author.email, c.author.map(|u| sized_github(&u.avatar_url)));
+            take(out, remaining, wanted, c.commit.committer.email, c.committer.map(|u| sized_github(&u.avatar_url)));
         }
         if n < 100 {
             break; // last page
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 fn sized_github(url: &str) -> String {
@@ -487,7 +528,8 @@ mod tests {
             .map(|e| e.trim().to_lowercase())
             .collect();
         assert!(!wanted.is_empty(), "no linked GitHub author emails discovered");
-        let out = fetch_github(&t, &wanted).unwrap();
+        // Emails were discovered from the default branch (no sha), so scan that.
+        let out = fetch_github(&t, None, &wanted).unwrap();
         assert!(!out.is_empty(), "expected resolved GitHub avatars for {} emails: {out:?}", wanted.len());
     }
 
