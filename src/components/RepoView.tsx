@@ -32,6 +32,7 @@ import FileView from "./FileView";
 import RepoSkeleton from "./RepoSkeleton";
 import CommitFiles from "./CommitFiles";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
+import ReflogModal from "./ReflogModal";
 
 const EMPTY_STATUS: StatusResult = { staged: [], unstaged: [] };
 
@@ -110,6 +111,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [graphLimit, setGraphLimit] = useState(500);
   const [searchOpen, setSearchOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [reflogOpen, setReflogOpen] = useState(false);
   // Bumped on a `gitchef:prefs` event so the auto-fetch interval re-reads live.
   const [autoFetchTick, setAutoFetchTick] = useState(0);
   const [rightWidth, setRightWidth] = useState(getRightPanelWidth);
@@ -867,6 +869,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
             MenuItem.new({ text: "Pull (fast-forward if possible)", action: () => onPullAction("ff") }),
             MenuItem.new({ text: "Push", action: onPush }),
             MenuItem.new({ text: "Force push (with lease)…", action: onForcePush }),
+            MenuItem.new({ text: "View HEAD reflog…", action: () => setReflogOpen(true) }),
             ...(upstream && !branch.upstream
               ? [MenuItem.new({ text: "Set Upstream", action: () => setBranchUpstream(branch.name, upstream) })]
               : []),
@@ -1401,6 +1404,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     { title: "Stash all changes", run: stashAllChanges },
     { title: "Discard all changes", run: discardAllChanges },
     { title: "New branch…", run: () => askName("New branch", "branch-name", onCreateBranch) },
+    { title: "Show reflog", run: () => setReflogOpen(true) },
     ...(pl ? [{ title: `Open repository on ${pl}`, run: () => openWeb("repo") }] : []),
     ...branches
       .filter((b) => !b.is_remote && !b.is_head)
@@ -1639,6 +1643,15 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
 
       {paletteOpen && (
         <CommandPalette commands={paletteCommands} onClose={() => setPaletteOpen(false)} />
+      )}
+
+      {reflogOpen && (
+        <ReflogModal
+          repoPath={path}
+          onCheckout={checkoutCommit}
+          onReset={(sha) => resetTo(sha, "hard")}
+          onClose={() => setReflogOpen(false)}
+        />
       )}
 
       {namePrompt && (

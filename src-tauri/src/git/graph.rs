@@ -117,6 +117,42 @@ pub fn commit_graph(repo: &Repository, limit: usize) -> AppResult<Vec<CommitNode
     Ok(nodes)
 }
 
+/// One HEAD reflog entry: where HEAD moved to (`id`) and why (`message`).
+#[derive(Serialize)]
+pub struct ReflogNode {
+    pub id: String,
+    pub short_id: String,
+    pub message: String,
+    pub author: String,
+    pub email: String,
+    pub time: i64,
+}
+
+/// The HEAD reflog, newest first, capped at `limit`. A repo whose HEAD has no
+/// reflog yet (freshly init'd, never committed) yields an empty list rather than
+/// erroring. Entries are collected into owned structs so nothing borrowed from
+/// the `Reflog` escapes (keeps the async command future `Send`).
+pub fn reflog(repo: &Repository, limit: usize) -> AppResult<Vec<ReflogNode>> {
+    let Ok(rl) = repo.reflog("HEAD") else {
+        return Ok(Vec::new());
+    };
+    let n = rl.len().min(limit);
+    let mut nodes = Vec::with_capacity(n);
+    for i in 0..n {
+        let Some(e) = rl.get(i) else { continue };
+        let who = e.committer();
+        nodes.push(ReflogNode {
+            id: e.id_new().to_string(),
+            short_id: super::short_oid(e.id_new()),
+            message: e.message().unwrap_or_default().to_string(),
+            author: who.name().unwrap_or_default().to_string(),
+            email: who.email().unwrap_or_default().to_string(),
+            time: who.when().seconds(),
+        });
+    }
+    Ok(nodes)
+}
+
 /// Assign each commit a horizontal lane so parallel branch lines stay visually
 /// separate and merges read clearly. `nodes` arrives newest-first; `active[i]`
 /// holds the commit a lane is reserved for by an already-seen child. First
