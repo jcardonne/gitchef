@@ -51,6 +51,11 @@ fn commit_graph(repo: String, limit: Option<usize>) -> AppResult<Vec<graph::Comm
 }
 
 #[tauri::command(async)]
+fn reflog(repo: String, limit: Option<usize>) -> AppResult<Vec<graph::ReflogNode>> {
+    graph::reflog(&open(&repo)?, limit.unwrap_or(200))
+}
+
+#[tauri::command(async)]
 fn list_branches(repo: String) -> AppResult<Vec<branch::BranchInfo>> {
     branch::list_branches(&open(&repo)?)
 }
@@ -101,6 +106,11 @@ fn file_content(
 #[tauri::command]
 fn commit_diff(repo: String, id: String) -> AppResult<Vec<diff::FileDiff>> {
     diff::commit_diff(&open(&repo)?, &id)
+}
+
+#[tauri::command]
+fn diff_commits(repo: String, a: String, b: String) -> AppResult<Vec<diff::FileDiff>> {
+    diff::diff_commits(&open(&repo)?, &a, &b)
 }
 
 #[tauri::command]
@@ -452,6 +462,8 @@ pub fn run() {
             file_diff,
             file_content,
             commit_diff,
+            diff_commits,
+            reflog,
             commit,
             commit_amend,
             checkout,

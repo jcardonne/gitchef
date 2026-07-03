@@ -114,6 +114,16 @@ export interface StashInfo {
   time: number; // unix seconds
 }
 
+/// One HEAD reflog entry: where HEAD moved to (`id`) and why (`message`).
+export interface ReflogNode {
+  id: string;
+  short_id: string;
+  message: string;
+  author: string;
+  email: string;
+  time: number;
+}
+
 // Origin char from libgit2: context, added, removed, the eof-newline markers,
 // and the file/hunk headers (filtered out before reaching DiffViewer).
 export type DiffLineOrigin = " " | "+" | "-" | ">" | "<" | "F" | "H";

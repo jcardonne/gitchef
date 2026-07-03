@@ -6,6 +6,7 @@ import type {
   ConflictFile,
   FileContent,
   FileDiff,
+  ReflogNode,
   RepoInfo,
   SequencerState,
   StatusResult,
@@ -58,6 +59,8 @@ export const commitDiff = (repo: string, id: string) =>
   invoke<FileDiff[]>("commit_diff", { repo, id });
 export const diffCommits = (repo: string, a: string, b: string) =>
   invoke<FileDiff[]>("diff_commits", { repo, a, b });
+export const reflog = (repo: string, limit?: number) =>
+  invoke<ReflogNode[]>("reflog", { repo, limit: limit ?? null });
 
 export const commit = (repo: string, message: string) =>
   invoke<string>("commit", { repo, message });
