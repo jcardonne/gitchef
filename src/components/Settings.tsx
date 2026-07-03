@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { PALETTES, getDensity, setDensity, type Palette, type Theme, type Density } from "../theme";
-import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, notifyPrefs, type PullAction, type GraphColumnVisibility } from "../storage";
+import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, getFetchIntervalMinutes, setFetchIntervalMinutes, notifyPrefs, type PullAction, type GraphColumnVisibility } from "../storage";
 import { SHORTCUT_SECTIONS, comboHint, keyLabel } from "../shortcuts";
 import { useKeycapPresses } from "../useKeycapPresses";
 
@@ -29,6 +29,7 @@ const TITLE = {
   pull: gi(<path d="M12 3v12M7 10l5 5 5-5M5 21h14" />),
   sort: gi(<path d="M7 4v16M4 7l3-3 3 3M13 8h7M13 12h5M13 16h3" />),
   columns: gi(<><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="16" rx="1" /><rect x="17" y="4" width="4" height="16" rx="1" /></>),
+  fetch: gi(<><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 4v4h-4" /></>),
 } as const;
 
 const MODES: { id: Theme; label: string; icon: ReactNode }[] = [
@@ -47,6 +48,13 @@ const PULLS: { id: PullAction; label: string; icon: ReactNode }[] = [
   { id: "ff", label: "Merge", icon: gi(<><circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" /></>) },
   { id: "ff-only", label: "FF-only", icon: gi(<path d="M13 19l9-7-9-7zM2 19l9-7-9-7z" />) },
   { id: "rebase", label: "Rebase", icon: gi(<><path d="M21 3v5h-5M3 21v-5h5" /><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 12a9 9 0 0 1-15 6.7L3 16" /></>) },
+];
+
+const FETCH_INTERVALS: { minutes: number; label: string }[] = [
+  { minutes: 0, label: "Off" },
+  { minutes: 1, label: "1 min" },
+  { minutes: 5, label: "5 min" },
+  { minutes: 15, label: "15 min" },
 ];
 
 const SORTS: { label: string; asc: boolean; icon: ReactNode }[] = [
@@ -83,6 +91,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
   const [pullDefault, setPullState] = useState(getPullDefault);
   const [sortAsc, setSortState] = useState(getSortAsc);
   const [cols, setColsState] = useState(getGraphColumnVisibility);
+  const [fetchInterval, setFetchState] = useState(getFetchIntervalMinutes);
   useKeycapPresses(section === "keyboard");
 
   const changeDensity = (d: Density) => {
@@ -96,6 +105,10 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
   const changeSort = (asc: boolean) => {
     setSortAsc(asc);
     setSortState(asc);
+  };
+  const changeFetchInterval = (minutes: number) => {
+    setFetchIntervalMinutes(minutes);
+    setFetchState(minutes);
   };
   const toggleCol = (key: keyof GraphColumnVisibility) => {
     const visible = Object.values(cols).filter(Boolean).length;
@@ -211,6 +224,18 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                   {PULLS.map((o) => (
                     <button key={o.id} className={pullDefault === o.id ? "active" : ""} onClick={() => changePull(o.id)}>
                       {o.icon}<span>{o.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <div className="settings-field-label">{TITLE.fetch}<span>Auto-fetch</span></div>
+                <div className="settings-field-hint">Fetch from remotes in the background for the active tab.</div>
+                <div className="mode-seg">
+                  {FETCH_INTERVALS.map((o) => (
+                    <button key={o.minutes} className={fetchInterval === o.minutes ? "active" : ""} onClick={() => changeFetchInterval(o.minutes)}>
+                      <span>{o.label}</span>
                     </button>
                   ))}
                 </div>
