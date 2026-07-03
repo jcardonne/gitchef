@@ -1513,6 +1513,55 @@ button {
   margin: 0;
 }
 
+/* ---------- command palette ---------- */
+.command-palette {
+  align-self: flex-start;
+  margin-top: 12vh;
+  width: 460px;
+  max-width: 90vw;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+}
+.palette-input {
+  background: var(--bg);
+  color: var(--text);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.palette-list {
+  overflow-y: auto;
+  padding: 4px;
+}
+.palette-item {
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.palette-item.active {
+  background: var(--accent);
+  color: #fff;
+}
+.palette-empty {
+  padding: 12px 14px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
 /* ---------- tab bar ---------- */
 .tabbar {
   display: flex;
@@ -2481,7 +2530,8 @@ button {
 }
 .modal-overlay { animation: overlay-in 0.14s var(--ease) both; }
 .modal,
-.shortcuts-modal { animation: pop-in 0.18s var(--ease) both; }
+.shortcuts-modal,
+.command-palette { animation: pop-in 0.18s var(--ease) both; }
 .settings-page { animation: view-in 0.18s var(--ease) both; }
 
 /* ---------- staged file arrival ---------- */

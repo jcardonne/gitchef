@@ -31,6 +31,7 @@ import RebasePlan from "./RebasePlan";
 import FileView from "./FileView";
 import RepoSkeleton from "./RepoSkeleton";
 import CommitFiles from "./CommitFiles";
+import CommandPalette, { type PaletteCommand } from "./CommandPalette";
 
 const EMPTY_STATUS: StatusResult = { staged: [], unstaged: [] };
 
@@ -98,6 +99,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [graphLimit, setGraphLimit] = useState(500);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [rightWidth, setRightWidth] = useState(getRightPanelWidth);
   const [selectedCommitAvatar, setSelectedCommitAvatar] = useState<string | null>(null);
   const [accountAvatars, setAccountAvatars] = useState<ReadonlyMap<string, string>>(new Map());
@@ -172,13 +174,19 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     };
   }, [selectedCommitNode?.email, avatarCtx]);
 
-  // Cmd/Ctrl+F opens the commit search (active tab only).
+  // Cmd/Ctrl+F opens commit search; Cmd/Ctrl+K opens the command palette (active
+  // tab only).
   useEffect(() => {
     if (!isActive) return;
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "f") {
         e.preventDefault();
         setSearchOpen(true);
+      } else if (k === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1320,6 +1328,25 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     return <RepoSkeleton />;
   }
 
+  // Actions surfaced in the Cmd+K palette. Built fresh each render so every
+  // handler closes over current state; the list is small so the cost is nil.
+  const pl = providerLabel();
+  const paletteCommands: PaletteCommand[] = [
+    { title: "Push", run: onPush },
+    { title: "Force push (with lease)", run: onForcePush },
+    { title: "Pull (fast-forward)", run: () => onPullAction("ff") },
+    { title: "Pull (rebase)", run: () => onPullAction("rebase") },
+    { title: "Fetch", run: () => onPullAction("fetch") },
+    { title: "Stage all changes", run: stageAllChanges },
+    { title: "Stash all changes", run: stashAllChanges },
+    { title: "Discard all changes", run: discardAllChanges },
+    { title: "New branch…", run: () => askName("New branch", "branch-name", onCreateBranch) },
+    ...(pl ? [{ title: `Open repository on ${pl}`, run: () => openWeb("repo") }] : []),
+    ...branches
+      .filter((b) => !b.is_remote && !b.is_head)
+      .map((b) => ({ title: `Checkout ${b.name}`, run: () => onCheckout(b.name) })),
+  ];
+
   return (
     <RepoContext.Provider value={repoActions}>
       <Toolbar
@@ -1522,6 +1549,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
             </div>
           )}
         </div>
+      )}
+
+      {paletteOpen && (
+        <CommandPalette commands={paletteCommands} onClose={() => setPaletteOpen(false)} />
       )}
 
       {namePrompt && (
