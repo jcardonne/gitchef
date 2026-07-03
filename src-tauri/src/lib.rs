@@ -339,6 +339,26 @@ fn open_default(repo: String, path: String) -> AppResult<()> {
     files::open_default(&open(&repo)?, &path)
 }
 
+/// Open a repo/commit/branch/file on its GitHub/GitLab web UI in the browser.
+#[tauri::command]
+fn open_on_web(
+    repo: String,
+    kind: String,
+    reference: Option<String>,
+    path: Option<String>,
+) -> AppResult<()> {
+    let r = open(&repo)?;
+    let target = repo::remote_target(&r)
+        .ok_or_else(|| error::AppError::Msg("no GitHub/GitLab remote for this repo".into()))?;
+    let url = repo::web_url(
+        &target,
+        &kind,
+        reference.as_deref().unwrap_or(""),
+        path.as_deref().unwrap_or(""),
+    )?;
+    files::open_url(&url)
+}
+
 #[tauri::command]
 fn open_in_editor(repo: String, path: String) -> AppResult<()> {
     files::open_in_editor(&open(&repo)?, &path)
@@ -475,6 +495,7 @@ pub fn run() {
             copy_text,
             reveal_in_finder,
             open_default,
+            open_on_web,
             open_in_editor,
             open_commit_file_in_editor,
             open_difftool,

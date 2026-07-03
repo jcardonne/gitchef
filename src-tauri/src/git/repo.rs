@@ -186,6 +186,36 @@ pub(crate) fn remote_target(repo: &Repository) -> Option<RemoteTarget> {
     Some(RemoteTarget { host, provider, path })
 }
 
+/// Build the provider web URL for a `kind` (repo / commit / branch / file) of
+/// `target`. GitHub uses `/commit|tree|blob`; GitLab inserts a `/-/` segment.
+/// The `reference` (sha or branch) and file `path` are percent-encoded per
+/// segment (keeping `/`), so a branch name with `&`/`#`/space can't corrupt the
+/// URL or slip a metacharacter into the OS opener.
+pub(crate) fn web_url(
+    target: &RemoteTarget,
+    kind: &str,
+    reference: &str,
+    path: &str,
+) -> AppResult<String> {
+    let enc = super::avatars::encode_path;
+    // Encode the repo path too (host is DNS-safe): a self-hosted remote path with
+    // a metachar mustn't leak into the OS opener. encode_path keeps '/', so
+    // nested groups (group/sub/proj) stay intact.
+    let base = format!("https://{}/{}", target.host, enc(&target.path));
+    let seg = match target.provider {
+        RemoteProvider::Github => "",
+        RemoteProvider::Gitlab => "/-",
+    };
+    let url = match kind {
+        "repo" => base,
+        "commit" => format!("{base}{seg}/commit/{}", enc(reference)),
+        "branch" => format!("{base}{seg}/tree/{}", enc(reference)),
+        "file" => format!("{base}{seg}/blob/{}/{}", enc(reference), enc(path)),
+        other => return Err(crate::error::AppError::Msg(format!("unknown web target: {other}"))),
+    };
+    Ok(url)
+}
+
 pub fn info(repo: &Repository) -> AppResult<RepoInfo> {
     let path = repo
         .workdir()
@@ -350,6 +380,28 @@ mod tests {
         for (url, want) in cases {
             assert_eq!(remote_path_from_url(url).as_deref(), want, "remote_path_from_url({url})");
         }
+    }
+    #[test]
+    fn builds_provider_web_urls() {
+        let gh = RemoteTarget { host: "github.com".into(), provider: RemoteProvider::Github, path: "o/r".into() };
+        assert_eq!(web_url(&gh, "repo", "", "").unwrap(), "https://github.com/o/r");
+        assert_eq!(web_url(&gh, "commit", "abc123", "").unwrap(), "https://github.com/o/r/commit/abc123");
+        assert_eq!(web_url(&gh, "branch", "feat/x", "").unwrap(), "https://github.com/o/r/tree/feat/x");
+        // a branch name with a shell/URL metachar is encoded (keeps the slash)
+        assert_eq!(web_url(&gh, "branch", "a&b/c", "").unwrap(), "https://github.com/o/r/tree/a%26b/c");
+        // file path is percent-encoded (space), the ref is left as-is
+        assert_eq!(
+            web_url(&gh, "file", "main", "src/a b.rs").unwrap(),
+            "https://github.com/o/r/blob/main/src/a%20b.rs"
+        );
+        // GitLab inserts the /-/ segment before commit/tree/blob
+        let gl = RemoteTarget { host: "gitlab.com".into(), provider: RemoteProvider::Gitlab, path: "g/sub/p".into() };
+        assert_eq!(web_url(&gl, "commit", "abc", "").unwrap(), "https://gitlab.com/g/sub/p/-/commit/abc");
+        // the repo path itself is encoded (nested groups keep their slashes)
+        let odd = RemoteTarget { host: "h".into(), provider: RemoteProvider::Github, path: "o/r&x".into() };
+        assert_eq!(web_url(&odd, "repo", "", "").unwrap(), "https://h/o/r%26x");
+        assert_eq!(web_url(&gl, "file", "main", "x.rs").unwrap(), "https://gitlab.com/g/sub/p/-/blob/main/x.rs");
+        assert!(web_url(&gl, "bogus", "", "").is_err());
     }
     #[test]
     fn status_detects_staged_and_unstaged_renames() {

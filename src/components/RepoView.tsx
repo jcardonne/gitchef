@@ -761,12 +761,23 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     });
 
   // Right-click a file in a selected commit's change list.
+  // "GitHub" / "GitLab" for the "Open on <provider>" items, or null to hide them
+  // (unknown host -> remote_target returns None, so there's no web URL to build).
+  const providerLabel = () =>
+    repo?.provider === "github" ? "GitHub" : repo?.provider === "gitlab" ? "GitLab" : null;
+  const openWeb = (kind: "repo" | "commit" | "branch" | "file", reference?: string, filePath?: string) =>
+    run(async () => {
+      await api.openOnWeb(path, kind, reference, filePath);
+    });
+
   const showCommitFileMenu = async (file: FileDiff) => {
     if (!selectedCommit) return;
     const sha = selectedCommit;
+    const pl = providerLabel();
     const items = await Promise.all([
       MenuItem.new({ text: "Open in editor", action: () => run(async () => void (await api.openCommitFileInEditor(path, sha, file.path))) }),
       MenuItem.new({ text: "Show in Finder", action: () => run(async () => void (await api.revealInFinder(path, file.path))) }),
+      ...(pl ? [MenuItem.new({ text: `Open file on ${pl}`, action: () => openWeb("file", sha, file.path) })] : []),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({
         text: "Copy path",
@@ -785,6 +796,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     const isCurrent = !branch.is_remote && branch.is_head;
     const targetShort = target?.slice(0, 7) ?? "";
     const upstream = !branch.is_remote ? branch.upstream ?? remoteForLocal(branch.name)?.name : null;
+    const pl = providerLabel();
+    // Remote branches carry the "origin/" prefix; the web tree URL wants the bare name.
+    const webRef = branch.is_remote ? shortRemoteBranchName(branch.name) : branch.name;
 
     const topItems = await Promise.all([
       ...(isCurrent
@@ -877,6 +891,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         text: "Copy branch name",
         action: () => run(async () => (await api.copyText(branch.name), notify("Branch name copied"))),
       }),
+      // Only offer the branch link when it exists on the remote (remote branch or
+      // has an upstream); an unpushed local branch would just 404. Repo link always.
+      ...(pl && (branch.is_remote || upstream)
+        ? [MenuItem.new({ text: `Open branch on ${pl}`, action: () => openWeb("branch", webRef) })]
+        : []),
+      ...(pl ? [MenuItem.new({ text: `Open repository on ${pl}`, action: () => openWeb("repo") })] : []),
       ...(target
         ? [
             MenuItem.new({
@@ -1018,8 +1038,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     if (node.refs.some((r) => r.kind === "stash")) return showStashMenu(node);
     const sha = node.id;
     const short = node.short_id;
+    const pl = providerLabel();
     const items = await Promise.all([
       MenuItem.new({ text: "Checkout commit", action: () => checkoutCommit(sha) }),
+      ...(pl ? [MenuItem.new({ text: `Open commit on ${pl}`, action: () => openWeb("commit", sha) })] : []),
       MenuItem.new({
         text: "Create branch here…",
         action: () => askName(`Branch at ${short}`, "branch-name", (n) => branchAt(n, sha)),

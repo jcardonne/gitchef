@@ -169,6 +169,12 @@ export const revealPath = (path: string) => invoke<void>("reveal_path", { path }
 export const openTerminal = (path: string) => invoke<void>("open_terminal", { path });
 export const openDefault = (repo: string, path: string) =>
   invoke<void>("open_default", { repo, path });
+export const openOnWeb = (
+  repo: string,
+  kind: "repo" | "commit" | "branch" | "file",
+  reference?: string,
+  path?: string
+) => invoke<void>("open_on_web", { repo, kind, reference: reference ?? null, path: path ?? null });
 export const openInEditor = (repo: string, path: string) =>
   invoke<void>("open_in_editor", { repo, path });
 export const openCommitFileInEditor = (repo: string, sha: string, path: string) =>
