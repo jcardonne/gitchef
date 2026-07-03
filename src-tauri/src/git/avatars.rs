@@ -180,7 +180,7 @@ struct GhUser {
 /// Percent-encode each segment of a repo path for use in a URL path, keeping '/'
 /// as the separator. Owner/repo names are normally URL-safe; this stops a
 /// hand-crafted remote from smuggling query/path characters into the API call.
-fn encode_path(path: &str) -> String {
+pub(crate) fn encode_path(path: &str) -> String {
     path.split('/')
         .map(|seg| {
             seg.bytes()

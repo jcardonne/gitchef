@@ -424,16 +424,29 @@ pub fn open_terminal(path: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Hand `arg` (a file path or a URL) to the OS default handler - Finder/Explorer
+/// open a file, the browser opens a URL. Args go straight to the launcher's argv
+/// (no shell) on macOS/Linux; on Windows `start` runs via cmd, so callers pass
+/// pre-encoded URLs so a metacharacter can't leak through.
+fn os_open(arg: &std::ffi::OsStr) -> AppResult<()> {
+    #[cfg(target_os = "macos")]
+    Command::new("open").arg(arg).spawn()?;
+    #[cfg(target_os = "windows")]
+    Command::new("cmd").args(["/C", "start", ""]).arg(arg).spawn()?;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    Command::new("xdg-open").arg(arg).spawn()?;
+    Ok(())
+}
+
 /// Open a file with the OS default application.
 pub fn open_default(repo: &Repository, path: &str) -> AppResult<()> {
     let target = abs(repo, path)?;
-    #[cfg(target_os = "macos")]
-    Command::new("open").arg(&target).spawn()?;
-    #[cfg(target_os = "windows")]
-    Command::new("cmd").args(["/C", "start", ""]).arg(&target).spawn()?;
-    #[cfg(all(unix, not(target_os = "macos")))]
-    Command::new("xdg-open").arg(&target).spawn()?;
-    Ok(())
+    os_open(target.as_ref())
+}
+
+/// Open a URL in the default browser.
+pub fn open_url(url: &str) -> AppResult<()> {
+    os_open(url.as_ref())
 }
 
 /// Open the file in the user's configured editor (git core.editor, else $VISUAL
