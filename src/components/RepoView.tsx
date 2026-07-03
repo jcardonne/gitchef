@@ -83,6 +83,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     () => nodes.find((n) => n.id === selectedCommit) ?? null,
     [nodes, selectedCommit]
   );
+  // A selected stash that has no visible graph node (hidden, or clicked from the
+  // sidebar) still gets a header - its files already load via commit_diff.
+  const selectedStash = useMemo(
+    () => stashes.find((s) => s.sha === selectedCommit) ?? null,
+    [stashes, selectedCommit]
+  );
   // Tracks the working-file currently shown so "Load full file" can refetch it.
   const [workSel, setWorkSel] = useState<{ path: string; staged: boolean } | null>(null);
 
@@ -1522,9 +1528,24 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
               />
             ) : (
               <div className="commit-detail-panel">
-                {selectedCommitNode && (
+                {selectedCommitNode ? (
                   <CommitDetails commit={selectedCommitNode} avatarUrl={selectedCommitAvatar} />
-                )}
+                ) : selectedStash ? (
+                  <div className="commit-detail-card">
+                    <div className="commit-detail-main">
+                      <div className="commit-detail-text">
+                        <div className="commit-detail-title" title={selectedStash.message}>
+                          {selectedStash.message}
+                        </div>
+                        <div className="commit-detail-author">Stash</div>
+                      </div>
+                    </div>
+                    <div className="commit-detail-meta">
+                      <span title={selectedStash.sha}>{`stash@{${selectedStash.index}}`}</span>
+                      <span>{relativeTime(selectedStash.time)}</span>
+                    </div>
+                  </div>
+                ) : null}
                 <CommitFiles
                   files={commitFiles}
                   selectedPath={selectedPath}
