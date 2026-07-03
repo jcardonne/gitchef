@@ -228,11 +228,7 @@ function DiffRow({
   onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const cls = line.origin === "+" ? "add" : line.origin === "-" ? "del" : "ctx";
-  const spans = useMemo(() => {
-    const wd = pair == null ? null : wordDiff(line.origin === "+" ? pair : line.content, line.origin === "+" ? line.content : pair);
-    const side = wd ? (line.origin === "+" ? wd.add : wd.del) : null;
-    return composeSpans(highlightTokens(line.content, lang), side && side.length ? side : null);
-  }, [line.content, line.origin, pair, lang]);
+  const spans = useMemo(() => spansFor(line, pair, lang), [line, pair, lang]);
   return (
     <div
       className={`diff-line ${cls}${selected ? " sel" : ""}${onClick ? " selectable" : ""}`}
@@ -245,6 +241,14 @@ function DiffRow({
       <span className="code">{codeContent(line.content, spans)}</span>
     </div>
   );
+}
+
+/// Highlight tokens for a line, overlaid with word-diff segments against its
+/// `mate` (the paired line's content, if any). Shared by unified and split rows.
+function spansFor(line: DiffLine, mate: string | undefined, lang: string | null) {
+  const wd = mate == null ? null : wordDiff(line.origin === "+" ? mate : line.content, line.origin === "+" ? line.content : mate);
+  const side = wd ? (line.origin === "+" ? wd.add : wd.del) : null;
+  return composeSpans(highlightTokens(line.content, lang), side && side.length ? side : null);
 }
 
 /// Render highlighted + word-diff spans for a line's content (shared by the
@@ -294,12 +298,7 @@ function SplitCell({
   mate?: string;
   lang: string | null;
 }) {
-  const spans = useMemo(() => {
-    if (!line) return null;
-    const wd = mate == null ? null : wordDiff(line.origin === "+" ? mate : line.content, line.origin === "+" ? line.content : mate);
-    const side = wd ? (line.origin === "+" ? wd.add : wd.del) : null;
-    return composeSpans(highlightTokens(line.content, lang), side && side.length ? side : null);
-  }, [line, mate, lang]);
+  const spans = useMemo(() => (line ? spansFor(line, mate, lang) : null), [line, mate, lang]);
   if (!line || !spans) return <div className="split-cell empty" />;
   const cls = line.origin === "+" ? "add" : line.origin === "-" ? "del" : "ctx";
   return (

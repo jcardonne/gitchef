@@ -271,6 +271,10 @@ export default function StagingPanel({
     onCommit(prefix + message, doAmend);
     setMessage("");
     setAmend(false);
+    // Clear the prefix too, or it silently rides onto the next commit (and would
+    // double-prefix an amend, whose message is already prefixed).
+    setType("");
+    setScope("");
   };
 
   // Keyboard: commit / stage / unstage from anywhere in the active tab (the
