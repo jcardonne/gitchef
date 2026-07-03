@@ -64,6 +64,7 @@ export const createBranch = (repo: string, name: string, checkout: boolean) =>
   invoke<void>("create_branch", { repo, name, checkout });
 
 export const push = (repo: string) => invoke<string>("push", { repo });
+export const pushForce = (repo: string) => invoke<string>("push_force", { repo });
 export type PullMode = "ff" | "ff-only" | "rebase";
 export const pull = (repo: string, mode: PullMode) => invoke<string>("pull", { repo, mode });
 export const fetchRemotes = (repo: string) => invoke<string>("fetch", { repo });

@@ -11,6 +11,7 @@ interface Props {
   onCheckout: (name: string) => void;
   onPullAction: (action: PullAction) => void;
   onPush: () => void;
+  onForcePush: () => void;
   onNewBranch: () => void;
 }
 
@@ -83,11 +84,13 @@ export default function Toolbar({
   onCheckout,
   onPullAction,
   onPush,
+  onForcePush,
   onNewBranch,
 }: Props) {
   const [branchOpen, setBranchOpen] = useState(false);
   const [branchQuery, setBranchQuery] = useState("");
   const [pullOpen, setPullOpen] = useState(false);
+  const [pushOpen, setPushOpen] = useState(false);
   const [pullDefault, setPullDefaultState] = useState<PullAction>(getPullDefault());
   useEffect(() => {
     const sync = () => setPullDefaultState(getPullDefault());
@@ -180,15 +183,36 @@ export default function Toolbar({
         )}
       </div>
 
-      <button
-        className="tool-btn"
-        disabled={busy}
-        onClick={onPush}
-        title={`${repo.has_upstream ? "Push" : "Publish branch: push and set upstream"} (${comboHint(["mod", "shift", "P"])})`}
-      >
-        {activeAction === "push" ? <Spinner /> : <PushIcon />}
-        {repo.has_upstream ? "Push" : "Publish"}
-      </button>
+      <div className="split-btn">
+        <button
+          className="tool-btn split-main"
+          disabled={busy}
+          onClick={onPush}
+          title={`${repo.has_upstream ? "Push" : "Publish branch: push and set upstream"} (${comboHint(["mod", "shift", "P"])})`}
+        >
+          {activeAction === "push" ? <Spinner /> : <PushIcon />}
+          {repo.has_upstream ? "Push" : "Publish"}
+        </button>
+        <button className="tool-btn split-caret" disabled={busy} onClick={() => setPushOpen((o) => !o)}>
+          <Caret />
+        </button>
+        {pushOpen && (
+          <>
+            <div className="dropdown-backdrop" onClick={() => setPushOpen(false)} />
+            <div className="pull-menu">
+              <div
+                className="pull-menu-item"
+                onClick={() => {
+                  setPushOpen(false);
+                  onForcePush();
+                }}
+              >
+                Force push (with lease)
+              </div>
+            </div>
+          </>
+        )}
+      </div>
       <button className="tool-btn" disabled={busy} onClick={onNewBranch}>
         <BranchIcon />
         Branch
