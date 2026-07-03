@@ -393,6 +393,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     const req = ++commitReq.current;
     run(async () => {
       setSelectedCommit(b);
+      setCompareMode(false); // this is a two-commit compare, not vs working dir
       setCompareView({ a, b });
       setRightTab("commit");
       setSelectedPath(null);
@@ -794,6 +795,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       const files = await api.compareWorkdir(path, sha);
       setSelectedCommit(sha);
       setCompareMode(true);
+      setCompareView(null); // leaving any two-commit compare
       setRightTab("commit");
       setSelectedPath(null);
       setDiff(null);
