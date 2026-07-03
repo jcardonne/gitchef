@@ -7,6 +7,7 @@ import { getRightPanelWidth, setRightPanelWidth, getPullDefault, getFetchInterva
 import type { PullAction } from "../storage";
 import type {
   BranchInfo,
+  BlameHunkInfo,
   CommitNode,
   FileContent,
   FileDiff,
@@ -33,6 +34,8 @@ import RepoSkeleton from "./RepoSkeleton";
 import CommitFiles from "./CommitFiles";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
 import ReflogModal from "./ReflogModal";
+import BlameView from "./BlameView";
+import FileHistoryModal from "./FileHistoryModal";
 
 const EMPTY_STATUS: StatusResult = { staged: [], unstaged: [] };
 
@@ -102,8 +105,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // mode. `compareMode` records that the open commit-file list came from a
   // "compare with working directory" - so its File view reads the workdir (the
   // diff's right-hand side), not the commit's blob.
-  const [previewMode, setPreviewMode] = useState<"diff" | "split" | "file">("diff");
+  const [previewMode, setPreviewMode] = useState<"diff" | "split" | "file" | "blame">("diff");
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
+  const [blame, setBlame] = useState<BlameHunkInfo[]>([]);
   const [compareMode, setCompareMode] = useState(false);
 
   const [busy, setBusy] = useState(false);
@@ -112,6 +116,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [searchOpen, setSearchOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [reflogOpen, setReflogOpen] = useState(false);
+  const [historyPath, setHistoryPath] = useState<string | null>(null);
   // Bumped on a `gitchef:prefs` event so the auto-fetch interval re-reads live.
   const [autoFetchTick, setAutoFetchTick] = useState(0);
   const [rightWidth, setRightWidth] = useState(getRightPanelWidth);
@@ -466,12 +471,27 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     return { rev: compareMode ? null : selectedCommit, staged: false };
   }, [workSel, compareMode, selectedCommit]);
 
-  // Load whole-file content lazily whenever the File view is active and the
-  // selection changes. Cancellation guards against a slow load landing after
-  // the user has already moved on to another file.
+  // Blame shows a committed file version, so its content AND hunks use the same
+  // rev: the shown commit, or HEAD for a working file (never the dirty workdir,
+  // which would misalign the gutter).
+  const blameRev = useCallback((): string | null => {
+    if (!workSel) return selectedCommit;
+    // The current HEAD commit - resolved from the graph's HEAD ref label so it
+    // works whether HEAD is on a branch or detached; falls back to the branch
+    // target. Keeps blame content + hunks on the same committed rev.
+    return (
+      nodes.find((n) => n.refs.some((r) => r.kind === "head"))?.id ??
+      branches.find((b) => b.is_head)?.target ??
+      null
+    );
+  }, [workSel, selectedCommit, nodes, branches]);
+
+  // Load whole-file content lazily for the File and Blame views. Cancellation
+  // guards against a slow load landing after the user has moved on.
   useEffect(() => {
-    if (previewMode !== "file" || !selectedPath) return;
-    const { rev, staged } = fileContentSource();
+    if ((previewMode !== "file" && previewMode !== "blame") || !selectedPath) return;
+    const { rev, staged } =
+      previewMode === "blame" ? { rev: blameRev(), staged: false } : fileContentSource();
     let cancelled = false;
     run(async () => {
       const c = await api.fileContent(path, selectedPath, rev, staged);
@@ -483,10 +503,27 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewMode, selectedPath, workSel, selectedCommit, compareMode]);
 
+  // Load blame hunks when the Blame view is active (same rev as its content).
+  useEffect(() => {
+    if (previewMode !== "blame" || !selectedPath) return;
+    const rev = blameRev();
+    setBlame([]); // drop stale hunks so they can't pair with the new file's content
+    let cancelled = false;
+    run(async () => {
+      const h = await api.fileBlame(path, selectedPath, rev);
+      if (!cancelled) setBlame(h);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewMode, selectedPath, workSel, selectedCommit]);
+
   const loadFullFile = () =>
     run(async () => {
       if (!selectedPath) return;
-      const { rev, staged } = fileContentSource();
+      const { rev, staged } =
+        previewMode === "blame" ? { rev: blameRev(), staged: false } : fileContentSource();
       setFileContent(await api.fileContent(path, selectedPath, rev, staged, true));
     });
 
@@ -842,6 +879,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     const items = await Promise.all([
       MenuItem.new({ text: "Open in editor", action: () => run(async () => void (await api.openCommitFileInEditor(path, sha, file.path))) }),
       MenuItem.new({ text: "Show in Finder", action: () => run(async () => void (await api.revealInFinder(path, file.path))) }),
+      MenuItem.new({ text: "View file history", action: () => setHistoryPath(file.path) }),
       ...(pl ? [MenuItem.new({ text: `Open file on ${pl}`, action: () => openWeb("file", sha, file.path) })] : []),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({
@@ -1501,12 +1539,27 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                   >
                     File
                   </button>
+                  <button
+                    className={previewMode === "blame" ? "active" : ""}
+                    onClick={() => setPreviewMode("blame")}
+                  >
+                    Blame
+                  </button>
                 </div>
-                {((previewMode !== "file" && diff?.truncated && workSel) ||
-                  (previewMode === "file" && fileContent?.truncated)) && (
+                {selectedPath && (
                   <button
                     className="mini-btn"
-                    onClick={previewMode === "file" ? loadFullFile : loadFullDiff}
+                    onClick={() => setHistoryPath(selectedPath)}
+                    title="Commits that changed this file"
+                  >
+                    History
+                  </button>
+                )}
+                {(((previewMode === "diff" || previewMode === "split") && diff?.truncated && workSel) ||
+                  ((previewMode === "file" || previewMode === "blame") && fileContent?.truncated)) && (
+                  <button
+                    className="mini-btn"
+                    onClick={previewMode === "file" || previewMode === "blame" ? loadFullFile : loadFullDiff}
                     title="Load the entire file"
                   >
                     Load full file
@@ -1515,6 +1568,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
               </div>
               {previewMode === "file" ? (
                 <FileView content={fileContent} />
+              ) : previewMode === "blame" ? (
+                <BlameView content={fileContent} hunks={blame} onPickCommit={selectCommit} />
               ) : previewMode === "diff" && workSel && workFileStatus === "conflicted" ? (
                 <ConflictViewer
                   path={workSel.path}
@@ -1661,6 +1716,15 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           onCheckout={checkoutCommit}
           onReset={(sha) => resetTo(sha, "hard")}
           onClose={() => setReflogOpen(false)}
+        />
+      )}
+
+      {historyPath && (
+        <FileHistoryModal
+          repoPath={path}
+          filePath={historyPath}
+          onPick={(sha) => sha !== selectedCommit && selectCommit(sha)}
+          onClose={() => setHistoryPath(null)}
         />
       )}
 
