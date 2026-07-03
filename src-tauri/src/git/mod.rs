@@ -3,6 +3,7 @@ pub mod branch;
 pub mod conflict;
 pub mod diff;
 pub mod files;
+pub mod forge;
 pub mod graph;
 pub mod history;
 pub mod ops;

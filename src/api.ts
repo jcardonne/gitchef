@@ -67,6 +67,9 @@ export const fileHistory = (repo: string, path: string, limit?: number) =>
   invoke<FileHistoryEntry[]>("file_history", { repo, path, limit: limit ?? null });
 export const fileBlame = (repo: string, path: string, rev: string | null) =>
   invoke<BlameHunkInfo[]>("file_blame", { repo, path, rev });
+/// Create a PR (GitHub) / MR (GitLab) via the gh/glab CLI; resolves to its URL.
+export const createPr = (repo: string, title: string, body: string, base: string) =>
+  invoke<string>("create_pr", { repo, title, body, base });
 
 export const commit = (repo: string, message: string) =>
   invoke<string>("commit", { repo, message });

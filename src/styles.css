@@ -1621,6 +1621,39 @@ button {
   margin: 0;
 }
 
+/* ---------- create PR/MR ---------- */
+.pr-modal {
+  width: 460px;
+  max-width: 92vw;
+}
+.pr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.pr-field > span {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.pr-modal textarea,
+.pr-modal select {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.pr-modal textarea:focus,
+.pr-modal select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* ---------- command palette ---------- */
 .command-palette {
   align-self: flex-start;
