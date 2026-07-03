@@ -109,6 +109,11 @@ fn commit(repo: String, message: String) -> AppResult<String> {
 }
 
 #[tauri::command]
+fn commit_amend(repo: String, message: String) -> AppResult<String> {
+    ops::amend(&open(&repo)?, &message)
+}
+
+#[tauri::command]
 fn checkout(repo: String, name: String) -> AppResult<()> {
     branch::checkout(&open(&repo)?, &name)
 }
@@ -428,6 +433,7 @@ pub fn run() {
             file_content,
             commit_diff,
             commit,
+            commit_amend,
             checkout,
             create_branch,
             push,

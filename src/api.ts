@@ -59,6 +59,8 @@ export const commitDiff = (repo: string, id: string) =>
 
 export const commit = (repo: string, message: string) =>
   invoke<string>("commit", { repo, message });
+export const commitAmend = (repo: string, message: string) =>
+  invoke<string>("commit_amend", { repo, message });
 export const checkout = (repo: string, name: string) => invoke<void>("checkout", { repo, name });
 export const createBranch = (repo: string, name: string, checkout: boolean) =>
   invoke<void>("create_branch", { repo, name, checkout });

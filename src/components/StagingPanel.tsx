@@ -12,13 +12,22 @@ import { affectedPaths } from "../util";
 interface Props {
   status: StatusResult;
   onSelectFile: (path: string, staged: boolean) => void;
-  onCommit: (message: string) => void;
+  onCommit: (message: string, amend: boolean) => void;
+  /// Message of the current HEAD commit, to prefill when amending. null when
+  /// there's no commit to amend (unborn / detached HEAD) - hides the toggle.
+  lastCommitMessage: string | null;
   isActive: boolean;
 }
 
 /// The commit composer + changes browser. Owns the List/Tree view, the
 /// multi-file selection, bulk (un)stage, and the per-file right-click menu.
-export default function StagingPanel({ status, onSelectFile, onCommit, isActive }: Props) {
+export default function StagingPanel({
+  status,
+  onSelectFile,
+  onCommit,
+  lastCommitMessage,
+  isActive,
+}: Props) {
   const { repoPath, busy, activeAction, run, refresh, notify } = useRepo();
   const [view, setView] = useState<ChangesView>(getChangesView());
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -27,7 +36,17 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
   // (the O(N) filter runs at React's deferred cadence, not per keystroke).
   const deferredQuery = useDeferredValue(query);
   const [message, setMessage] = useState("");
+  const [amend, setAmend] = useState(false);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const canAmend = lastCommitMessage !== null;
+  // Turning amend on prefills the last message (unless the user already typed);
+  // turning it off clears that prefill again (unless the user edited it), so an
+  // un-amended commit can't inherit the old message by accident.
+  const toggleAmend = (on: boolean) => {
+    setAmend(on);
+    if (on && !message.trim() && lastCommitMessage) setMessage(lastCommitMessage);
+    else if (!on && message === lastCommitMessage) setMessage("");
+  };
   const [movedPaths, setMovedPaths] = useState<Set<string>>(new Set());
   const moveTimer = useRef<number>();
   // Flash files that just changed staged-state so the eye can follow the move
@@ -237,9 +256,13 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
   };
 
   const handleCommit = () => {
-    if (!message.trim() || status.staged.length === 0) return;
-    onCommit(message);
+    const doAmend = amend && canAmend;
+    // Amend can commit a message-only change (no staged files); a normal commit
+    // needs something staged.
+    if (!message.trim() || (!doAmend && status.staged.length === 0)) return;
+    onCommit(message, doAmend);
     setMessage("");
+    setAmend(false);
   };
 
   // Keyboard: commit / stage / unstage from anywhere in the active tab (the
@@ -403,11 +426,17 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
           value={message}
           onChange={(e) => setMessage(e.target.value)}
         />
+        {canAmend && (
+          <label className="amend-toggle" title="Rewrite the last commit instead of creating a new one">
+            <input type="checkbox" checked={amend} onChange={(e) => toggleAmend(e.target.checked)} />
+            Amend last commit
+          </label>
+        )}
         <button
           className="primary-btn"
-          disabled={busy || !message.trim() || status.staged.length === 0}
+          disabled={busy || !message.trim() || (!(amend && canAmend) && status.staged.length === 0)}
           onClick={handleCommit}
-          title={`Commit (${comboHint(["mod", "Enter"])})`}
+          title={`${amend && canAmend ? "Amend" : "Commit"} (${comboHint(["mod", "Enter"])})`}
         >
           {activeAction === "commit" && (
             <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
@@ -415,7 +444,7 @@ export default function StagingPanel({ status, onSelectFile, onCommit, isActive 
               <path d="M8 2a6 6 0 0 1 6 6" />
             </svg>
           )}
-          Commit {status.staged.length ? `(${status.staged.length})` : ""}
+          {amend && canAmend ? "Amend" : `Commit ${status.staged.length ? `(${status.staged.length})` : ""}`}
         </button>
       </div>
     </div>

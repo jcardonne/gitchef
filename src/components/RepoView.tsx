@@ -448,16 +448,16 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       setFileContent(await api.fileContent(path, selectedPath, rev, staged, true));
     });
 
-  const onCommit = (message: string) =>
+  const onCommit = (message: string, amend: boolean) =>
     run(async () => {
       // Remember which working file (if any) the diff preview is showing, so we
       // can drop it when this commit absorbs that file.
       const previewedPath = workSel?.path ?? null;
-      const sha = await api.commit(path, message);
-      // A new commit moves HEAD forward, so the previous op's Undo (a reset back
-      // to before it) would now silently discard this commit - retire it.
+      const sha = amend ? await api.commitAmend(path, message) : await api.commit(path, message);
+      // A commit/amend moves HEAD, so the previous op's Undo (a reset back to
+      // before it) would now silently discard this commit - retire it.
       setUndoState(null);
-      notify(`Committed ${sha.slice(0, 7)}`);
+      notify(`${amend ? "Amended" : "Committed"} ${sha.slice(0, 7)}`);
       setRightTab("changes");
       const next = await refresh();
       // A committed file no longer has uncommitted changes, so its working-tree
@@ -1240,6 +1240,13 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // Files still carrying conflict markers gate the sequencer banner's Continue.
   const conflictCount = status.unstaged.filter((f) => f.status === "conflicted").length;
 
+  // HEAD commit's message, to prefill the "Amend" composer. null when detached /
+  // unborn (no is_head branch), which hides the amend toggle.
+  const headTarget = branches.find((b) => b.is_head)?.target;
+  const lastCommitMessage = headTarget
+    ? nodes.find((n) => n.id === headTarget)?.message ?? null
+    : null;
+
   // Hunk staging needs a tracked index diff to carve from: gate out untracked
   // (unstaged "new") files and conflicted files, where it can't work.
   const workFileStatus = workSel
@@ -1461,6 +1468,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                 status={status}
                 onSelectFile={selectWorkingFile}
                 onCommit={onCommit}
+                lastCommitMessage={lastCommitMessage}
                 isActive={isActive}
               />
             ) : (
