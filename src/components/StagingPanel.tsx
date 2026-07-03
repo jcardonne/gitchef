@@ -9,6 +9,9 @@ import ChangeList from "./ChangeList";
 import { comboHint } from "../shortcuts";
 import { affectedPaths } from "../util";
 
+/// Conventional Commits types offered by the optional prefix helper.
+const COMMIT_TYPES = ["feat", "fix", "docs", "refactor", "perf", "test", "build", "ci", "chore", "style", "revert"];
+
 interface Props {
   status: StatusResult;
   onSelectFile: (path: string, staged: boolean) => void;
@@ -37,6 +40,10 @@ export default function StagingPanel({
   const deferredQuery = useDeferredValue(query);
   const [message, setMessage] = useState("");
   const [amend, setAmend] = useState(false);
+  // Optional Conventional Commits prefix. Kept separate from `message` and
+  // composed at commit time, so it never fights the amend prefill.
+  const [type, setType] = useState("");
+  const [scope, setScope] = useState("");
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const canAmend = lastCommitMessage !== null;
   // Turning amend on prefills the last message (unless the user already typed);
@@ -260,7 +267,8 @@ export default function StagingPanel({
     // Amend can commit a message-only change (no staged files); a normal commit
     // needs something staged.
     if (!message.trim() || (!doAmend && status.staged.length === 0)) return;
-    onCommit(message, doAmend);
+    const prefix = type ? `${type}${scope.trim() ? `(${scope.trim()})` : ""}: ` : "";
+    onCommit(prefix + message, doAmend);
     setMessage("");
     setAmend(false);
   };
@@ -420,6 +428,24 @@ export default function StagingPanel({
       )}
 
       <div className="commit-box">
+        <div className="commit-type-row">
+          <select value={type} onChange={(e) => setType(e.target.value)} title="Conventional Commit type (optional)">
+            <option value="">type</option>
+            {COMMIT_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <input
+            className="commit-scope"
+            placeholder="scope (optional)"
+            value={scope}
+            disabled={!type}
+            onChange={(e) => setScope(e.target.value)}
+            title="Optional scope, e.g. api"
+          />
+        </div>
         <textarea
           ref={messageRef}
           placeholder={`Commit message  (${comboHint(["mod", "Enter"])} to commit)`}
