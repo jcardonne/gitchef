@@ -124,6 +124,11 @@ fn push(repo: String) -> AppResult<String> {
 }
 
 #[tauri::command]
+fn push_force(repo: String) -> AppResult<String> {
+    ops::push_force(&open(&repo)?)
+}
+
+#[tauri::command]
 fn pull(repo: String, mode: String) -> AppResult<String> {
     ops::pull(&open(&repo)?, &mode)
 }
@@ -426,6 +431,7 @@ pub fn run() {
             checkout,
             create_branch,
             push,
+            push_force,
             pull,
             fetch,
             merge,

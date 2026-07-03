@@ -26,6 +26,7 @@ import StagingPanel from "./StagingPanel";
 import DiffViewer from "./DiffViewer";
 import ConflictViewer from "./ConflictViewer";
 import SequencerBanner from "./SequencerBanner";
+import UndoBar from "./UndoBar";
 import RebasePlan from "./RebasePlan";
 import FileView from "./FileView";
 import RepoSkeleton from "./RepoSkeleton";
@@ -59,7 +60,18 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // A paused rebase/merge/cherry-pick/revert (null = clean tree), driving the
   // banner. `rebasePlanBase` opens the interactive-rebase plan modal.
   const [seq, setSeq] = useState<SequencerState | null>(null);
-  const [rebasePlanBase, setRebasePlanBase] = useState<{ base: string; label: string } | null>(null);
+  const [rebasePlanBase, setRebasePlanBase] = useState<{
+    base: string;
+    label: string;
+    undo?: { sha: string; branch: string };
+  } | null>(null);
+  // The last HEAD-moving op, for one-level Undo (reset --hard back to `sha`, the
+  // HEAD captured before the op). `branch` scopes it: the bar only shows while
+  // still on that branch, so Undo can't hard-reset a DIFFERENT branch you've
+  // since switched to. Persists until replaced, undone, or dismissed.
+  const [undoState, setUndoState] = useState<{ label: string; sha: string; branch: string } | null>(
+    null
+  );
 
   const [rightTab, setRightTab] = useState<"changes" | "commit">("changes");
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
@@ -442,6 +454,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       // can drop it when this commit absorbs that file.
       const previewedPath = workSel?.path ?? null;
       const sha = await api.commit(path, message);
+      // A new commit moves HEAD forward, so the previous op's Undo (a reset back
+      // to before it) would now silently discard this commit - retire it.
+      setUndoState(null);
       notify(`Committed ${sha.slice(0, 7)}`);
       setRightTab("changes");
       const next = await refresh();
@@ -476,12 +491,23 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       notify(`Created and switched to ${name}`);
     });
 
-  const onMerge = (name: string) =>
+  // Pre-op HEAD snapshot (sha + branch) for Undo, read from the loaded branch
+  // list. Captured synchronously by the HEAD-moving handlers below; undefined
+  // when detached (no is_head branch) - those ops just don't get an Undo.
+  const headSnapshot = () => {
+    const b = branches.find((x) => x.is_head);
+    return b?.target ? { sha: b.target, branch: b.name } : undefined;
+  };
+
+  const onMerge = (name: string) => {
+    const snap = headSnapshot();
     run(async () => {
       const out = await api.merge(path, name);
       await reload();
       notify(out.trim() || `Merged ${name}`);
+      if (snap) setUndoState({ label: `merge ${name}`, ...snap });
     });
+  };
 
   const onPullAction = (action: PullAction) =>
     run(async () => {
@@ -492,6 +518,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       } else {
         const out = await api.pull(path, action);
         await reload();
+        setUndoState(null); // pull advanced HEAD; a stale Undo would discard it
         notify(out.trim() || "Pulled");
       }
     }, "pull");
@@ -500,6 +527,23 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       await api.push(path);
       await refresh();
       notify("Pushed");
+    }, "push");
+  const onForcePush = () =>
+    run(async () => {
+      // Force-push needs a branch to lease against; on a detached HEAD git would
+      // just error after the confirm, so bail with a readable message up front.
+      if (!branches.some((b) => b.is_head)) {
+        notify("Cannot force-push a detached HEAD; check out a branch first.", true);
+        return;
+      }
+      const ok = await confirm(`Force-push ${headBranch} to origin? This rewrites remote history.`, {
+        title: "Force push",
+        kind: "warning",
+      });
+      if (!ok) return;
+      const out = await api.pushForce(path);
+      await refresh();
+      notify(out.trim() || "Force-pushed (with lease)");
     }, "push");
 
   // Keyboard: push / pull on the active tab.
@@ -536,22 +580,50 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     run(async () => {
       const out = await api.fastForwardTo(path, branchName);
       await reload();
+      setUndoState(null); // fast-forward advanced HEAD; a stale Undo would discard it
       notify(out.trim() || `Fast-forwarded ${headBranch} to ${branchName}`);
     });
-  const rebaseOntoBranch = (branchName: string) =>
+  const rebaseOntoBranch = (branchName: string) => {
+    const snap = headSnapshot();
     run(async () => {
       const out = await api.rebaseOnto(path, branchName);
       await reload();
       notify(out.trim() || `Rebased ${headBranch} onto ${branchName}`);
+      if (snap) setUndoState({ label: `rebase onto ${branchName}`, ...snap });
     });
+  };
   // Drive the in-progress operation (continue / skip / abort). reload() refetches
   // status + sequencer state, so the banner updates or disappears on its own.
+  // Abort returns HEAD to before the whole sequence, so the pending Undo (which
+  // pointed at that same pre-op sha) is now moot - clear it.
   const seqAct = (action: api.SequencerAction, label: string) =>
     run(async () => {
       const out = await api.sequencerAct(path, action);
       await reload();
       notify(out.trim() || label);
+      if (action === "--abort") setUndoState(null);
     }, label);
+  // Undo the last HEAD-moving op: hard-reset to the snapshot sha. Confirms first
+  // if there are uncommitted changes (reset --hard would discard them).
+  const doUndo = () =>
+    run(async () => {
+      // Guard: only undo while still on the branch the snapshot was taken on, so
+      // we never hard-reset a branch switched to since (the bar is also gated on
+      // this, but re-check in case state changed between render and click).
+      if (!undoState || undoState.branch !== headBranch) return;
+      const dirty = status.staged.length + status.unstaged.length > 0;
+      if (dirty) {
+        const ok = await confirm(
+          "Undo resets to before the operation and discards uncommitted changes. Continue?",
+          { title: "Undo", kind: "warning" }
+        );
+        if (!ok) return;
+      }
+      await api.resetTo(path, undoState.sha, "hard");
+      await reload();
+      notify(`Undid ${undoState.label}`);
+      setUndoState(null);
+    });
   // Stable identity so RebasePlan's fetch effect doesn't re-run (refetching the
   // plan) on every RepoView re-render while the modal is open.
   const closeRebasePlan = useCallback(() => setRebasePlanBase(null), []);
@@ -615,13 +687,17 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       await refresh();
       notify(`Tagged ${name}`);
     });
-  const cherryPick = (sha: string) =>
+  const cherryPick = (sha: string) => {
+    const snap = headSnapshot();
     run(async () => {
       const out = await api.cherryPick(path, sha);
       await reload();
       notify(out.trim() || "Cherry-picked");
+      if (snap) setUndoState({ label: `cherry-pick ${sha.slice(0, 7)}`, ...snap });
     });
-  const revertCommit = (sha: string) =>
+  };
+  const revertCommit = (sha: string) => {
+    const snap = headSnapshot();
     run(async () => {
       const ok = await confirm("Revert this commit? Creates a new commit undoing its changes.", {
         title: "Revert commit",
@@ -631,8 +707,11 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       const out = await api.revertCommit(path, sha);
       await reload();
       notify(out.trim() || "Reverted");
+      if (snap) setUndoState({ label: `revert ${sha.slice(0, 7)}`, ...snap });
     });
-  const resetTo = (sha: string, mode: "soft" | "mixed" | "hard") =>
+  };
+  const resetTo = (sha: string, mode: "soft" | "mixed" | "hard") => {
+    const snap = headSnapshot();
     run(async () => {
       if (mode === "hard") {
         const ok = await confirm("Hard reset discards all uncommitted changes. Continue?", {
@@ -644,7 +723,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       await api.resetTo(path, sha, mode);
       await reload();
       notify(`Reset (${mode}) to ${sha.slice(0, 7)}`);
+      if (snap) setUndoState({ label: `reset (${mode}) to ${sha.slice(0, 7)}`, ...snap });
     });
+  };
   const compareWorkdir = (sha: string) =>
     run(async () => {
       const files = await api.compareWorkdir(path, sha);
@@ -710,6 +791,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         ? [
             MenuItem.new({ text: "Pull (fast-forward if possible)", action: () => onPullAction("ff") }),
             MenuItem.new({ text: "Push", action: onPush }),
+            MenuItem.new({ text: "Force push (with lease)…", action: onForcePush }),
             ...(upstream && !branch.upstream
               ? [MenuItem.new({ text: "Set Upstream", action: () => setBranchUpstream(branch.name, upstream) })]
               : []),
@@ -732,7 +814,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
             }),
             MenuItem.new({
               text: `Rebase ${headBranch} onto ${branch.name} (interactive)...`,
-              action: () => setRebasePlanBase({ base: branch.name, label: branch.name }),
+              action: () => setRebasePlanBase({ base: branch.name, label: branch.name, undo: headSnapshot() }),
             }),
             PredefinedMenuItem.new({ item: "Separator" }),
           ]
@@ -955,7 +1037,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       MenuItem.new({ text: "Revert commit", action: () => revertCommit(sha) }),
       MenuItem.new({
         text: "Rebase commits after this, interactively…",
-        action: () => setRebasePlanBase({ base: sha, label: short }),
+        action: () => setRebasePlanBase({ base: sha, label: short, undo: headSnapshot() }),
       }),
       Submenu.new({
         text: `Reset ${headBranch} to here`,
@@ -1219,10 +1301,11 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         onCheckout={onCheckout}
         onPullAction={onPullAction}
         onPush={onPush}
+        onForcePush={onForcePush}
         onNewBranch={() => askName("New branch", "branch-name", onCreateBranch)}
       />
 
-      {seq?.kind && (
+      {seq?.kind ? (
         <SequencerBanner
           state={seq}
           conflictCount={conflictCount}
@@ -1231,6 +1314,16 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           onSkip={() => seqAct("--skip", "Skipped")}
           onAbort={() => seqAct("--abort", "Aborted")}
         />
+      ) : (
+        undoState &&
+        undoState.branch === headBranch && (
+          <UndoBar
+            label={undoState.label}
+            busy={busy}
+            onUndo={doUndo}
+            onDismiss={() => setUndoState(null)}
+          />
+        )
       )}
 
       <div className="main">
@@ -1417,7 +1510,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           base={rebasePlanBase.base}
           baseLabel={rebasePlanBase.label}
           onClose={closeRebasePlan}
-          onStarted={() => void reload()}
+          onStarted={() => {
+            const label = rebasePlanBase?.label;
+            const undo = rebasePlanBase?.undo;
+            void reload();
+            if (undo) setUndoState({ label: `interactive rebase onto ${label}`, ...undo });
+          }}
         />
       )}
     </RepoContext.Provider>

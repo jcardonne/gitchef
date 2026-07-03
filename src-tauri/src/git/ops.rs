@@ -50,23 +50,36 @@ pub fn commit(repo: &Repository, message: &str) -> AppResult<String> {
 
 // Network + merge operations go through the git CLI (credentials, hooks, refs).
 
-/// Push the current branch. On its first push (no upstream tracking ref yet)
-/// fall back to `push -u origin <branch>` so the branch gets published instead
-/// of git erroring with "has no upstream branch".
+/// Push the current branch.
 pub fn push(repo: &Repository) -> AppResult<String> {
+    push_inner(repo, false)
+}
+
+/// Like `push`, but with `--force-with-lease` - needed after rewriting a branch
+/// that's already published (rebase/amend), where a normal push is a rejected
+/// non-fast-forward. The lease refuses to clobber the remote if it advanced
+/// since our last fetch, so it can't silently blow away a colleague's push.
+pub fn push_force(repo: &Repository) -> AppResult<String> {
+    push_inner(repo, true)
+}
+
+fn push_inner(repo: &Repository, force: bool) -> AppResult<String> {
     let dir = workdir(repo)?;
+    let mut args = vec!["push"];
+    if force {
+        args.push("--force-with-lease");
+    }
     if !repo.head()?.is_branch() {
-        return run_git(dir, &["push"]); // detached HEAD: let git decide
+        return run_git(dir, &args); // detached HEAD: let git decide
     }
     // Push to the existing upstream only when it has the SAME name. Otherwise
     // (no upstream, or one pointing at a differently-named branch) publish the
     // current branch to origin/<name> and set tracking - this sidesteps the
     // push.default=simple "upstream does not match the name" failure.
-    if repo::same_name_upstream(repo) {
-        run_git(dir, &["push"])
-    } else {
-        run_git(dir, &["push", "-u", "origin", "HEAD"])
+    if !repo::same_name_upstream(repo) {
+        args.extend(["-u", "origin", "HEAD"]);
     }
+    run_git(dir, &args)
 }
 pub fn pull(repo: &Repository, mode: &str) -> AppResult<String> {
     let dir = workdir(repo)?;
@@ -219,8 +232,8 @@ pub fn stash_edit_message(repo: &mut Repository, sha: &str, message: &str) -> Ap
 #[cfg(test)]
 mod tests {
     use super::{
-        cherry_pick, fast_forward_to, merge, rebase_onto, reset_to, revert_commit, stash_all,
-        stash_apply, stash_edit_message,
+        cherry_pick, fast_forward_to, merge, push, push_force, rebase_onto, reset_to,
+        revert_commit, stash_all, stash_apply, stash_edit_message,
     };
     use crate::git::run_git;
     use git2::Repository;
@@ -328,6 +341,31 @@ mod tests {
         fast_forward_to(&Repository::open(&dir).unwrap(), "feature").unwrap();
         assert_eq!(head(&dir), feat, "HEAD fast-forwarded to feature");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn push_force_overwrites_a_rewritten_branch() {
+        let remote = tmp("pf-remote");
+        run_git(&remote, &["init", "--bare", "-q"]).unwrap();
+        let work = tmp("pf-work");
+        init(&work);
+        let br = run_git(&work, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap().trim().to_string();
+        run_git(&work, &["remote", "add", "origin", remote.to_str().unwrap()]).unwrap();
+        run_git(&work, &["push", "-u", "origin", "HEAD"]).unwrap();
+
+        // Rewrite history so the branch diverges from the remote (amend -> new sha).
+        std::fs::write(work.join("f.txt"), "rewritten\n").unwrap();
+        run_git(&work, &["commit", "-a", "--amend", "-m", "rewritten"]).unwrap();
+
+        // A normal push is now a rejected non-fast-forward; force-with-lease wins.
+        assert!(push(&Repository::open(&work).unwrap()).is_err(), "normal push must be rejected");
+        push_force(&Repository::open(&work).unwrap()).unwrap();
+
+        let remote_tip = run_git(&remote, &["rev-parse", &br]).unwrap();
+        let work_tip = run_git(&work, &["rev-parse", "HEAD"]).unwrap();
+        assert_eq!(remote_tip.trim(), work_tip.trim(), "remote updated to the rewritten commit");
+        std::fs::remove_dir_all(&work).ok();
+        std::fs::remove_dir_all(&remote).ok();
     }
 
     #[test]

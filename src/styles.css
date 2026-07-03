@@ -2739,6 +2739,37 @@ button {
   flex: 0 0 auto;
 }
 
+/* ---------- undo bar (last history-moving op) ---------- */
+.undo-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.undo-bar-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.undo-bar-label strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.undo-bar-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.undo-bar-dismiss {
+  padding: 2px 7px;
+}
+
 /* ---------- conflict resolver ---------- */
 .conflict {
   display: flex;
