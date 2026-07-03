@@ -3,7 +3,7 @@ import { confirm, save } from "@tauri-apps/plugin-dialog";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import * as api from "../api";
 import { RepoContext, type RefreshOpts } from "../repoContext";
-import { getRightPanelWidth, setRightPanelWidth, getPullDefault } from "../storage";
+import { getRightPanelWidth, setRightPanelWidth, getPullDefault, getFetchIntervalMinutes } from "../storage";
 import type { PullAction } from "../storage";
 import type {
   BranchInfo,
@@ -106,6 +106,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [graphLimit, setGraphLimit] = useState(500);
   const [searchOpen, setSearchOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // Bumped on a `gitchef:prefs` event so the auto-fetch interval re-reads live.
+  const [autoFetchTick, setAutoFetchTick] = useState(0);
   const [rightWidth, setRightWidth] = useState(getRightPanelWidth);
   const [selectedCommitAvatar, setSelectedCommitAvatar] = useState<string | null>(null);
   const [accountAvatars, setAccountAvatars] = useState<ReadonlyMap<string, string>>(new Map());
@@ -132,6 +134,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const fileReq = useRef(0);
   const statsReq = useRef(0);
   const rightRef = useRef<HTMLDivElement>(null);
+  // Live mirror of `busy` for the auto-fetch interval's stale closure.
+  const busyRef = useRef(false);
 
   // Info toasts auto-dismiss after 4s; error toasts persist (long git messages
   // need reading + copying) until the user closes them.
@@ -577,6 +581,28 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [isActive, onPush, onPullAction]);
+
+  // Auto-fetch: mirror `busy` into a ref, re-read the setting on a prefs change,
+  // and run a background fetch on the active tab at the chosen interval. Skips a
+  // tick while an op is in flight or the window is hidden, and never toasts on
+  // failure (a background fetch offline shouldn't nag).
+  useEffect(() => {
+    busyRef.current = busy;
+  }, [busy]);
+  useEffect(() => {
+    const onPrefs = () => setAutoFetchTick((t) => t + 1);
+    window.addEventListener("gitchef:prefs", onPrefs);
+    return () => window.removeEventListener("gitchef:prefs", onPrefs);
+  }, []);
+  useEffect(() => {
+    const minutes = getFetchIntervalMinutes();
+    if (!isActive || minutes <= 0) return;
+    const id = window.setInterval(() => {
+      if (busyRef.current || document.visibilityState === "hidden") return;
+      api.fetchRemotes(path).then(() => refresh({ stats: false })).catch(() => {});
+    }, minutes * 60_000);
+    return () => window.clearInterval(id);
+  }, [isActive, path, refresh, autoFetchTick]);
 
   // --- commit context-menu actions ---
   const headBranch = branches.find((b) => b.is_head)?.name ?? "HEAD";

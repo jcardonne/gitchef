@@ -125,6 +125,17 @@ export function setRightPanelWidth(width: number): void {
   localStorage.setItem(RIGHT_PANEL_KEY, JSON.stringify(width));
 }
 
+const FETCH_INTERVAL_KEY = "gitchef.fetchIntervalMinutes";
+
+/// Minutes between background auto-fetches for the active repo; 0 = disabled.
+export function getFetchIntervalMinutes(): number {
+  return read<number>(FETCH_INTERVAL_KEY, 0);
+}
+export function setFetchIntervalMinutes(minutes: number): void {
+  localStorage.setItem(FETCH_INTERVAL_KEY, JSON.stringify(minutes));
+  notifyPrefs();
+}
+
 export interface RecentRepo {
   path: string;
   name: string;
