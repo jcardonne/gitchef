@@ -4,6 +4,7 @@ pub mod conflict;
 pub mod diff;
 pub mod files;
 pub mod graph;
+pub mod history;
 pub mod ops;
 pub mod rebase;
 pub mod repo;

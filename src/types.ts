@@ -114,6 +114,27 @@ export interface StashInfo {
   time: number; // unix seconds
 }
 
+/// One commit in a file's history (the commit changed the file).
+export interface FileHistoryEntry {
+  id: string;
+  short_id: string;
+  summary: string;
+  author: string;
+  email: string;
+  time: number;
+}
+
+/// A run of consecutive lines sharing a last-changing commit. `start_line` is
+/// 1-based; `lines` is the run length.
+export interface BlameHunkInfo {
+  commit_id: string;
+  short_id: string;
+  author: string;
+  time: number;
+  start_line: number;
+  lines: number;
+}
+
 /// One HEAD reflog entry: where HEAD moved to (`id`) and why (`message`).
 export interface ReflogNode {
   id: string;

@@ -1512,6 +1512,39 @@ button {
   background: color-mix(in srgb, var(--text-dim) 6%, transparent);
 }
 
+/* ---------- blame gutter ---------- */
+.blame-line .blame-gutter {
+  width: 150px;
+  flex: 0 0 auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0 8px;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  overflow: hidden;
+  white-space: nowrap;
+  user-select: none;
+}
+.blame-line .blame-gutter.clickable {
+  cursor: pointer;
+}
+.blame-line .blame-gutter.clickable:hover .blame-sha {
+  text-decoration: underline;
+}
+.blame-sha {
+  font-family: var(--mono, ui-monospace, monospace);
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.blame-author {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reflog-item.clickable {
+  cursor: pointer;
+}
+
 /* ---------- misc ---------- */
 .empty-hint {
   color: var(--text-dim);

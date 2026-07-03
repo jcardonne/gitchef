@@ -2,10 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
   BranchInfo,
+  BlameHunkInfo,
   CommitNode,
   ConflictFile,
   FileContent,
   FileDiff,
+  FileHistoryEntry,
   ReflogNode,
   RepoInfo,
   SequencerState,
@@ -61,6 +63,10 @@ export const diffCommits = (repo: string, a: string, b: string) =>
   invoke<FileDiff[]>("diff_commits", { repo, a, b });
 export const reflog = (repo: string, limit?: number) =>
   invoke<ReflogNode[]>("reflog", { repo, limit: limit ?? null });
+export const fileHistory = (repo: string, path: string, limit?: number) =>
+  invoke<FileHistoryEntry[]>("file_history", { repo, path, limit: limit ?? null });
+export const fileBlame = (repo: string, path: string, rev: string | null) =>
+  invoke<BlameHunkInfo[]>("file_blame", { repo, path, rev });
 
 export const commit = (repo: string, message: string) =>
   invoke<string>("commit", { repo, message });
