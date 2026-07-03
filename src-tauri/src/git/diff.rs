@@ -313,6 +313,20 @@ pub fn commit_diff(repo: &Repository, id: &str) -> AppResult<Vec<FileDiff>> {
     diff_to_files(&diff, MAX_DIFF_LINES)
 }
 
+/// All file changes between two arbitrary commits: diff of tree(a) -> tree(b),
+/// so `+`/`-` line origins read as b relative to a. Mirrors `commit_diff` but
+/// with two explicit endpoints instead of commit-vs-first-parent.
+pub fn diff_commits(repo: &Repository, a: &str, b: &str) -> AppResult<Vec<FileDiff>> {
+    let oid_a = Oid::from_str(a).map_err(|e| AppError::Msg(format!("invalid commit id: {e}")))?;
+    let oid_b = Oid::from_str(b).map_err(|e| AppError::Msg(format!("invalid commit id: {e}")))?;
+    let tree_a = repo.find_commit(oid_a)?.tree()?;
+    let tree_b = repo.find_commit(oid_b)?.tree()?;
+    let mut opts = DiffOptions::new();
+    let mut diff = repo.diff_tree_to_tree(Some(&tree_a), Some(&tree_b), Some(&mut opts))?;
+    diff.find_similar(Some(&mut find_renames()))?;
+    diff_to_files(&diff, MAX_DIFF_LINES)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{file_content, MAX_DIFF_LINES};
@@ -351,6 +365,31 @@ mod tests {
         run_git(dir, &["add", "f.txt"]).unwrap();
         std::fs::write(dir.join("f.txt"), "v3\n").unwrap();
         sha
+    }
+
+    #[test]
+    fn diffs_two_arbitrary_commits() {
+        let dir = tmp("diffcommits");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("f.txt"), "v1\n").unwrap();
+        run_git(&dir, &["add", "f.txt"]).unwrap();
+        run_git(&dir, &["commit", "-m", "one"]).unwrap();
+        let a = run_git(&dir, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        std::fs::write(dir.join("f.txt"), "v2\n").unwrap();
+        run_git(&dir, &["add", "f.txt"]).unwrap();
+        run_git(&dir, &["commit", "-m", "two"]).unwrap();
+        let b = run_git(&dir, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+
+        let files = super::diff_commits(&fresh(&dir), &a, &b).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "f.txt");
+        assert!(!files[0].hunks.is_empty());
+        // Reverse endpoints still diffs the same file (b -> a).
+        assert_eq!(super::diff_commits(&fresh(&dir), &b, &a).unwrap()[0].path, "f.txt");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

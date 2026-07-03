@@ -77,6 +77,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [rightTab, setRightTab] = useState<"changes" | "commit">("changes");
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
   const [commitFiles, setCommitFiles] = useState<FileDiff[]>([]);
+  // Two-commit compare: `compareBase` is the commit picked "for compare" via the
+  // context menu; `compareView` is the active a..b comparison shown in the panel.
+  const [compareBase, setCompareBase] = useState<string | null>(null);
+  const [compareView, setCompareView] = useState<{ a: string; b: string } | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const selectedCommitNode = useMemo(
@@ -380,8 +384,25 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     setCompareMode(false);
   };
 
+  // Show the diff between two arbitrary commits (tree(a) -> tree(b)) in the
+  // commit panel. selectedCommit is set to b so the File preview reads b's blob;
+  // the compareView header takes render priority over the commit detail.
+  const runCompare = (a: string, b: string) => {
+    const req = ++commitReq.current;
+    run(async () => {
+      setSelectedCommit(b);
+      setCompareView({ a, b });
+      setRightTab("commit");
+      setSelectedPath(null);
+      setDiff(null);
+      const files = await api.diffCommits(path, a, b);
+      if (commitReq.current === req) setCommitFiles(files);
+    });
+  };
+
   const selectCommit = (id: string) => {
     setCompareMode(false);
+    setCompareView(null);
     // Re-clicking the selected commit deselects it and closes its file list.
     if (selectedCommit === id) {
       setSelectedCommit(null);
@@ -1111,6 +1132,13 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       }),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: "Compare against working directory", action: () => compareWorkdir(sha) }),
+      MenuItem.new({ text: "Select for compare", action: () => setCompareBase(sha) }),
+      ...(compareBase && compareBase !== sha
+        ? [MenuItem.new({ text: `Compare ${compareBase.slice(0, 7)} .. ${short}`, action: () => runCompare(compareBase, sha) })]
+        : []),
+      ...(compareBase
+        ? [MenuItem.new({ text: "Clear compare selection", action: () => setCompareBase(null) })]
+        : []),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: "Copy commit SHA", action: () => run(async () => (await api.copyText(sha), notify("SHA copied"))) }),
       MenuItem.new({
@@ -1554,7 +1582,18 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
               />
             ) : (
               <div className="commit-detail-panel">
-                {selectedCommitNode ? (
+                {compareView ? (
+                  <div className="commit-detail-card">
+                    <div className="commit-detail-main">
+                      <div className="commit-detail-text">
+                        <div className="commit-detail-title">Comparing commits</div>
+                        <div className="commit-detail-author">
+                          {compareView.a.slice(0, 7)} .. {compareView.b.slice(0, 7)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : selectedCommitNode ? (
                   <CommitDetails commit={selectedCommitNode} avatarUrl={selectedCommitAvatar} />
                 ) : selectedStash ? (
                   <div className="commit-detail-card">
