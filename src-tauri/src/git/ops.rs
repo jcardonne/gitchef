@@ -48,6 +48,30 @@ pub fn commit(repo: &Repository, message: &str) -> AppResult<String> {
     Ok(oid.to_string())
 }
 
+/// Amend HEAD: rewrite the last commit with the current index tree and `message`.
+/// Keeps the original author (git's amend behavior) but refreshes the committer.
+pub fn amend(repo: &Repository, message: &str) -> AppResult<String> {
+    if message.trim().is_empty() {
+        return Err(AppError::Msg("commit message is empty".into()));
+    }
+    let head = repo
+        .head()
+        .ok()
+        .and_then(|h| h.peel_to_commit().ok())
+        .ok_or_else(|| AppError::Msg("no commit to amend".into()))?;
+    let mut index = repo.index()?;
+    let tree = repo.find_tree(index.write_tree()?)?;
+    let sig = repo
+        .signature()
+        .map_err(|_| AppError::Msg("set git user.name and user.email before committing".into()))?;
+    // author=None keeps the original author; committer=sig updates it to now.
+    let oid = head.amend(Some("HEAD"), None, Some(&sig), None, Some(message), Some(&tree))?;
+    // libgit2's amend (unlike `git commit --amend`) doesn't set ORIG_HEAD; write
+    // it so `git reset ORIG_HEAD` still recovers the pre-amend commit.
+    repo.reference("ORIG_HEAD", head.id(), true, "amend")?;
+    Ok(oid.to_string())
+}
+
 // Network + merge operations go through the git CLI (credentials, hooks, refs).
 
 /// Push the current branch.
@@ -232,7 +256,7 @@ pub fn stash_edit_message(repo: &mut Repository, sha: &str, message: &str) -> Ap
 #[cfg(test)]
 mod tests {
     use super::{
-        cherry_pick, fast_forward_to, merge, push, push_force, rebase_onto, reset_to,
+        amend, cherry_pick, fast_forward_to, merge, push, push_force, rebase_onto, reset_to,
         revert_commit, stash_all, stash_apply, stash_edit_message,
     };
     use crate::git::run_git;
@@ -366,6 +390,30 @@ mod tests {
         assert_eq!(remote_tip.trim(), work_tip.trim(), "remote updated to the rewritten commit");
         std::fs::remove_dir_all(&work).ok();
         std::fs::remove_dir_all(&remote).ok();
+    }
+
+    #[test]
+    fn amend_rewrites_message_and_tree_keeping_parent() {
+        let dir = tmp("amend");
+        init(&dir);
+        write_commit(&dir, "base\nsecond\n", "second"); // HEAD = "second", parent = init
+        let before = head(&dir);
+        let parent = run_git(&dir, &["rev-parse", "HEAD~1"]).unwrap().trim().to_string();
+
+        std::fs::write(dir.join("f.txt"), "base\namended\n").unwrap();
+        run_git(&dir, &["add", "."]).unwrap();
+        amend(&Repository::open(&dir).unwrap(), "reworded second").unwrap();
+
+        assert_eq!(run_git(&dir, &["show", "-s", "--format=%s", "HEAD"]).unwrap().trim(), "reworded second");
+        assert_eq!(std::fs::read_to_string(dir.join("f.txt")).unwrap(), "base\namended\n", "index tree amended in");
+        assert_ne!(head(&dir), before, "amend rewrote HEAD to a new sha");
+        assert_eq!(run_git(&dir, &["rev-parse", "HEAD~1"]).unwrap().trim(), parent, "parent unchanged");
+        assert_eq!(
+            run_git(&dir, &["rev-parse", "ORIG_HEAD"]).unwrap().trim(),
+            before,
+            "ORIG_HEAD recovers the pre-amend commit"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
