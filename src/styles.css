@@ -1459,6 +1459,59 @@ button {
   background: color-mix(in srgb, var(--accent) 20%, var(--diff-del-bg));
 }
 
+/* ---------- split (side-by-side) diff ---------- */
+/* Split fits the two columns to the viewport (each 50%), so drop the
+   grow-to-widest-line rule the unified view uses for horizontal scroll. */
+.diff.split .diff-rows {
+  min-width: 0;
+}
+.split-line {
+  display: flex;
+  height: 18px;
+  line-height: 18px;
+}
+.split-cell {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: pre;
+  overflow: hidden;
+}
+.split-cell + .split-cell {
+  border-left: 1px solid var(--border);
+}
+.split-cell .ln {
+  width: 42px;
+  flex: 0 0 auto;
+  text-align: right;
+  padding: 0 8px;
+  color: var(--text-dim);
+  opacity: 0.6;
+  user-select: none;
+}
+.split-cell .code {
+  flex: 1;
+  padding: 0 8px;
+  overflow: hidden;
+}
+.split-cell.add {
+  background: var(--diff-add-bg);
+}
+.split-cell.del {
+  background: var(--diff-del-bg);
+}
+.split-cell.add .diff-seg {
+  background: color-mix(in srgb, var(--add) 32%, transparent);
+  border-radius: 2px;
+}
+.split-cell.del .diff-seg {
+  background: color-mix(in srgb, var(--del) 32%, transparent);
+  border-radius: 2px;
+}
+.split-cell.empty {
+  background: color-mix(in srgb, var(--text-dim) 6%, transparent);
+}
+
 /* ---------- misc ---------- */
 .empty-hint {
   color: var(--text-dim);

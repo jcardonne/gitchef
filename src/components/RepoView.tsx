@@ -102,7 +102,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // mode. `compareMode` records that the open commit-file list came from a
   // "compare with working directory" - so its File view reads the workdir (the
   // diff's right-hand side), not the commit's blob.
-  const [previewMode, setPreviewMode] = useState<"diff" | "file">("diff");
+  const [previewMode, setPreviewMode] = useState<"diff" | "split" | "file">("diff");
   const [fileContent, setFileContent] = useState<FileContent | null>(null);
   const [compareMode, setCompareMode] = useState(false);
 
@@ -1488,37 +1488,45 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                     Diff
                   </button>
                   <button
+                    className={previewMode === "split" ? "active" : ""}
+                    onClick={() => setPreviewMode("split")}
+                  >
+                    Split
+                  </button>
+                  <button
                     className={previewMode === "file" ? "active" : ""}
                     onClick={() => setPreviewMode("file")}
                   >
                     File
                   </button>
                 </div>
-                {((previewMode === "diff" && diff?.truncated && workSel) ||
+                {((previewMode !== "file" && diff?.truncated && workSel) ||
                   (previewMode === "file" && fileContent?.truncated)) && (
                   <button
                     className="mini-btn"
-                    onClick={previewMode === "diff" ? loadFullDiff : loadFullFile}
+                    onClick={previewMode === "file" ? loadFullFile : loadFullDiff}
                     title="Load the entire file"
                   >
                     Load full file
                   </button>
                 )}
               </div>
-              {previewMode === "diff" ? (
-                workSel && workFileStatus === "conflicted" ? (
-                  <ConflictViewer
-                    path={workSel.path}
-                    onResolved={() => {
-                      closeDiff();
-                      void refresh({ history: false });
-                    }}
-                  />
-                ) : (
-                  <DiffViewer diff={diff} onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined} />
-                )
-              ) : (
+              {previewMode === "file" ? (
                 <FileView content={fileContent} />
+              ) : previewMode === "diff" && workSel && workFileStatus === "conflicted" ? (
+                <ConflictViewer
+                  path={workSel.path}
+                  onResolved={() => {
+                    closeDiff();
+                    void refresh({ history: false });
+                  }}
+                />
+              ) : (
+                <DiffViewer
+                  diff={diff}
+                  mode={previewMode === "split" ? "split" : "unified"}
+                  onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined}
+                />
               )}
             </div>
           )}
