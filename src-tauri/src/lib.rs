@@ -2,7 +2,7 @@ mod error;
 mod git;
 
 use error::AppResult;
-use git::{avatars, branch, conflict, diff, files, graph, history, ops, rebase, repo, sequencer, worktree};
+use git::{avatars, branch, conflict, diff, files, forge, graph, history, ops, rebase, repo, sequencer, worktree};
 use git2::Repository;
 
 /// Open a repository by path. The backend holds NO active-repo state: every
@@ -121,6 +121,11 @@ fn file_history(repo: String, path: String, limit: Option<usize>) -> AppResult<V
 #[tauri::command(async)]
 fn file_blame(repo: String, path: String, rev: Option<String>) -> AppResult<Vec<history::BlameHunkInfo>> {
     history::file_blame(&open(&repo)?, &path, rev.as_deref())
+}
+
+#[tauri::command(async)]
+fn create_pr(repo: String, title: String, body: String, base: String) -> AppResult<String> {
+    forge::create_pr(&open(&repo)?, &title, &body, &base)
 }
 
 #[tauri::command]
@@ -476,6 +481,7 @@ pub fn run() {
             reflog,
             file_history,
             file_blame,
+            create_pr,
             commit,
             commit_amend,
             checkout,

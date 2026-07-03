@@ -36,6 +36,7 @@ import CommandPalette, { type PaletteCommand } from "./CommandPalette";
 import ReflogModal from "./ReflogModal";
 import BlameView from "./BlameView";
 import FileHistoryModal from "./FileHistoryModal";
+import CreatePrModal from "./CreatePrModal";
 
 const EMPTY_STATUS: StatusResult = { staged: [], unstaged: [] };
 
@@ -117,6 +118,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [reflogOpen, setReflogOpen] = useState(false);
   const [historyPath, setHistoryPath] = useState<string | null>(null);
+  const [prOpen, setPrOpen] = useState(false);
   // Bumped on a `gitchef:prefs` event so the auto-fetch interval re-reads live.
   const [autoFetchTick, setAutoFetchTick] = useState(0);
   const [rightWidth, setRightWidth] = useState(getRightPanelWidth);
@@ -872,6 +874,13 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       await api.openOnWeb(path, kind, reference, filePath);
     });
 
+  const submitPr = (title: string, body: string, base: string) =>
+    run(async () => {
+      const url = await api.createPr(path, title, body, base);
+      await refresh(); // the create auto-pushed the branch; refresh upstream/ahead-behind
+      notify(`Created ${url}`);
+    });
+
   const showCommitFileMenu = async (file: FileDiff) => {
     if (!selectedCommit) return;
     const sha = selectedCommit;
@@ -909,6 +918,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
             MenuItem.new({ text: "Pull (fast-forward if possible)", action: () => onPullAction("ff") }),
             MenuItem.new({ text: "Push", action: onPush }),
             MenuItem.new({ text: "Force push (with lease)…", action: onForcePush }),
+            ...(pl
+              ? [MenuItem.new({ text: `Create ${pl === "GitLab" ? "merge" : "pull"} request…`, action: () => setPrOpen(true) })]
+              : []),
             MenuItem.new({ text: "View HEAD reflog…", action: () => setReflogOpen(true) }),
             ...(upstream && !branch.upstream
               ? [MenuItem.new({ text: "Set Upstream", action: () => setBranchUpstream(branch.name, upstream) })]
@@ -1434,6 +1446,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // Actions surfaced in the Cmd+K palette. Built fresh each render so every
   // handler closes over current state; the list is small so the cost is nil.
   const pl = providerLabel();
+  // Base-branch candidates for the PR/MR form: unique branch names, defaulting
+  // to main/master when present.
+  const baseCandidates = Array.from(
+    new Set(branches.map((b) => (b.is_remote ? shortRemoteBranchName(b.name) : b.name)))
+  ).sort();
+  const prBaseDefault = ["main", "master"].find((n) => baseCandidates.includes(n)) ?? baseCandidates[0] ?? "main";
   const paletteCommands: PaletteCommand[] = [
     { title: "Push", run: onPush },
     { title: "Force push (with lease)", run: onForcePush },
@@ -1445,6 +1463,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     { title: "Discard all changes", run: discardAllChanges },
     { title: "New branch…", run: () => askName("New branch", "branch-name", onCreateBranch) },
     { title: "Show reflog", run: () => setReflogOpen(true) },
+    ...(pl ? [{ title: `Create ${pl === "GitLab" ? "merge" : "pull"} request…`, run: () => setPrOpen(true) }] : []),
     ...(pl ? [{ title: `Open repository on ${pl}`, run: () => openWeb("repo") }] : []),
     ...branches
       .filter((b) => !b.is_remote && !b.is_head)
@@ -1725,6 +1744,16 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           filePath={historyPath}
           onPick={(sha) => sha !== selectedCommit && selectCommit(sha)}
           onClose={() => setHistoryPath(null)}
+        />
+      )}
+
+      {prOpen && (repo.provider === "github" || repo.provider === "gitlab") && (
+        <CreatePrModal
+          provider={repo.provider}
+          baseDefault={prBaseDefault}
+          bases={baseCandidates}
+          onSubmit={submitPr}
+          onClose={() => setPrOpen(false)}
         />
       )}
 
