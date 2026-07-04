@@ -114,6 +114,17 @@ export interface StashInfo {
   time: number; // unix seconds
 }
 
+/// A git submodule with its recorded (superproject) vs checked-out commit.
+export interface SubmoduleInfo {
+  name: string;
+  path: string; // relative to the superproject root
+  url: string | null;
+  head_sha: string | null; // commit the superproject records (the gitlink)
+  workdir_sha: string | null; // commit actually checked out; differs when out of date
+  initialized: boolean; // cloned + checked out (not an empty dir)
+  dirty: boolean; // uncommitted changes inside the submodule
+}
+
 /// One commit in a file's history (the commit changed the file).
 export interface FileHistoryEntry {
   id: string;

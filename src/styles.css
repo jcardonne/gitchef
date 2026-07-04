@@ -666,6 +666,26 @@ button {
   line-height: 1;
   flex: 0 0 auto;
 }
+.sm-badge {
+  font-size: 9px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--bg-elev2);
+  color: var(--text-dim);
+  flex: 0 0 auto;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.sm-badge.stale {
+  background: transparent;
+  color: var(--warn, var(--accent));
+  font-size: 12px;
+  padding: 0;
+}
+.branch-row.submodule.uninit .branch-name {
+  color: var(--text-dim);
+}
 .stash-time {
   color: var(--text-dim);
   font-size: 11px;

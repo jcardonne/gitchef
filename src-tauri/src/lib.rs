@@ -2,7 +2,10 @@ mod error;
 mod git;
 
 use error::AppResult;
-use git::{avatars, branch, conflict, diff, files, forge, graph, history, ops, rebase, repo, sequencer, worktree};
+use git::{
+    avatars, branch, conflict, diff, files, forge, graph, history, ops, rebase, repo, sequencer,
+    submodule, worktree,
+};
 use git2::Repository;
 
 /// Open a repository by path. The backend holds NO active-repo state: every
@@ -85,6 +88,18 @@ fn worktree_wips(repo: String) -> AppResult<std::collections::HashMap<String, bo
 #[tauri::command]
 fn add_worktree(repo: String, path: String, branch: String) -> AppResult<String> {
     worktree::add_worktree(&open(&repo)?, &path, &branch)
+}
+
+#[tauri::command(async)]
+fn list_submodules(repo: String) -> AppResult<Vec<submodule::SubmoduleInfo>> {
+    submodule::list_submodules(&open(&repo)?)
+}
+
+/// Update submodules (git CLI - needs fetch/clone this build's libgit2 can't do).
+/// Async: network I/O off the main thread.
+#[tauri::command(async)]
+fn update_submodules(repo: String, path: Option<String>, remote: bool) -> AppResult<String> {
+    submodule::update_submodules(&open(&repo)?, path.as_deref(), remote)
 }
 
 #[tauri::command]
@@ -539,6 +554,8 @@ pub fn run() {
             list_worktrees,
             worktree_wips,
             add_worktree,
+            list_submodules,
+            update_submodules,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GitChef");

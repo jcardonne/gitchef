@@ -10,6 +10,7 @@ pub mod ops;
 pub mod rebase;
 pub mod repo;
 pub mod sequencer;
+pub mod submodule;
 pub mod worktree;
 
 use crate::error::{AppError, AppResult};

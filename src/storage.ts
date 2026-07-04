@@ -26,6 +26,7 @@ export interface SidebarGroups {
   remote: boolean;
   tags: boolean;
   worktrees: boolean;
+  submodules: boolean;
   stashes: boolean;
 }
 
@@ -37,6 +38,7 @@ export function getSidebarGroups(): SidebarGroups {
     remote: true,
     tags: true,
     worktrees: true,
+    submodules: true,
     stashes: true,
     ...read<Partial<SidebarGroups>>(SIDEBAR_KEY, {}),
   };
