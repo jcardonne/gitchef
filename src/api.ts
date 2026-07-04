@@ -12,6 +12,7 @@ import type {
   RepoInfo,
   SequencerState,
   StatusResult,
+  SubmoduleInfo,
   TagInfo,
   TodoItem,
   WorkStats,
@@ -48,6 +49,12 @@ export const worktreeWips = (repo: string) =>
   invoke<Record<string, boolean>>("worktree_wips", { repo });
 export const addWorktree = (repo: string, path: string, branch: string) =>
   invoke<string>("add_worktree", { repo, path, branch });
+export const listSubmodules = (repo: string) =>
+  invoke<SubmoduleInfo[]>("list_submodules", { repo });
+/// Update submodules (init + checkout). `path` scopes to one (null = all);
+/// `remote` checks out the tracked branch's latest instead of the recorded commit.
+export const updateSubmodules = (repo: string, path: string | null, remote: boolean) =>
+  invoke<string>("update_submodules", { repo, path, remote });
 export const fileDiff = (repo: string, path: string, staged: boolean, full = false) =>
   invoke<FileDiff>("file_diff", { repo, path, staged, full });
 export const fileContent = (

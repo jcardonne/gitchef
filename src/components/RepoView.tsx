@@ -17,6 +17,7 @@ import type {
   TagInfo,
   WorkStats,
   WorktreeInfo,
+  SubmoduleInfo,
   StashInfo,
 } from "../types";
 import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, relativeTime } from "../util";
@@ -59,6 +60,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
+  const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
   const [stashes, setStashes] = useState<StashInfo[]>([]);
   const [wips, setWips] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<StatusResult>(EMPTY_STATUS);
@@ -280,6 +282,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         // to the git CLI, so a CLI failure must degrade only those two sections,
         // never blank the graph/branches/tags (which would also block retry).
         api.listWorktrees(path).then(setWorktrees).catch(() => {});
+        api.listSubmodules(path).then(setSubmodules).catch(() => {});
         api.listStashes(path).then(setStashes).catch(() => {});
       }
       if (withStats) refreshStats();
@@ -292,6 +295,34 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // opened and status-walked, so this runs on demand (first load + the sidebar
   // "refresh WIPs" button + after adding a worktree), never on the hot path.
   const refreshWips = useCallback(() => api.worktreeWips(path).then(setWips), [path]);
+
+  // Submodules: open one as a repo tab (its workdir is <repo>/<path>), or run
+  // `git submodule update` (init/checkout) for one or all.
+  const openSubmodule = (subPath: string) => onOpenPath(`${path}/${subPath}`);
+  const submoduleUpdate = (subPath: string | null, remote: boolean) =>
+    run(async () => {
+      const out = await api.updateSubmodules(path, subPath, remote);
+      await refresh();
+      notify(out.trim() || (subPath ? "Submodule updated" : "Submodules updated"));
+    });
+  const showSubmoduleMenu = async (sub: SubmoduleInfo) => {
+    const items = await Promise.all([
+      ...(sub.initialized
+        ? [MenuItem.new({ text: "Open in a tab", action: () => openSubmodule(sub.path) })]
+        : []),
+      MenuItem.new({
+        text: sub.initialized ? "Update to recorded commit" : "Update (clone + init)",
+        action: () => submoduleUpdate(sub.path, false),
+      }),
+      MenuItem.new({ text: "Update to latest (remote)", action: () => submoduleUpdate(sub.path, true) }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({ text: "Copy path", action: () => run(async () => (await api.copyText(sub.path), notify("Path copied"))) }),
+      ...(sub.url
+        ? [MenuItem.new({ text: "Copy URL", action: () => run(async () => (await api.copyText(sub.url!), notify("URL copied"))) })]
+        : []),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
 
   // Load another page of commits into the graph (search beyond the window).
   const loadMore = () =>
@@ -1510,6 +1541,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           branches={branches}
           tags={tags}
           worktrees={worktrees}
+          submodules={submodules}
           stashes={stashes}
           wips={wips}
           selectedCommit={selectedCommit}
@@ -1523,6 +1555,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           onOpenWorktree={onOpenPath}
           onRefreshWips={refreshWipsManually}
           onAddWorktree={() => void addWorktreeFlow()}
+          onOpenSubmodule={openSubmodule}
+          onSubmoduleMenu={showSubmoduleMenu}
+          onUpdateAllSubmodules={() => submoduleUpdate(null, false)}
           onSelectStash={selectCommit}
           onStashMenu={showSidebarStashMenu}
         />

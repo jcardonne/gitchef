@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import type { BranchInfo, StashInfo, TagInfo, WorktreeInfo } from "../types";
+import type { BranchInfo, StashInfo, SubmoduleInfo, TagInfo, WorktreeInfo } from "../types";
 import { relativeTime } from "../util";
 import { getSidebarGroups, setSidebarGroups } from "../storage";
 
@@ -46,11 +46,23 @@ const PlusIcon = () => (
     <path d="M8 3.5v9M3.5 8h9" />
   </svg>
 );
+const SubmoduleIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="2" y="2.5" width="8" height="8" rx="1.2" />
+    <rect x="6" y="6.5" width="8" height="7" rx="1.2" />
+  </svg>
+);
+const DownloadIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M8 2.5v7M5 7l3 3 3-3M3 13h10" />
+  </svg>
+);
 
 interface Props {
   branches: BranchInfo[];
   tags: TagInfo[];
   worktrees: WorktreeInfo[];
+  submodules: SubmoduleInfo[];
   stashes: StashInfo[];
   /// Per-worktree dirty flags keyed by worktree path, refreshed on demand.
   wips: Record<string, boolean>;
@@ -65,6 +77,9 @@ interface Props {
   onOpenWorktree: (path: string) => void;
   onRefreshWips: () => void;
   onAddWorktree: () => void;
+  onOpenSubmodule: (path: string) => void;
+  onSubmoduleMenu: (sub: SubmoduleInfo) => void;
+  onUpdateAllSubmodules: () => void;
   onSelectStash: (sha: string) => void;
   onStashMenu: (stash: StashInfo) => void;
 }
@@ -78,6 +93,7 @@ export default function Sidebar({
   branches,
   tags,
   worktrees,
+  submodules,
   stashes,
   wips,
   selectedCommit,
@@ -91,6 +107,9 @@ export default function Sidebar({
   onOpenWorktree,
   onRefreshWips,
   onAddWorktree,
+  onOpenSubmodule,
+  onSubmoduleMenu,
+  onUpdateAllSubmodules,
   onSelectStash,
   onStashMenu,
 }: Props) {
@@ -128,6 +147,22 @@ export default function Sidebar({
         }}
       >
         <PlusIcon />
+      </button>
+    </span>
+  );
+
+  // Hover-revealed "update all submodules" button (init + checkout recorded commits).
+  const submoduleActions = (
+    <span className="group-actions">
+      <button
+        className="group-action"
+        title="Update all submodules (init + checkout recorded commits)"
+        onClick={(e) => {
+          e.stopPropagation();
+          onUpdateAllSubmodules();
+        }}
+      >
+        <DownloadIcon />
       </button>
     </span>
   );
@@ -224,6 +259,41 @@ export default function Sidebar({
             {wips[w.path] && <span className="wt-dot" title="Uncommitted changes" />}
           </div>
         ))}
+      </Group>
+
+      <Group title="Submodules" icon={<SubmoduleIcon />} count={submodules.length} open={open.submodules} onToggle={() => toggle("submodules")} actions={submodules.length ? submoduleActions : undefined}>
+        {submodules.length === 0 && <div className="empty-hint small">No submodules</div>}
+        {submodules.map((sm) => {
+          const stale = sm.initialized && sm.head_sha !== sm.workdir_sha;
+          return (
+            <div
+              key={sm.path}
+              className={`branch-row submodule${sm.initialized ? "" : " uninit"}`}
+              title={`${sm.path}${sm.url ? ` · ${sm.url}` : ""}`}
+              onClick={() => sm.initialized && onOpenSubmodule(sm.path)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onSubmoduleMenu(sm);
+              }}
+            >
+              <span className="branch-name">{sm.name || sm.path}</span>
+              {!sm.initialized && (
+                <span className="sm-badge" title="Not initialized - update to clone it">
+                  init
+                </span>
+              )}
+              {stale && (
+                <span
+                  className="sm-badge stale"
+                  title={`Out of date: recorded ${sm.head_sha ?? "?"}, checked out ${sm.workdir_sha ?? "?"}`}
+                >
+                  ⇄
+                </span>
+              )}
+              {sm.dirty && <span className="wt-dot" title="Uncommitted changes" />}
+            </div>
+          );
+        })}
       </Group>
 
       <Group title="Stashes" icon={<StashIcon />} count={stashes.length} open={open.stashes} onToggle={() => toggle("stashes")}>
