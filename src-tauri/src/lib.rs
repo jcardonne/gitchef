@@ -123,6 +123,11 @@ fn commit_diff(repo: String, id: String) -> AppResult<Vec<diff::FileDiff>> {
     diff::commit_diff(&open(&repo)?, &id)
 }
 
+#[tauri::command(async)]
+fn commit_stats(repo: String, id: String) -> AppResult<repo::WorkStats> {
+    diff::commit_stats(&open(&repo)?, &id)
+}
+
 #[tauri::command]
 fn diff_commits(repo: String, a: String, b: String) -> AppResult<Vec<diff::FileDiff>> {
     diff::diff_commits(&open(&repo)?, &a, &b)
@@ -492,6 +497,7 @@ pub fn run() {
             file_diff,
             file_content,
             commit_diff,
+            commit_stats,
             diff_commits,
             reflog,
             file_history,

@@ -66,6 +66,8 @@ export const fileContent = (
 ) => invoke<FileContent>("file_content", { repo, path, rev, staged, full });
 export const commitDiff = (repo: string, id: string) =>
   invoke<FileDiff[]>("commit_diff", { repo, id });
+export const commitStats = (repo: string, id: string) =>
+  invoke<WorkStats>("commit_stats", { repo, id });
 export const diffCommits = (repo: string, a: string, b: string) =>
   invoke<FileDiff[]>("diff_commits", { repo, a, b });
 export const reflog = (repo: string, limit?: number) =>

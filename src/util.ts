@@ -24,6 +24,19 @@ export const LANE_COLORS = [
 
 export const laneColor = (i: number) => LANE_COLORS[i % LANE_COLORS.length];
 
+/// SVG path for an orthogonal (GitKraken-style) graph edge from a child node
+/// (x1,y1) to a parent node (x2,y2): straight along the child's lane, a small
+/// rounded 90° corner, then across into the parent's lane. Same lane → a plain
+/// vertical segment. Reads clearer than a bezier because the eye follows the
+/// verticals. `y2` is normally below `y1` (newest-first); handles either order.
+export function edgePath(x1: number, y1: number, x2: number, y2: number): string {
+  if (x1 === x2) return `M ${x1} ${y1} L ${x2} ${y2}`;
+  const dir = x2 > x1 ? 1 : -1;
+  const vdir = y2 > y1 ? 1 : -1;
+  const r = Math.min(8, Math.abs(x2 - x1) / 2, Math.abs(y2 - y1) / 2);
+  return `M ${x1} ${y1} L ${x1} ${y2 - vdir * r} Q ${x1} ${y2} ${x1 + dir * r} ${y2} L ${x2} ${y2}`;
+}
+
 const AVATAR_SIZE = 32;
 
 /// Backend-resolved provider account avatars for this repo, keyed by lowercased
@@ -82,7 +95,9 @@ async function gravatarUrl(email: string): Promise<string> {
   const hash = [...new Uint8Array(digest)]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  return `https://gravatar.com/avatar/${hash}?s=${AVATAR_SIZE}&d=identicon`;
+  // www., not the apex: the CSP img-src allows `*.gravatar.com`, which a bare
+  // `gravatar.com` host does not match (the wildcard needs a subdomain label).
+  return `https://www.gravatar.com/avatar/${hash}?s=${AVATAR_SIZE}&d=identicon`;
 }
 
 export function relativeTime(unixSeconds: number): string {

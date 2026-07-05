@@ -1,3 +1,5 @@
+import { CloseIcon } from "../icons";
+
 // Persistent strip naming the last history-moving operation, with a one-click
 // Undo (a hard reset back to the snapshot HEAD taken before the op). Rendered in
 // the same slot as SequencerBanner and only when no operation is mid-flight, so
@@ -30,7 +32,7 @@ export default function UndoBar({ label, busy, onUndo, onDismiss }: Props) {
           title="Dismiss"
           aria-label="Dismiss"
         >
-          ×
+          <CloseIcon size={12} />
         </button>
       </div>
     </div>

@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CheckMenuItem, Menu } from "@tauri-apps/api/menu";
 import type { CommitNode, RefKind, RefLabel, WorkStats } from "../types";
-import { avatarUrl, type AvatarContext, laneColor, relativeTime } from "../util";
+import { avatarUrl, type AvatarContext, edgePath, LANE_COLORS, laneColor, relativeTime } from "../util";
+import { HeadIcon, LocalIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
 import {
   getGraphColumnVisibility,
   getGraphCols,
@@ -16,22 +17,49 @@ function readRowH(): number {
   const v = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--row-h"), 10);
   return Number.isFinite(v) && v > 0 ? v : 48;
 }
-const LANE_W = 16;
-const DOT_R = 5;
-const AVATAR_R = 8; // committer avatar disc radius (~16px, fits one lane)
+const LANE_W = 20;
+const DOT_R = 6;
+const AVATAR_R = 10; // committer avatar disc radius (~20px, fits one lane); also drives the author-column avatar size via --avatar-d
 const PAD_X = 14;
 const OVERSCAN = 8; // rows kept mounted above/below the viewport
 const GRAPH_COLUMNS: { key: keyof GraphColumnVisibility; label: string }[] = [
-  { key: "graph", label: "Group" },
+  { key: "refs", label: "Branch / Tag" },
+  { key: "graph", label: "Graph" },
   { key: "message", label: "Message" },
   { key: "author", label: "Author" },
   { key: "sha", label: "SHA" },
   { key: "date", label: "Date" },
 ];
+const REFS_W_DEFAULT = 180; // branch/tag column, resizable
+
+/// Snappy eased scroll (easeOutCubic) to `to`. Fixed short duration so far jumps
+/// stay quick. Returns a cancel fn; respects prefers-reduced-motion by jumping.
+function animateScrollTop(el: HTMLElement, to: number, duration = 320): () => void {
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const from = el.scrollTop;
+  const dist = to - from;
+  if (reduce || Math.abs(dist) < 2) {
+    el.scrollTop = to;
+    return () => {};
+  }
+  let raf = 0;
+  const start = performance.now();
+  const ease = (t: number) => 1 - Math.pow(1 - t, 3);
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / duration);
+    el.scrollTop = from + dist * ease(t);
+    if (t < 1) raf = requestAnimationFrame(step);
+  };
+  raf = requestAnimationFrame(step);
+  return () => cancelAnimationFrame(raf);
+}
 
 interface Props {
   nodes: CommitNode[];
   selectedId: string | null;
+  /// A request to scroll a commit into view (from the sidebar). `seq` bumps so
+  /// the same id can be revealed again.
+  reveal: { id: string; seq: number } | null;
   onSelect: (id: string) => void;
   onCommitMenu: (node: CommitNode) => void;
   onBranchMenu: (branchName: string, isRemote: boolean, targetSha: string) => void;
@@ -55,6 +83,7 @@ interface Props {
 export default function GraphView({
   nodes,
   selectedId,
+  reveal,
   onSelect,
   onCommitMenu,
   onBranchMenu,
@@ -267,11 +296,35 @@ export default function GraphView({
     sc.scrollTop = gTop + (i + offset) * ROW_H + ROW_H / 2 - sc.clientHeight / 2;
   }, [currentMatchId, index, offset]);
 
+  // Reveal a commit picked in the sidebar: smoothly center its row (computed
+  // position, so it works even when the row is virtualized out). Keyed on
+  // reveal.seq so the same commit can be re-revealed. Tip outside the loaded
+  // window is a no-op.
+  const revealCancel = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!reveal) return;
+    const i = index.get(reveal.id);
+    const sc = scRef.current;
+    const g = graphRef.current;
+    if (i === undefined || !sc || !g) return;
+    const gTop = g.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+    const to = gTop + (i + offset) * ROW_H + ROW_H / 2 - sc.clientHeight / 2;
+    const clamped = Math.max(0, Math.min(to, sc.scrollHeight - sc.clientHeight));
+    revealCancel.current?.();
+    revealCancel.current = animateScrollTop(sc, clamped);
+    return () => revealCancel.current?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reveal?.seq]);
+
   const maxLane = nodes.reduce((m, n) => Math.max(m, n.lane), 0);
   const graphWidth = PAD_X + (maxLane + 1) * LANE_W;
-  // The graph column holds lanes/dots + branch badges; message column starts
-  // after it (fixed) so all messages align regardless of lane depth. Resizable.
-  const graphColW = cols.graph ?? graphWidth + 150;
+  // Refs now live in their own column (left of the lanes, GitKraken-style), so the
+  // graph column is pure lanes/dots, auto-sized to lane depth - not resizable. The
+  // refs column is resizable; the SVG is shifted right by it so lanes overlay the
+  // graph cell, not the refs cell.
+  const graphColW = graphWidth;
+  const refsW = visibleCols.refs ? cols.refs ?? REFS_W_DEFAULT : 0;
+  const svgLeft = refsW;
   const authorW = cols.author ?? 150;
   const shaW = cols.sha ?? 64;
   const dateW = cols.date ?? 66;
@@ -279,7 +332,7 @@ export default function GraphView({
 
   // Drag a header separator to resize a column (clamped, persisted on change).
   const startResize =
-    (keyName: "graph" | "author" | "sha" | "date", startW: number, direction: 1 | -1 = 1) =>
+    (keyName: "refs" | "author" | "sha" | "date", startW: number, direction: 1 | -1 = 1) =>
     (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -356,7 +409,7 @@ export default function GraphView({
   }
 
   return (
-    <div className="graph-wrap">
+    <div className="graph-wrap" style={{ ["--avatar-d" as string]: `${AVATAR_R * 2}px` } as CSSProperties}>
       {searchOpen && (
         <div className="graph-search">
           <input
@@ -397,15 +450,18 @@ export default function GraphView({
         </div>
       )}
       <div className="graph-header" onContextMenu={showHeaderMenu}>
-        {visibleCols.graph && (
-          <div className="col-graph" style={{ flex: `0 0 ${graphColW}px` }}>
-            Group
+        {visibleCols.refs && (
+          <div className="col-refs" style={{ flex: `0 0 ${refsW}px` }}>
+            Branch / Tag
             <div
               className="col-resize"
-              onMouseDown={startResize("graph", graphColW)}
-              title="Resize group column"
+              onMouseDown={startResize("refs", refsW)}
+              title="Resize branch/tag column"
             />
           </div>
+        )}
+        {visibleCols.graph && (
+          <div className="col-graph" style={{ flex: `0 0 ${graphColW}px` }}>Graph</div>
         )}
         {visibleCols.message && <div className="col-msg">Message</div>}
         {visibleCols.author && (
@@ -448,23 +504,82 @@ export default function GraphView({
           </div>
         )}
       </div>
-      <div className="graph" ref={graphRef} tabIndex={0} onKeyDown={onGraphKey} style={{ minWidth: visibleCols.graph ? graphColW : 0 }}>
+      <div className="graph" ref={graphRef} tabIndex={0} onKeyDown={onGraphKey} style={{ minWidth: refsW + (visibleCols.graph ? graphColW : 0) }}>
       {visibleCols.graph && (
         <svg
           className="graph-svg"
           width={graphWidth}
           height={(displayed.length + offset) * ROW_H}
+          style={{ left: svgLeft }}
         >
+        {/* One horizontal transparent->color gradient per lane color, reused by
+            every relief band (objectBoundingBox remaps it to each rect's box). */}
+        <defs>
+          {LANE_COLORS.map((c, i) => (
+            <linearGradient key={i} id={`band-${i}`} x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stopColor={c} stopOpacity="0" />
+              <stop offset="1" stopColor={c} stopOpacity="1" />
+            </linearGradient>
+          ))}
+        </defs>
         {/* dashed edge from the WIP node down into HEAD */}
         {hasWip && nodes.length > 0 && (
           <path
-            d={`M ${x(wipLane)} ${wipY} L ${x(nodes[0].lane)} ${y(0)}`}
+            d={edgePath(x(wipLane), wipY, x(nodes[0].lane), y(0))}
             fill="none"
             stroke={wipColor}
             strokeWidth={1.6}
             strokeDasharray="3 3"
           />
         )}
+        {/* Relief band from each node out to the message column: a faint
+            lane-colored rectangle with a more opaque right edge, so the eye
+            tracks avatar -> message. Drawn first, under the lanes/dots. */}
+        {displayed.map((n, i) => {
+          if (i + offset < vStart || i + offset > vEnd) return null;
+          const cy = y(i);
+          const selected = n.id === selectedId;
+          const on = active.has(n.id);
+          const x0 = x(n.lane) + AVATAR_R + 2;
+          const bandH = AVATAR_R * 2 + 2; // slim: ~ the avatar's own height
+          const top = cy - bandH / 2;
+          const col = laneColor(n.color);
+          const border = 4; // opaque right edge, kept just inside the SVG
+          return (
+            <g key={`band-${n.id}`}>
+              {/* connector stub linking the (right-aligned) branch/tag badges to
+                  this commit's bubble, so a label reads as tied to its node. */}
+              {n.refs.length > 0 && (
+                <line
+                  x1={0}
+                  y1={cy}
+                  x2={x(n.lane)}
+                  y2={cy}
+                  stroke={col}
+                  strokeWidth={2}
+                  opacity={selected || on ? 0.9 : 0.6}
+                />
+              )}
+              {/* faded fill: invisible on the left, full color at the right */}
+              <rect
+                x={x0}
+                y={top}
+                width={Math.max(0, graphWidth - x0)}
+                height={bandH}
+                fill={`url(#band-${n.color % LANE_COLORS.length})`}
+                opacity={selected ? 0.32 : on ? 0.2 : 0.13}
+              />
+              <rect
+                x={graphWidth - border}
+                y={top}
+                width={border}
+                height={bandH}
+                fill={col}
+                opacity={selected ? 0.85 : on ? 0.5 : 0.32}
+              />
+            </g>
+          );
+        })}
         {/* edges first so dots paint over them */}
         {displayed.map((n, i) =>
           n.parents.map((pid, pi) => {
@@ -475,20 +590,21 @@ export default function GraphView({
             const y1 = y(i);
             const x2 = x(displayed[j].lane);
             const y2 = y(j);
-            const mid = (y1 + y2) / 2;
-            const d = `M ${x1} ${y1} C ${x1} ${mid}, ${x2} ${mid}, ${x2} ${y2}`;
+            const d = edgePath(x1, y1, x2, y2);
             // pi === 0 is the first-parent (mainline) edge; pi > 0 is a merge.
             const firstParent = pi === 0;
             const onSpine = firstParent && active.has(n.id) && active.has(pid);
+            // Solid, full-color lanes (GitKraken); the current-branch spine just
+            // reads a touch bolder rather than dimming everything else out.
             return (
               <path
                 key={`${n.id}-${pid}`}
                 d={d}
                 fill="none"
                 stroke={laneColor(n.color)}
-                strokeWidth={onSpine ? 2.6 : firstParent ? 1.6 : 1.3}
+                strokeWidth={onSpine ? 2.6 : firstParent ? 2 : 1.6}
                 strokeDasharray={firstParent ? undefined : "4 3"}
-                opacity={onSpine ? 1 : firstParent ? 0.45 : 0.4}
+                opacity={onSpine ? 1 : 0.85}
               />
             );
           })
@@ -510,9 +626,9 @@ export default function GraphView({
           const cx = x(n.lane);
           const cy = y(i);
           const selected = n.id === selectedId;
-          // Off-spine dots dim to match their edges; the current branch's dots
-          // stay full strength so the backbone is unbroken.
-          const dim = !active.has(n.id) && !selected ? 0.5 : 1;
+          // Off-spine dots stay nearly solid (GitKraken keeps lanes crisp); the
+          // current branch's dots are full strength so the backbone still leads.
+          const dim = !active.has(n.id) && !selected ? 0.9 : 1;
           // Stashes are not commits in the usual sense - draw them as a diamond
           // (never an avatar bubble) so they stand out as off-to-the-side state.
           if (n.refs.some((r) => r.kind === "stash")) {
@@ -588,11 +704,9 @@ export default function GraphView({
             }}
             onMouseEnter={() => setTraceId(null)}
           >
+            {visibleCols.refs && <div className="col-refs" style={{ flex: `0 0 ${refsW}px` }} />}
             {visibleCols.graph && (
-              <div
-                className="col-graph"
-                style={{ flex: `0 0 ${graphColW}px`, paddingLeft: x(wipLane) + DOT_R + 8 }}
-              />
+              <div className="col-graph" style={{ flex: `0 0 ${graphColW}px` }} />
             )}
             {visibleCols.message && (
               <div className="col-msg">
@@ -620,7 +734,12 @@ export default function GraphView({
               className={`commit-row${n.id === selectedId ? " selected" : ""}${
                 matchSet ? (matchSet.has(n.id) ? " matched" : " dimmed") : ""
               }${n.id === currentMatchId ? " match-current" : ""}`}
-              style={{ height: ROW_H }}
+              style={{
+                height: ROW_H,
+                // Checked-out branch: a thick lane-colored bar down the far left of
+                // the row marks "you are here".
+                boxShadow: n.id === headId ? `inset 3px 0 0 ${laneColor(n.color)}` : undefined,
+              }}
               onClick={() => onSelect(n.id)}
               onMouseEnter={() => setTraceId(n.id)}
               onContextMenu={(e) => {
@@ -628,19 +747,20 @@ export default function GraphView({
                 onCommitMenu(n);
               }}
             >
-              {visibleCols.graph && (
-                <div
-                  className="col-graph"
-                  style={{ flex: `0 0 ${graphColW}px`, paddingLeft: x(n.lane) + DOT_R + 8 }}
-                >
+              {visibleCols.refs && (
+                <div className="col-refs" style={{ flex: `0 0 ${refsW}px` }}>
                   <CommitRefs
                     refs={n.refs}
+                    color={laneColor(n.color)}
                     onBranchMenu={(branchName, isRemote) =>
                       onBranchMenu(branchName, isRemote, n.id)
                     }
                     onTagMenu={(tagName) => onTagMenu(tagName, n.id)}
                   />
                 </div>
+              )}
+              {visibleCols.graph && (
+                <div className="col-graph" style={{ flex: `0 0 ${graphColW}px` }} />
               )}
               {visibleCols.message && (
                 <div className="col-msg">
@@ -653,7 +773,7 @@ export default function GraphView({
                     (failedAvatars.has(url) ? (
                       <span
                         className="author-avatar author-avatar-fallback"
-                        style={{ background: laneColor(n.color) }}
+                        style={{ background: laneColor(n.color), borderColor: laneColor(n.color) }}
                         aria-hidden="true"
                       >
                         {n.author.trim().charAt(0).toUpperCase() || "?"}
@@ -663,6 +783,7 @@ export default function GraphView({
                         className="author-avatar"
                         src={url}
                         alt=""
+                        style={{ borderColor: laneColor(n.color) }}
                         onError={() => setFailedAvatars((s) => new Set(s).add(url))}
                       />
                     ))}
@@ -712,10 +833,14 @@ interface BranchRefGroup {
 /// (filled); a standalone HEAD badge appears only on a detached checkout.
 function CommitRefs({
   refs,
+  color,
   onBranchMenu,
   onTagMenu,
 }: {
   refs: RefLabel[];
+  /// Lane color of the commit these refs sit on; branch/remote/HEAD badges are
+  /// tinted with it so a badge matches the line it belongs to (GitKraken).
+  color: string;
   onBranchMenu: (branchName: string, isRemote: boolean) => void;
   onTagMenu: (tagName: string) => void;
 }) {
@@ -727,7 +852,7 @@ function CommitRefs({
   const hasLocalBranch = branchGroups.some((g) => g.locals.length > 0);
   return (
     <>
-      {isHead && !hasLocalBranch && <RefBadge kinds={["head"]} name="HEAD" current />}
+      {isHead && !hasLocalBranch && <RefBadge kinds={["head"]} name="HEAD" current color={color} />}
       {branchGroups.map((g) => (
         <RefBadge
           key={`branch-group:${g.name}`}
@@ -738,6 +863,7 @@ function CommitRefs({
           name={g.name}
           title={branchGroupTitle(g)}
           current={g.locals.length > 0 && isHead}
+          color={color}
           onContextMenu={() =>
             onBranchMenu(g.locals[0] ?? g.remotes[0] ?? g.name, !g.locals.length)
           }
@@ -748,6 +874,7 @@ function CommitRefs({
           key={`${r.kind}:${r.name}`}
           kinds={[r.kind]}
           name={r.name}
+          color={color}
           onContextMenu={r.kind === "tag" ? () => onTagMenu(r.name) : undefined}
         />
       ))}
@@ -793,18 +920,36 @@ function RefBadge({
   name,
   title,
   current,
+  color,
   onContextMenu,
 }: {
   kinds: RefKind[];
   name: string;
   title?: string;
   current?: boolean;
+  color?: string;
   onContextMenu?: () => void;
 }) {
   const primary = kinds.includes("branch") ? "branch" : kinds[0];
+  // Badges are lane-colored with white text/icons and border == background (no
+  // contrast between them). The checked-out branch is a SOLID fill (darkened a
+  // touch so white stays legible on light palette entries) so it stands out; all
+  // other badges are a faint tint. The icon shape still tells the kinds apart.
+  const style: CSSProperties | undefined = color
+    ? current
+      ? (() => {
+          const fill = `color-mix(in srgb, ${color} 82%, #000)`;
+          return { color: "#fff", background: fill, borderColor: fill };
+        })()
+      : (() => {
+          const fill = `color-mix(in srgb, ${color} 15%, transparent)`;
+          return { color: "#fff", background: fill, borderColor: fill };
+        })()
+    : undefined;
   return (
     <span
       className={`ref-badge ref-${primary}${current ? " current" : ""}`}
+      style={style}
       title={title ?? name}
       onContextMenu={
         onContextMenu
@@ -816,61 +961,44 @@ function RefBadge({
           : undefined
       }
     >
+      {current && (
+        <svg
+          className="ref-check"
+          width="13"
+          height="13"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2.2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3.5 8.5l3 3 6-6.5" />
+        </svg>
+      )}
+      <span className="ref-name">{name}</span>
       {kinds.map((kind) => (
         <RefIcon key={kind} kind={kind} />
       ))}
-      <span className="ref-name">{name}</span>
     </span>
   );
 }
 
-/// Monochrome SVG icon per ref kind (currentColor, no emoji).
+/// Icon per ref kind, from the shared icon set so badges match the left sidebar.
+/// A local branch shows the same monitor/PC glyph as the sidebar's "Local"
+/// section. (The fork glyph is reserved for branches with an open PR/MR later.)
 function RefIcon({ kind }: { kind: RefKind }) {
-  const p = {
-    width: 11,
-    height: 11,
-    viewBox: "0 0 16 16",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.4,
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
-  } as const;
   switch (kind) {
     case "tag":
-      return (
-        <svg {...p}>
-          <path d="M2.5 8.3V3.2a.7.7 0 0 1 .7-.7h5.1L14 7.8a1 1 0 0 1 0 1.4l-3.8 3.8a1 1 0 0 1-1.4 0L2.5 8.3z" />
-          <circle cx="5.2" cy="5.2" r="0.9" fill="currentColor" stroke="none" />
-        </svg>
-      );
+      return <TagIcon />;
     case "stash":
-      return (
-        <svg {...p}>
-          <path d="M2 5l6-3 6 3-6 3-6-3z" />
-          <path d="M2 8.5l6 3 6-3M2 11.5l6 3 6-3" />
-        </svg>
-      );
+      return <StashIcon />;
     case "remote":
-      return (
-        <svg {...p}>
-          <path d="M4.5 12.5a3 3 0 0 1-.3-6A3.6 3.6 0 0 1 11 5.3a2.8 2.8 0 0 1 .4 7.2H4.5z" />
-        </svg>
-      );
+      return <RemoteIcon />;
     case "head":
-      return (
-        <svg {...p}>
-          <circle cx="8" cy="8" r="3.2" />
-        </svg>
-      );
+      return <HeadIcon />;
     default:
-      return (
-        <svg {...p}>
-          <circle cx="5" cy="4" r="1.6" />
-          <circle cx="5" cy="12" r="1.6" />
-          <circle cx="11" cy="6.5" r="1.6" />
-          <path d="M5 5.6v4.8M5 8h2.5A3 3 0 0 0 10.5 5" />
-        </svg>
-      );
+      return <LocalIcon />;
   }
 }

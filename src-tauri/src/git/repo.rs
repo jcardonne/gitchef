@@ -137,6 +137,38 @@ fn provider_for(host: &str) -> Option<RemoteProvider> {
     }
 }
 
+/// Ask ssh to resolve a host's real `HostName` from `~/.ssh/config`. Multi-account
+/// setups alias a provider host (e.g. `git@github.com-work:...` with `Host
+/// github.com-work` / `HostName github.com`), which otherwise defeats provider
+/// detection, token lookup (`gh --hostname`), and web links - all of which need
+/// the true host. `ssh -G` evaluates the config locally (no network) and prints
+/// lowercased `hostname <value>`. Returns None when ssh is absent or nothing
+/// changed. ponytail: shells out only for hosts that aren't already a known
+/// provider (see canonical_host), so normal github/gitlab remotes never pay it.
+fn resolve_ssh_alias(host: &str) -> Option<String> {
+    let out = std::process::Command::new("ssh").args(["-G", host]).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let real = text.lines().find_map(|l| l.strip_prefix("hostname "))?.trim();
+    if real.eq_ignore_ascii_case(host) {
+        return None;
+    }
+    normalize_host(real)
+}
+
+/// Canonical provider host for a remote URL: the literal host, or - when that's
+/// not itself a known provider - its ssh-config `HostName`, so an ssh alias like
+/// `github.com-work` resolves to `github.com`.
+fn canonical_host(url: &str) -> Option<String> {
+    let host = host_from_url(url)?;
+    if provider_for(&host).is_some() {
+        return Some(host);
+    }
+    Some(resolve_ssh_alias(&host).unwrap_or(host))
+}
+
 /// URL of `origin`, or the first remote if there is no `origin`.
 fn primary_remote_url(repo: &Repository) -> Option<String> {
     if let Ok(remote) = repo.find_remote("origin") {
@@ -180,7 +212,7 @@ fn remote_path_from_url(url: &str) -> Option<String> {
 /// or None when there's no remote or the host isn't a known provider.
 pub(crate) fn remote_target(repo: &Repository) -> Option<RemoteTarget> {
     let url = primary_remote_url(repo)?;
-    let host = host_from_url(&url)?;
+    let host = canonical_host(&url)?;
     let provider = provider_for(&host)?;
     let path = remote_path_from_url(&url)?;
     Some(RemoteTarget { host, provider, path })
@@ -234,7 +266,7 @@ pub fn info(repo: &Repository) -> AppResult<RepoInfo> {
     let has_upstream = same_name_upstream(repo);
     let provider = primary_remote_url(repo)
         .as_deref()
-        .and_then(host_from_url)
+        .and_then(canonical_host)
         .as_deref()
         .and_then(provider_for);
     Ok(RepoInfo { path, name, head, has_upstream, provider })
@@ -362,6 +394,15 @@ mod tests {
         assert!(matches!(provider_for("gitlab.example.com"), Some(RemoteProvider::Gitlab)));
         assert!(provider_for("bitbucket.org").is_none());
         assert!(provider_for("git.sr.ht").is_none());
+    }
+
+    #[test]
+    fn canonical_host_keeps_known_provider_without_ssh() {
+        // A recognized host takes the fast path and is returned verbatim - it must
+        // NOT be sent through `ssh -G` (the alias lookup is only for unknown hosts,
+        // e.g. `github.com-work`, which needs a real ssh config to resolve).
+        assert_eq!(canonical_host("git@github.com:o/r.git").as_deref(), Some("github.com"));
+        assert_eq!(canonical_host("https://gitlab.com/g/r.git").as_deref(), Some("gitlab.com"));
     }
 
     #[test]
