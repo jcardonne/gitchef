@@ -229,9 +229,13 @@ export default function GraphView({
     [nodes]
   );
 
-  // Which branch each commit "belongs to" - walk every branch/remote tip's
-  // first-parent chain (current branch first, then locals, then remotes;
-  // first-wins), so a hovered row with no ref badge can show which branch it's on.
+  // Which branch each commit "belongs to", so a hovered row with no ref badge can
+  // show it. Tips are ordered current-branch, then locals, then remotes.
+  //   Pass 1 (first-parent chains): the branch that *introduced* the commit - the
+  //   specific answer for a commit on a branch's own mainline.
+  //   Pass 2 (full ancestry, all parents): fills anything left - e.g. commits
+  //   merged in from a branch whose tip is gone, which are reachable from a branch
+  //   only through a merge's second parent. A shared `seen` set keeps it O(V+E).
   const branchByCommit = useMemo(() => {
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const label = new Map<string, { name: string; kind: "branch" | "remote" }>();
@@ -244,11 +248,26 @@ export default function GraphView({
       }
     }
     tips.sort((a, b) => a.prio - b.prio);
+    // Pass 1: first-parent introducer chain.
     for (const tip of tips) {
       let cur: CommitNode | undefined = byId.get(tip.id);
       while (cur && !label.has(cur.id)) {
         label.set(cur.id, { name: tip.name, kind: tip.kind });
         cur = cur.parents.length ? byId.get(cur.parents[0]) : undefined;
+      }
+    }
+    // Pass 2: full ancestry fill (containing branch), shared `seen` = O(V+E).
+    const seen = new Set<string>();
+    for (const tip of tips) {
+      const stack = [tip.id];
+      while (stack.length) {
+        const id = stack.pop() as string;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const node = byId.get(id);
+        if (!node) continue;
+        if (!label.has(id)) label.set(id, { name: tip.name, kind: tip.kind });
+        for (const p of node.parents) if (byId.has(p) && !seen.has(p)) stack.push(p);
       }
     }
     return label;
