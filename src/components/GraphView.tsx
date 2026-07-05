@@ -229,6 +229,31 @@ export default function GraphView({
     [nodes]
   );
 
+  // Which branch each commit "belongs to" - walk every branch/remote tip's
+  // first-parent chain (current branch first, then locals, then remotes;
+  // first-wins), so a hovered row with no ref badge can show which branch it's on.
+  const branchByCommit = useMemo(() => {
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    const label = new Map<string, { name: string; kind: "branch" | "remote" }>();
+    const tips: { id: string; name: string; kind: "branch" | "remote"; prio: number }[] = [];
+    for (const n of nodes) {
+      const isHead = n.refs.some((r) => r.kind === "head");
+      for (const r of n.refs) {
+        if (r.kind === "branch") tips.push({ id: n.id, name: r.name, kind: "branch", prio: isHead ? 0 : 1 });
+        else if (r.kind === "remote") tips.push({ id: n.id, name: r.name, kind: "remote", prio: 2 });
+      }
+    }
+    tips.sort((a, b) => a.prio - b.prio);
+    for (const tip of tips) {
+      let cur: CommitNode | undefined = byId.get(tip.id);
+      while (cur && !label.has(cur.id)) {
+        label.set(cur.id, { name: tip.name, kind: tip.kind });
+        cur = cur.parents.length ? byId.get(cur.parents[0]) : undefined;
+      }
+    }
+    return label;
+  }, [nodes]);
+
   // Hovering a commit row traces its ancestry (B); off-hover falls back to the
   // current branch (A). The "active" chain paints bold at full opacity while
   // everything else dims, so the highlighted branch reads as the graph's
@@ -737,6 +762,10 @@ export default function GraphView({
         )}
         {visibleRows.map((n) => {
           const url = n.email ? avatars.get(n.email) : undefined;
+          // On hover of a row with no branch/remote badge, hint which branch the
+          // commit belongs to (a tag-only row still gets the hint).
+          const hasBranchBadge = n.refs.some((r) => r.kind === "branch" || r.kind === "remote");
+          const ghost = !hasBranchBadge && traceId === n.id ? branchByCommit.get(n.id) : undefined;
           return (
             <div
               key={n.id}
@@ -767,6 +796,16 @@ export default function GraphView({
                     }
                     onTagMenu={(tagName) => onTagMenu(tagName, n.id)}
                   />
+                  {ghost && (
+                    <span
+                      className="ref-badge ref-ghost"
+                      style={{ ["--lane"]: laneColor(n.color) } as CSSProperties}
+                      title={`On ${ghost.name}`}
+                    >
+                      <span className="ref-name">{ghost.name}</span>
+                      <RefIcon kind={ghost.kind} />
+                    </span>
+                  )}
                 </div>
               )}
               {visibleCols.graph && (
