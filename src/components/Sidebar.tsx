@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
-import type { BranchInfo, StashInfo, SubmoduleInfo, TagInfo, WorktreeInfo } from "../types";
+import type { BranchInfo, PullRequest, StashInfo, SubmoduleInfo, TagInfo, WorktreeInfo } from "../types";
 import { relativeTime } from "../util";
 import { getSidebarGroups, setSidebarGroups } from "../storage";
-import { LocalIcon, LockIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
+import { CheckIcon, CloseIcon, LocalIcon, LockIcon, PullRequestIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
 
 const WorktreeIcon = () => (
   <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -41,11 +41,15 @@ interface Props {
   worktrees: WorktreeInfo[];
   submodules: SubmoduleInfo[];
   stashes: StashInfo[];
+  prs: PullRequest[];
   /// Per-worktree dirty flags keyed by worktree path, refreshed on demand.
   wips: Record<string, boolean>;
   selectedCommit: string | null;
   /// Jump the graph to a branch's tip commit (does NOT checkout).
   onSelectBranch: (target: string) => void;
+  onOpenPr: (url: string) => void;
+  onPrMenu: (pr: PullRequest) => void;
+  onRefreshPrs: () => void;
   onCheckout: (name: string) => void;
   onMerge: (name: string) => void;
   onBranchMenu: (branch: BranchInfo) => void;
@@ -75,9 +79,13 @@ export default function Sidebar({
   worktrees,
   submodules,
   stashes,
+  prs,
   wips,
   selectedCommit,
   onSelectBranch,
+  onOpenPr,
+  onPrMenu,
+  onRefreshPrs,
   onCheckout,
   onMerge,
   onBranchMenu,
@@ -148,6 +156,22 @@ export default function Sidebar({
     </span>
   );
 
+  // Hover-revealed "refresh pull requests" button (a network CLI call, on demand).
+  const prActions = (
+    <span className="group-actions">
+      <button
+        className="group-action"
+        title="Refresh pull requests"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRefreshPrs();
+        }}
+      >
+        <RefreshIcon />
+      </button>
+    </span>
+  );
+
   return (
     <div className="sidebar">
       <Group title="Local" icon={<LocalIcon />} count={local.length} open={open.local} onToggle={() => toggle("local")} onMenu={() => onSectionMenu("local")}>
@@ -201,6 +225,50 @@ export default function Sidebar({
             }}
           >
             <span className="branch-name">{b.name}</span>
+          </div>
+        ))}
+      </Group>
+
+      <Group title="Pull Requests" icon={<PullRequestIcon />} count={prs.length} open={open.pullRequests} onToggle={() => toggle("pullRequests")} actions={prs.length ? prActions : undefined}>
+        {prs.length === 0 && <div className="empty-hint small">No open pull requests</div>}
+        {prs.map((pr) => (
+          <div
+            key={pr.number}
+            className="branch-row pr"
+            title={`#${pr.number} ${pr.title}\n${pr.branch} · @${pr.author}`}
+            onClick={() => onOpenPr(pr.url)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onPrMenu(pr);
+            }}
+          >
+            {pr.author_avatar ? (
+              <img className="pr-avatar" src={pr.author_avatar} alt="" />
+            ) : (
+              <span className="pr-avatar pr-avatar-fallback" aria-hidden="true">
+                {pr.author.charAt(0).toUpperCase() || "?"}
+              </span>
+            )}
+            <span className="pr-num">#{pr.number}</span>
+            {pr.checks !== "none" && (
+              <span className={`pr-ci pr-ci-${pr.checks}`} title={`CI: ${pr.checks}`} />
+            )}
+            {pr.review === "approved" && (
+              <span className="pr-review approved" title="Approved">
+                <CheckIcon size={11} />
+              </span>
+            )}
+            {pr.review === "changes_requested" && (
+              <span className="pr-review changes" title="Changes requested">
+                <CloseIcon size={11} />
+              </span>
+            )}
+            <span className="branch-name pr-title">{pr.title}</span>
+            {pr.draft && (
+              <span className="sm-badge" title="Draft">
+                draft
+              </span>
+            )}
           </div>
         ))}
       </Group>

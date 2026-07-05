@@ -690,6 +690,62 @@ button {
 .branch-row.submodule.uninit .branch-name {
   color: var(--text-dim);
 }
+
+/* ---- Pull Requests section ---- */
+.branch-row.pr {
+  gap: 6px;
+}
+.pr-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.pr-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elev2);
+  color: var(--text-dim);
+  font-size: 9px;
+  font-weight: 600;
+}
+.pr-num {
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+/* CI rollup dot: green pass / red fail / amber running. */
+.pr-ci {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.pr-ci-success {
+  background: var(--add);
+}
+.pr-ci-failure {
+  background: var(--del);
+}
+.pr-ci-pending {
+  background: #e0af68;
+}
+.pr-review {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+.pr-review.approved {
+  color: var(--add);
+}
+.pr-review.changes {
+  color: var(--del);
+}
+.pr-title {
+  flex: 1 1 auto;
+}
 .stash-time {
   color: var(--text-dim);
   font-size: 11px;

@@ -69,3 +69,19 @@ export const CloseIcon = ({ size = 13 }: IconProps) => (
     <path d="M4 4l8 8M12 4l-8 8" />
   </svg>
 );
+/// Git pull/merge request glyph - the Pull Requests sidebar section.
+export const PullRequestIcon = ({ size = 13 }: IconProps) => (
+  <svg {...base(size)}>
+    <circle cx="4" cy="4" r="1.6" />
+    <circle cx="4" cy="12" r="1.6" />
+    <path d="M4 5.6v4.8" />
+    <circle cx="12" cy="12" r="1.6" />
+    <path d="M12 10.4V6a2 2 0 0 0-2-2H7" />
+    <path d="M9 2.5 7 4l2 1.5" />
+  </svg>
+);
+export const CheckIcon = ({ size = 13 }: IconProps) => (
+  <svg {...base(size)}>
+    <path d="M3.5 8.5l3 3 6-6.5" />
+  </svg>
+);

@@ -148,6 +148,21 @@ fn create_pr(repo: String, title: String, body: String, base: String) -> AppResu
     forge::create_pr(&open(&repo)?, &title, &body, &base)
 }
 
+#[tauri::command(async)]
+fn list_prs(repo: String) -> AppResult<Vec<forge::PullRequest>> {
+    forge::list_prs(&open(&repo)?)
+}
+
+#[tauri::command(async)]
+fn open_url(url: String) -> AppResult<()> {
+    // Only web URLs - never a file:// or an arbitrary scheme, since the URL comes
+    // from CLI output; the OS opener must not be handed anything else.
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err(error::AppError::Msg("refusing to open a non-web URL".into()));
+    }
+    files::open_url(&url)
+}
+
 #[tauri::command]
 fn commit(repo: String, message: String) -> AppResult<String> {
     ops::commit(&open(&repo)?, &message)
@@ -503,6 +518,8 @@ pub fn run() {
             file_history,
             file_blame,
             create_pr,
+            list_prs,
+            open_url,
             commit,
             commit_amend,
             checkout,
