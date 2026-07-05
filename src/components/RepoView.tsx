@@ -11,6 +11,7 @@ import type {
   CommitNode,
   FileContent,
   FileDiff,
+  PullRequest,
   RepoInfo,
   SequencerState,
   StatusResult,
@@ -62,6 +63,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
   const [stashes, setStashes] = useState<StashInfo[]>([]);
+  const [prs, setPrs] = useState<PullRequest[]>([]);
   const [wips, setWips] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<StatusResult>(EMPTY_STATUS);
   const [workStats, setWorkStats] = useState<WorkStats | null>(null);
@@ -237,6 +239,26 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     };
   }, [selectedCommit, path]);
 
+  // Open PRs/MRs for the sidebar section + the badge fork-icon. A network CLI hit,
+  // so it's OFF the hot refresh() path: fetched on load / provider change and via
+  // the section's manual refresh, never after every git op. Non-forge repo -> [].
+  const refreshPrs = useCallback(() => {
+    if (repo?.provider !== "github" && repo?.provider !== "gitlab") {
+      setPrs([]);
+      return;
+    }
+    api.listPrs(path).then(setPrs).catch(() => {});
+  }, [path, repo?.provider]);
+  useEffect(() => refreshPrs(), [refreshPrs]);
+
+  // Branch name -> its open PR, for the graph badge icon + "Open pull request" menu.
+  const prByBranch = useMemo(() => {
+    const m = new Map<string, PullRequest>();
+    for (const pr of prs) if (!m.has(pr.branch)) m.set(pr.branch, pr);
+    return m;
+  }, [prs]);
+  const prBranchSet = useMemo(() => new Set(prByBranch.keys()), [prByBranch]);
+
   // Cmd/Ctrl+F opens commit search; Cmd/Ctrl+K opens the command palette (active
   // tab only).
   useEffect(() => {
@@ -358,6 +380,15 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       ...(sub.url
         ? [MenuItem.new({ text: "Copy URL", action: () => run(async () => (await api.copyText(sub.url!), notify("URL copied"))) })]
         : []),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
+
+  const openPr = (url: string) => run(async () => void (await api.openUrl(url)));
+  const showPrMenu = async (pr: PullRequest) => {
+    const items = await Promise.all([
+      MenuItem.new({ text: `Open #${pr.number} in browser`, action: () => openPr(pr.url) }),
+      MenuItem.new({ text: "Copy URL", action: () => run(async () => (await api.copyText(pr.url), notify("URL copied"))) }),
     ]);
     await (await Menu.new({ items })).popup();
   };
@@ -1010,8 +1041,15 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     const pl = providerLabel();
     // Remote branches carry the "origin/" prefix; the web tree URL wants the bare name.
     const webRef = branch.is_remote ? shortRemoteBranchName(branch.name) : branch.name;
+    const prForBranch = prByBranch.get(webRef);
 
     const topItems = await Promise.all([
+      ...(prForBranch
+        ? [
+            MenuItem.new({ text: `Open pull request #${prForBranch.number}`, action: () => openPr(prForBranch.url) }),
+            PredefinedMenuItem.new({ item: "Separator" }),
+          ]
+        : []),
       ...(isCurrent
         ? [
             MenuItem.new({ text: "Pull (fast-forward if possible)", action: () => onPullAction("ff") }),
@@ -1633,9 +1671,13 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           worktrees={worktrees}
           submodules={submodules}
           stashes={stashes}
+          prs={prs}
           wips={wips}
           selectedCommit={selectedCommit}
           onSelectBranch={goToCommit}
+          onOpenPr={openPr}
+          onPrMenu={showPrMenu}
+          onRefreshPrs={refreshPrs}
           onCheckout={onCheckout}
           onMerge={onMerge}
           onBranchMenu={showBranchMenu}
@@ -1758,6 +1800,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
               canLoadMore={nodes.length >= graphLimit}
               onLoadMore={loadMore}
               avatarCtx={avatarCtx}
+              prBranches={prBranchSet}
             />
           </div>
         </div>

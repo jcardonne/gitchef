@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { CheckMenuItem, Menu } from "@tauri-apps/api/menu";
 import type { CommitNode, RefKind, RefLabel, WorkStats } from "../types";
 import { avatarUrl, type AvatarContext, edgePath, LANE_COLORS, laneColor, relativeTime } from "../util";
-import { HeadIcon, LocalIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
+import { BranchIcon, HeadIcon, LocalIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
 import {
   getGraphColumnVisibility,
   getGraphCols,
@@ -82,6 +82,8 @@ interface Props {
   canLoadMore: boolean;
   onLoadMore: () => void;
   avatarCtx: AvatarContext;
+  /// Branch names (short) with an open PR/MR - their badge shows the fork icon.
+  prBranches: ReadonlySet<string>;
 }
 
 /// Renders the commit DAG: an SVG of lanes/edges/dots on the left, aligned
@@ -106,6 +108,7 @@ export default function GraphView({
   canLoadMore,
   onLoadMore,
   avatarCtx,
+  prBranches,
 }: Props) {
   // Resizable column widths (persisted) + sort direction.
   const [cols, setCols] = useState(getGraphCols);
@@ -758,6 +761,7 @@ export default function GraphView({
                   <CommitRefs
                     refs={n.refs}
                     color={laneColor(n.color)}
+                    prBranches={prBranches}
                     onBranchMenu={(branchName, isRemote) =>
                       onBranchMenu(branchName, isRemote, n.id)
                     }
@@ -840,6 +844,7 @@ interface BranchRefGroup {
 function CommitRefs({
   refs,
   color,
+  prBranches,
   onBranchMenu,
   onTagMenu,
 }: {
@@ -847,6 +852,8 @@ function CommitRefs({
   /// Lane color of the commit these refs sit on; branch/remote/HEAD badges are
   /// tinted with it so a badge matches the line it belongs to (GitKraken).
   color: string;
+  /// Branch names with an open PR/MR - those badges show the fork icon.
+  prBranches: ReadonlySet<string>;
   onBranchMenu: (branchName: string, isRemote: boolean) => void;
   onTagMenu: (tagName: string) => void;
 }) {
@@ -870,6 +877,7 @@ function CommitRefs({
           title={branchGroupTitle(g)}
           current={g.locals.length > 0 && isHead}
           color={color}
+          hasPr={prBranches.has(g.name)}
           onContextMenu={() =>
             onBranchMenu(g.locals[0] ?? g.remotes[0] ?? g.name, !g.locals.length)
           }
@@ -927,6 +935,7 @@ function RefBadge({
   title,
   current,
   color,
+  hasPr,
   onContextMenu,
 }: {
   kinds: RefKind[];
@@ -934,6 +943,8 @@ function RefBadge({
   title?: string;
   current?: boolean;
   color?: string;
+  /// The branch has an open PR/MR - show the fork icon instead of the monitor.
+  hasPr?: boolean;
   onContextMenu?: () => void;
 }) {
   const primary = kinds.includes("branch") ? "branch" : kinds[0];
@@ -974,17 +985,20 @@ function RefBadge({
         </svg>
       )}
       <span className="ref-name">{name}</span>
-      {kinds.map((kind) => (
-        <RefIcon key={kind} kind={kind} />
-      ))}
+      {hasPr && kinds.includes("branch") ? (
+        // A branch with an open PR shows a single fork, not monitor+cloud.
+        <RefIcon kind="branch" hasPr />
+      ) : (
+        kinds.map((kind) => <RefIcon key={kind} kind={kind} />)
+      )}
     </span>
   );
 }
 
 /// Icon per ref kind, from the shared icon set so badges match the left sidebar.
-/// A local branch shows the same monitor/PC glyph as the sidebar's "Local"
-/// section. (The fork glyph is reserved for branches with an open PR/MR later.)
-function RefIcon({ kind }: { kind: RefKind }) {
+/// A local branch shows the monitor/PC glyph (like the sidebar's "Local" section),
+/// or the fork glyph when it has an open PR/MR.
+function RefIcon({ kind, hasPr }: { kind: RefKind; hasPr?: boolean }) {
   switch (kind) {
     case "tag":
       return <TagIcon />;
@@ -995,6 +1009,6 @@ function RefIcon({ kind }: { kind: RefKind }) {
     case "head":
       return <HeadIcon />;
     default:
-      return <LocalIcon />;
+      return hasPr ? <BranchIcon /> : <LocalIcon />;
   }
 }
