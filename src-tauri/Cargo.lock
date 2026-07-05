@@ -1119,7 +1119,7 @@ dependencies = [
 
 [[package]]
 name = "gitchef"
-version = "0.28.0"
+version = "0.28.1"
 dependencies = [
  "git2",
  "parking_lot",
