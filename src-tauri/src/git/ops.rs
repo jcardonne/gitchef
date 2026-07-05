@@ -107,15 +107,18 @@ fn push_inner(repo: &Repository, force: bool) -> AppResult<String> {
 }
 pub fn pull(repo: &Repository, mode: &str) -> AppResult<String> {
     let dir = workdir(repo)?;
+    // --prune on every pull so remote branches deleted upstream don't linger as
+    // stale remote-tracking refs in the sidebar/graph (plain `git pull` never
+    // prunes, unlike our Fetch).
     match mode {
-        "ff" => run_git(dir, &["pull", "--ff"]),
-        "ff-only" => run_git(dir, &["pull", "--ff-only"]),
+        "ff" => run_git(dir, &["pull", "--ff", "--prune"]),
+        "ff-only" => run_git(dir, &["pull", "--ff-only", "--prune"]),
         // A rebasing pull can pause on conflicts like any rebase, so it goes
         // through the sequencer (which tolerates that pause). --autostash lets
         // it run over a dirty tree and re-applies the changes afterwards.
         "rebase" => sequencer::run_step(
             repo,
-            &["pull", "--rebase", "--autostash"],
+            &["pull", "--rebase", "--autostash", "--prune"],
             &[("GIT_EDITOR", "true")],
         ),
         other => Err(AppError::Msg(format!("unknown pull mode: {other}"))),
