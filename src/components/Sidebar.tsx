@@ -2,37 +2,14 @@ import { useState, type ReactNode } from "react";
 import type { BranchInfo, StashInfo, SubmoduleInfo, TagInfo, WorktreeInfo } from "../types";
 import { relativeTime } from "../util";
 import { getSidebarGroups, setSidebarGroups } from "../storage";
+import { LocalIcon, LockIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
 
-const LocalIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="2" y="3" width="12" height="8" rx="1.3" />
-    <path d="M8 11v2.5M5.5 13.5h5" />
-  </svg>
-);
-const RemoteIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M4.5 12.5a3 3 0 0 1-.3-6A3.6 3.6 0 0 1 11 5.3a2.8 2.8 0 0 1 .4 7.2H4.5z" />
-  </svg>
-);
-const TagsIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M2.5 8.3V3.2a.7.7 0 0 1 .7-.7h5.1L14 7.8a1 1 0 0 1 0 1.4l-3.8 3.8a1 1 0 0 1-1.4 0L2.5 8.3z" />
-    <circle cx="5.2" cy="5.2" r="0.9" fill="currentColor" stroke="none" />
-  </svg>
-);
 const WorktreeIcon = () => (
   <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <circle cx="8" cy="3.2" r="1.5" />
     <circle cx="3.8" cy="12.8" r="1.5" />
     <circle cx="12.2" cy="12.8" r="1.5" />
     <path d="M8 4.7V9M3.8 9H12.2M3.8 9V11.3M12.2 9V11.3" />
-  </svg>
-);
-const StashIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M2 5.5 3.2 3h9.6L14 5.5" />
-    <rect x="2" y="5.5" width="12" height="7" rx="1" />
-    <path d="M6 8.5h4" />
   </svg>
 );
 const RefreshIcon = () => (
@@ -67,6 +44,8 @@ interface Props {
   /// Per-worktree dirty flags keyed by worktree path, refreshed on demand.
   wips: Record<string, boolean>;
   selectedCommit: string | null;
+  /// Jump the graph to a branch's tip commit (does NOT checkout).
+  onSelectBranch: (target: string) => void;
   onCheckout: (name: string) => void;
   onMerge: (name: string) => void;
   onBranchMenu: (branch: BranchInfo) => void;
@@ -85,10 +64,11 @@ interface Props {
 }
 
 /// Left rail with collapsible Local / Remote / Tags / Worktrees / Stashes
-/// sections. Branch: click = checkout, hover = Merge. Tag: click = inspect its
-/// commit, double-click = checkout (detached). Worktree: click = open it in a
-/// new tab; hover the header for refresh-WIPs / add-worktree. Stash: click =
-/// inspect, right-click = apply / pop / drop / edit.
+/// sections. Branch: click = jump the graph to its tip (checkout lives in the
+/// right-click menu), hover = Merge. Tag: click = jump to its commit,
+/// double-click = checkout (detached). Worktree: click = open it in a new tab;
+/// hover the header for refresh-WIPs / add-worktree. Stash: click = inspect,
+/// right-click = apply / pop / drop / edit.
 export default function Sidebar({
   branches,
   tags,
@@ -97,6 +77,7 @@ export default function Sidebar({
   stashes,
   wips,
   selectedCommit,
+  onSelectBranch,
   onCheckout,
   onMerge,
   onBranchMenu,
@@ -174,13 +155,14 @@ export default function Sidebar({
         {local.map((b) => (
           <div
             key={b.name}
-            className={`branch-row${b.is_head ? " head" : ""}`}
-            onClick={() => !b.is_head && onCheckout(b.name)}
+            className={`branch-row${b.is_head ? " head" : ""}${selectedCommit && selectedCommit === b.target ? " selected" : ""}`}
+            onClick={() => b.target && onSelectBranch(b.target)}
+            onDoubleClick={() => !b.is_head && onCheckout(b.name)}
             onContextMenu={(e) => {
               e.preventDefault();
               onBranchMenu(b);
             }}
-            title={b.upstream ?? undefined}
+            title={b.upstream ? `${b.upstream}\nClick to reveal · double-click to checkout` : "Click to reveal · double-click to checkout"}
           >
             <span className="branch-name">{b.name}</span>
             {(b.ahead > 0 || b.behind > 0) && (
@@ -210,7 +192,9 @@ export default function Sidebar({
         {remote.map((b) => (
           <div
             key={b.name}
-            className="branch-row remote"
+            className={`branch-row remote${selectedCommit && selectedCommit === b.target ? " selected" : ""}`}
+            title="Click to reveal in the graph"
+            onClick={() => b.target && onSelectBranch(b.target)}
             onContextMenu={(e) => {
               e.preventDefault();
               onBranchMenu(b);
@@ -221,7 +205,7 @@ export default function Sidebar({
         ))}
       </Group>
 
-      <Group title="Tags" icon={<TagsIcon />} count={tags.length} open={open.tags} onToggle={() => toggle("tags")} onMenu={() => onSectionMenu("tags")}>
+      <Group title="Tags" icon={<TagIcon />} count={tags.length} open={open.tags} onToggle={() => toggle("tags")} onMenu={() => onSectionMenu("tags")}>
         {tags.length === 0 && <div className="empty-hint small">No tags</div>}
         {tags.map((t) => (
           <div
@@ -235,7 +219,7 @@ export default function Sidebar({
               onTagMenu(t.name, t.target);
             }}
           >
-            <span className="tag-glyph">⌖</span>
+            <span className="tag-glyph"><TagIcon size={11} /></span>
             <span className="branch-name">{t.name}</span>
           </div>
         ))}
@@ -253,7 +237,7 @@ export default function Sidebar({
             <span className="branch-name">{w.branch ?? w.name}</span>
             {w.locked && (
               <span className="wt-lock" title="Locked" aria-label="locked">
-                🔒
+                <LockIcon size={12} />
               </span>
             )}
             {wips[w.path] && <span className="wt-dot" title="Uncommitted changes" />}

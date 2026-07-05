@@ -122,7 +122,14 @@ fn host_from_url(url: &str) -> Option<String> {
 
 fn normalize_host(host: &str) -> Option<String> {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
-    (!host.is_empty()).then_some(host)
+    // Reject empties and anything starting with '-': a host is later passed as a
+    // positional arg to `ssh -G <host>` (alias resolution), where a leading '-'
+    // would be parsed as an option flag - argument injection (CWE-88) reachable
+    // just by opening a repo with a crafted remote URL.
+    if host.is_empty() || host.starts_with('-') {
+        return None;
+    }
+    Some(host)
 }
 
 /// Provider for a remote host: github.com -> GitHub; gitlab.com and self-hosted
@@ -135,6 +142,67 @@ fn provider_for(host: &str) -> Option<RemoteProvider> {
     } else {
         None
     }
+}
+
+/// Ask ssh to resolve a host's real `HostName` from `~/.ssh/config`. Multi-account
+/// setups alias a provider host (e.g. `git@github.com-work:...` with `Host
+/// github.com-work` / `HostName github.com`), which otherwise defeats provider
+/// detection, token lookup (`gh --hostname`), and web links - all of which need
+/// the true host. `ssh -G` evaluates the config locally (no network) and prints
+/// lowercased `hostname <value>`. Returns None when ssh is absent or nothing
+/// changed. ponytail: shells out only for hosts that aren't already a known
+/// provider (see canonical_host), so normal github/gitlab remotes never pay it.
+fn resolve_ssh_alias(host: &str) -> Option<String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    // BatchMode avoids any interactive prompt; the host is validated to not start
+    // with '-' (see normalize_host) so it can't be read as a flag.
+    let mut child = Command::new("ssh")
+        .args(["-G", "-o", "BatchMode=yes", host])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // Bound the wait: a pathological ssh config (e.g. CanonicalizeHostname doing a
+    // DNS lookup, or a `Match exec`) could otherwise hang the command thread. 3s is
+    // ample for a local config eval; on timeout we kill the child.
+    // ponytail: 3s hard cap, poll every 20ms - fine for a rare, small subprocess.
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let status = loop {
+        if let Some(s) = child.try_wait().ok()? {
+            break s;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    if !status.success() {
+        return None;
+    }
+    // Process has exited; `ssh -G` output is small, so a plain read can't deadlock.
+    let mut text = String::new();
+    child.stdout.take()?.read_to_string(&mut text).ok()?;
+    let real = text.lines().find_map(|l| l.strip_prefix("hostname "))?.trim();
+    if real.eq_ignore_ascii_case(host) {
+        return None;
+    }
+    normalize_host(real)
+}
+
+/// Canonical provider host for a remote URL: the literal host, or - when that's
+/// not itself a known provider - its ssh-config `HostName`, so an ssh alias like
+/// `github.com-work` resolves to `github.com`.
+fn canonical_host(url: &str) -> Option<String> {
+    let host = host_from_url(url)?;
+    if provider_for(&host).is_some() {
+        return Some(host);
+    }
+    Some(resolve_ssh_alias(&host).unwrap_or(host))
 }
 
 /// URL of `origin`, or the first remote if there is no `origin`.
@@ -180,7 +248,7 @@ fn remote_path_from_url(url: &str) -> Option<String> {
 /// or None when there's no remote or the host isn't a known provider.
 pub(crate) fn remote_target(repo: &Repository) -> Option<RemoteTarget> {
     let url = primary_remote_url(repo)?;
-    let host = host_from_url(&url)?;
+    let host = canonical_host(&url)?;
     let provider = provider_for(&host)?;
     let path = remote_path_from_url(&url)?;
     Some(RemoteTarget { host, provider, path })
@@ -234,7 +302,7 @@ pub fn info(repo: &Repository) -> AppResult<RepoInfo> {
     let has_upstream = same_name_upstream(repo);
     let provider = primary_remote_url(repo)
         .as_deref()
-        .and_then(host_from_url)
+        .and_then(canonical_host)
         .as_deref()
         .and_then(provider_for);
     Ok(RepoInfo { path, name, head, has_upstream, provider })
@@ -348,6 +416,10 @@ mod tests {
             ("GIT@GitHub.com:Owner/Repo.git", Some("github.com")),
             ("/Users/me/repo", None),
             ("C:\\src\\repo", None),
+            // Security: a host that would be read as an ssh flag is rejected, so it
+            // can never reach `ssh -G <host>` as an option (arg injection).
+            ("ssh://-oProxyCommand=evil/x", None),
+            ("-oProxyCommand=x.y:path", None),
         ];
         for (url, want) in cases {
             assert_eq!(host_from_url(url).as_deref(), want, "host_from_url({url})");
@@ -362,6 +434,15 @@ mod tests {
         assert!(matches!(provider_for("gitlab.example.com"), Some(RemoteProvider::Gitlab)));
         assert!(provider_for("bitbucket.org").is_none());
         assert!(provider_for("git.sr.ht").is_none());
+    }
+
+    #[test]
+    fn canonical_host_keeps_known_provider_without_ssh() {
+        // A recognized host takes the fast path and is returned verbatim - it must
+        // NOT be sent through `ssh -G` (the alias lookup is only for unknown hosts,
+        // e.g. `github.com-work`, which needs a real ssh config to resolve).
+        assert_eq!(canonical_host("git@github.com:o/r.git").as_deref(), Some("github.com"));
+        assert_eq!(canonical_host("https://gitlab.com/g/r.git").as_deref(), Some("gitlab.com"));
     }
 
     #[test]

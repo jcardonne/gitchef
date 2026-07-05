@@ -53,9 +53,12 @@ const COL_VISIBILITY_KEY = "gitchef.graphColumnVisibility";
 const SORT_KEY = "gitchef.graphSortAsc";
 const RIGHT_PANEL_KEY = "gitchef.rightPanelWidth";
 
-/// User overrides for the graph's resizable column widths (px).
+/// User overrides for the graph's resizable column widths (px). `graph` is legacy
+/// (the lane column is now auto-sized to lane depth); `refs` is the branch/tag
+/// column left of the lanes.
 export interface GraphCols {
   graph?: number;
+  refs?: number;
   author?: number;
   sha?: number;
   date?: number;
@@ -69,6 +72,7 @@ export function setGraphCols(cols: GraphCols): void {
 }
 
 export interface GraphColumnVisibility {
+  refs: boolean;
   graph: boolean;
   message: boolean;
   author: boolean;
@@ -77,6 +81,7 @@ export interface GraphColumnVisibility {
 }
 
 const DEFAULT_GRAPH_COLUMN_VISIBILITY: GraphColumnVisibility = {
+  refs: true,
   graph: true,
   message: true,
   author: true,

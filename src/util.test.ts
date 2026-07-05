@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { affectedPaths, avatarUrl, noreplyAvatarUrl } from "./util";
+import { affectedPaths, avatarUrl, edgePath, noreplyAvatarUrl } from "./util";
 import type { FileStatus } from "./types";
 
 describe("noreplyAvatarUrl", () => {
@@ -71,6 +71,31 @@ describe("avatarUrl precedence", () => {
     expect(await avatarUrl("500+gh@users.noreply.github.com", { accounts: new Map() })).toBe(
       "https://avatars.githubusercontent.com/u/500?s=32"
     );
+  });
+
+  it("gravatar fallback uses www. so it matches the *.gravatar.com CSP allowlist", async () => {
+    // A bare `gravatar.com` host is blocked by img-src `*.gravatar.com` (the
+    // wildcard needs a subdomain label), which surfaces as a broken avatar.
+    const url = await avatarUrl("nobody@nowhere.test", { accounts: new Map() });
+    expect(url.startsWith("https://www.gravatar.com/avatar/")).toBe(true);
+  });
+});
+
+describe("edgePath", () => {
+  it("draws a plain vertical when child and parent share a lane", () => {
+    expect(edgePath(10, 0, 10, 48)).toBe("M 10 0 L 10 48");
+  });
+
+  it("elbows into the parent lane with a rounded corner when lanes differ", () => {
+    const d = edgePath(10, 0, 26, 48); // one lane right, one row down
+    expect(d.startsWith("M 10 0")).toBe(true); // leaves the child node
+    expect(d).toContain("Q "); // has a rounded corner
+    expect(d.endsWith("L 26 48")).toBe(true); // arrives at the parent node
+  });
+
+  it("keeps the corner on the approach side when the parent is above (oldest-first)", () => {
+    // y2 < y1: the vertical run must head up toward the parent, not overshoot down.
+    expect(edgePath(10, 48, 26, 0)).toBe("M 10 48 L 10 8 Q 10 0 18 0 L 26 0");
   });
 });
 

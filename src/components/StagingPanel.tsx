@@ -11,6 +11,21 @@ import { affectedPaths } from "../util";
 
 /// Conventional Commits types offered by the optional prefix helper.
 const COMMIT_TYPES = ["feat", "fix", "docs", "refactor", "perf", "test", "build", "ci", "chore", "style", "revert"];
+/// Color per conventional-commit type for the live preview badge (mirrors the
+/// graph's lane palette so the two feel like one system).
+const TYPE_COLORS: Record<string, string> = {
+  feat: "#9ece6a",
+  fix: "#f7768e",
+  docs: "#7dcfff",
+  refactor: "#e0af68",
+  perf: "#ff9e64",
+  test: "#7dcfff",
+  build: "#a0a4ad",
+  ci: "#a0a4ad",
+  chore: "#a0a4ad",
+  style: "#bb9af7",
+  revert: "#f7768e",
+};
 
 interface Props {
   status: StatusResult;
@@ -304,6 +319,17 @@ export default function StagingPanel({
   const sectionCount = (visible: number, total: number) =>
     hasSearch ? `${visible}/${total}` : String(total);
 
+  // Live preview of the composed commit subject (first line only). The badge shows
+  // the type; the counter tracks the true subject length (conventional-commit
+  // guidance: <=50 ideal, <=72 max).
+  const subjectFirstLine = message.split("\n", 1)[0].trim();
+  const composedSubject = type
+    ? `${type}${scope.trim() ? `(${scope.trim()})` : ""}: ${subjectFirstLine}`
+    : subjectFirstLine;
+  const subjectLen = composedSubject.length;
+  const lenClass = subjectLen <= 50 ? "ok" : subjectLen <= 72 ? "warn" : "over";
+  const typeColor = TYPE_COLORS[type] ?? "var(--accent)";
+
   return (
     <div className="staging">
       <div className="changes-toolbar">
@@ -456,6 +482,29 @@ export default function StagingPanel({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
         />
+        {(type || subjectFirstLine) && (
+          <div className="commit-preview" title="How the commit subject will read">
+            {type && (
+              <span
+                className="commit-preview-type"
+                style={{
+                  color: typeColor,
+                  background: `color-mix(in srgb, ${typeColor} 16%, transparent)`,
+                  borderColor: `color-mix(in srgb, ${typeColor} 40%, transparent)`,
+                }}
+              >
+                {type}
+              </span>
+            )}
+            <span className="commit-preview-subject">
+              {type && `${scope.trim() ? `(${scope.trim()})` : ""}: `}
+              {subjectFirstLine || <span className="commit-preview-ph">summary…</span>}
+            </span>
+            <span className={`commit-preview-count ${lenClass}`} title="Subject length (≤50 ideal, ≤72 max)">
+              {subjectLen}
+            </span>
+          </div>
+        )}
         {canAmend && (
           <label className="amend-toggle" title="Rewrite the last commit instead of creating a new one">
             <input type="checkbox" checked={amend} onChange={(e) => toggleAmend(e.target.checked)} />

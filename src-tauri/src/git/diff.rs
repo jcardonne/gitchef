@@ -313,6 +313,24 @@ pub fn commit_diff(repo: &Repository, id: &str) -> AppResult<Vec<FileDiff>> {
     diff_to_files(&diff, MAX_DIFF_LINES)
 }
 
+/// Line/file stats for a single commit (vs its first parent). Uses `diff.stats()`
+/// so the totals are accurate even for big commits whose per-file hunks truncate.
+pub fn commit_stats(repo: &Repository, id: &str) -> AppResult<crate::git::repo::WorkStats> {
+    let oid = Oid::from_str(id).map_err(|e| AppError::Msg(format!("invalid commit id: {e}")))?;
+    let commit = repo.find_commit(oid)?;
+    let tree = commit.tree()?;
+    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
+    let mut opts = DiffOptions::new();
+    let mut diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))?;
+    diff.find_similar(Some(&mut find_renames()))?;
+    let s = diff.stats()?;
+    Ok(crate::git::repo::WorkStats {
+        files: s.files_changed(),
+        insertions: s.insertions(),
+        deletions: s.deletions(),
+    })
+}
+
 /// All file changes between two arbitrary commits: diff of tree(a) -> tree(b),
 /// so `+`/`-` line origins read as b relative to a. Mirrors `commit_diff` but
 /// with two explicit endpoints instead of commit-vs-first-parent.
@@ -365,6 +383,28 @@ mod tests {
         run_git(dir, &["add", "f.txt"]).unwrap();
         std::fs::write(dir.join("f.txt"), "v3\n").unwrap();
         sha
+    }
+
+    #[test]
+    fn commit_stats_counts_insertions_and_deletions() {
+        let dir = tmp("commitstats");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("f.txt"), "a\nb\nc\n").unwrap();
+        run_git(&dir, &["add", "f.txt"]).unwrap();
+        run_git(&dir, &["commit", "-m", "one"]).unwrap();
+        // Drop one line ("c"), add two ("d","e"): 2 insertions, 1 deletion.
+        std::fs::write(dir.join("f.txt"), "a\nb\nd\ne\n").unwrap();
+        run_git(&dir, &["add", "f.txt"]).unwrap();
+        run_git(&dir, &["commit", "-m", "two"]).unwrap();
+        let sha = run_git(&dir, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+
+        let s = super::commit_stats(&fresh(&dir), &sha).unwrap();
+        assert_eq!(s.files, 1);
+        assert_eq!(s.insertions, 2);
+        assert_eq!(s.deletions, 1);
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

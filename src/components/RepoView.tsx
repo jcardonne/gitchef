@@ -83,6 +83,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
 
   const [rightTab, setRightTab] = useState<"changes" | "commit">("changes");
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
+  // A request to scroll the graph to a commit (bumped `seq` re-fires even for the
+  // same id). Set when picking a branch/tag/stash in the sidebar.
+  const [reveal, setReveal] = useState<{ id: string; seq: number } | null>(null);
   const [commitFiles, setCommitFiles] = useState<FileDiff[]>([]);
   // Two-commit compare: `compareBase` is the commit picked "for compare" via the
   // context menu; `compareView` is the active a..b comparison shown in the panel.
@@ -125,8 +128,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [autoFetchTick, setAutoFetchTick] = useState(0);
   const [rightWidth, setRightWidth] = useState(getRightPanelWidth);
   const [selectedCommitAvatar, setSelectedCommitAvatar] = useState<string | null>(null);
+  const [selectedCommitStats, setSelectedCommitStats] = useState<WorkStats | null>(null);
   const [accountAvatars, setAccountAvatars] = useState<ReadonlyMap<string, string>>(new Map());
-  const [toast, setToast] = useState<{ msg: string; error: boolean } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; error: boolean; duration: number; seq: number; closing?: boolean } | null>(null);
   const [namePrompt, setNamePrompt] = useState<{
     title: string;
     placeholder: string;
@@ -143,6 +147,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
 
   const loadedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
+  const toastSeq = useRef(0);
+  const revealSeq = useRef(0);
   // Monotonic request ids: a slower response for an earlier selection must never
   // clobber the state of a newer one (rapid commit/file clicks).
   const commitReq = useRef(0);
@@ -152,13 +158,28 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // Live mirror of `busy` for the auto-fetch interval's stale closure.
   const busyRef = useRef(false);
 
-  // Info toasts auto-dismiss after 4s; error toasts persist (long git messages
-  // need reading + copying) until the user closes them.
-  const notify = useCallback((msg: string, error = false) => {
-    setToast({ msg, error });
+  // Play the exit animation, then unmount after it (kept in sync with the
+  // .toast.closing CSS below).
+  const TOAST_EXIT_MS = 160;
+  const dismissToast = useCallback(() => {
     window.clearTimeout(toastTimer.current);
-    if (!error) toastTimer.current = window.setTimeout(() => setToast(null), 4000);
+    setToast((t) => (t ? { ...t, closing: true } : null));
+    toastTimer.current = window.setTimeout(() => setToast(null), TOAST_EXIT_MS);
   }, []);
+
+  // Both auto-dismiss: info after 4s, errors after 12s (long git messages need
+  // longer to read/copy). A countdown ring on the toast shows the time left; the
+  // bumped `seq` re-keys the toast so it (and that ring) restart/animate in fresh.
+  const notify = useCallback(
+    (msg: string, error = false) => {
+      const duration = error ? 12000 : 4000;
+      toastSeq.current += 1;
+      setToast({ msg, error, duration, seq: toastSeq.current });
+      window.clearTimeout(toastTimer.current);
+      toastTimer.current = window.setTimeout(dismissToast, duration);
+    },
+    [dismissToast]
+  );
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
 
   // Provider account avatars (GitHub/GitLab profile pictures) for the committers
@@ -198,6 +219,23 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       alive = false;
     };
   }, [selectedCommitNode?.email, avatarCtx]);
+
+  // Insertion/deletion totals for the selected commit's detail card (accurate
+  // even when the file list truncates). Best-effort: a failure just hides them.
+  useEffect(() => {
+    let alive = true;
+    setSelectedCommitStats(null);
+    if (!selectedCommit) return;
+    api.commitStats(path, selectedCommit).then(
+      (s) => {
+        if (alive) setSelectedCommitStats(s);
+      },
+      () => {}
+    );
+    return () => {
+      alive = false;
+    };
+  }, [selectedCommit, path]);
 
   // Cmd/Ctrl+F opens commit search; Cmd/Ctrl+K opens the command palette (active
   // tab only).
@@ -461,6 +499,36 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       setDiff(null);
       const files = await api.commitDiff(path, id);
       if (commitReq.current === req) setCommitFiles(files);
+    });
+  };
+
+  // Sidebar navigation: select a commit AND scroll the graph to its row (no
+  // checkout). Skips the re-select when it's already selected so it doesn't toggle
+  // the selection off. If the target isn't in the loaded window yet, pull deeper
+  // pages (up to a cap) until it appears, then reveal - so the user never has to
+  // hit "Load more" by hand.
+  const goToCommit = (id: string) => {
+    if (selectedCommit !== id) selectCommit(id);
+    if (nodes.some((n) => n.id === id)) {
+      setReveal({ id, seq: ++revealSeq.current });
+      return;
+    }
+    run(async () => {
+      let limit = graphLimit;
+      let found = false;
+      for (let round = 0; round < 40; round++) {
+        limit += 500;
+        const g = await api.commitGraph(path, limit);
+        setGraphLimit(limit);
+        setNodes(g);
+        if (g.some((n) => n.id === id)) {
+          found = true;
+          break;
+        }
+        if (g.length < limit) break; // loaded all history; it isn't there
+      }
+      if (found) setReveal({ id, seq: ++revealSeq.current });
+      else notify("That commit isn't in this repository's loaded history.", true);
     });
   };
 
@@ -1465,6 +1533,28 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, rightTab, commitFiles, selectedPath, selectedCommit]);
 
+  // Escape closes an open file preview, whatever opened it. Runs in the capture
+  // phase and stops propagation so it beats the commit-files handler above (which
+  // would otherwise deselect the whole commit); typing in an input is left alone.
+  // Bails while any modal/overlay is open so it doesn't swallow the Escape that
+  // should close the modal on top (it, not the diff behind it, must win).
+  const modalOpen =
+    paletteOpen || reflogOpen || prOpen || !!historyPath || !!rebasePlanBase || !!namePrompt;
+  useEffect(() => {
+    if (!isActive || !diff || modalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      e.preventDefault();
+      e.stopPropagation();
+      closeDiff();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, diff, modalOpen]);
+
   const repoActions = useMemo(
     () => ({ repoPath: path, busy, activeAction, run, refresh, notify }),
     [path, busy, activeAction, run, refresh, notify]
@@ -1545,10 +1635,11 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           stashes={stashes}
           wips={wips}
           selectedCommit={selectedCommit}
+          onSelectBranch={goToCommit}
           onCheckout={onCheckout}
           onMerge={onMerge}
           onBranchMenu={showBranchMenu}
-          onSelectTag={selectCommit}
+          onSelectTag={goToCommit}
           onCheckoutTag={onCheckoutTag}
           onTagMenu={showTagMenu}
           onSectionMenu={showSectionMenu}
@@ -1558,7 +1649,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           onOpenSubmodule={openSubmodule}
           onSubmoduleMenu={showSubmoduleMenu}
           onUpdateAllSubmodules={() => submoduleUpdate(null, false)}
-          onSelectStash={selectCommit}
+          onSelectStash={goToCommit}
           onStashMenu={showSidebarStashMenu}
         />
 
@@ -1652,6 +1743,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                   : nodes
               }
               selectedId={selectedCommit}
+              reveal={reveal}
               onSelect={selectCommit}
               onCommitMenu={showCommitMenu}
               workStats={workStats}
@@ -1717,7 +1809,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                     </div>
                   </div>
                 ) : selectedCommitNode ? (
-                  <CommitDetails commit={selectedCommitNode} avatarUrl={selectedCommitAvatar} />
+                  <CommitDetails commit={selectedCommitNode} avatarUrl={selectedCommitAvatar} stats={selectedCommitStats} />
                 ) : selectedStash ? (
                   <div className="commit-detail-card">
                     <div className="commit-detail-main">
@@ -1747,15 +1839,35 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       </div>
 
       {toast && (
-        <div className={`toast${toast.error ? " toast-error" : ""}`}>
-          <span className="toast-msg">{toast.msg}</span>
+        <div
+          key={toast.seq}
+          className={`toast${toast.error ? " toast-error" : ""}${toast.closing ? " closing" : ""}`}
+        >
           {toast.error && (
+            <div className="toast-error-head">
+              <span className="toast-error-title">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M8 1.8 15 14H1z" />
+                  <path d="M8 6.3v3.4M8 11.7h.01" />
+                </svg>
+                Error
+              </span>
+              <span className="toast-countdown-wrap">
+                <span className="toast-countdown-label">This error will disappear</span>
+                <CountdownRing ms={toast.duration} />
+              </span>
+            </div>
+          )}
+          <span className="toast-msg">{toast.msg}</span>
+          {toast.error ? (
             <div className="toast-actions">
               <button onClick={() => run(async () => (await api.copyText(toast.msg), notify("Copied")))}>
                 Copy
               </button>
-              <button onClick={() => setToast(null)}>Close</button>
+              <button onClick={dismissToast}>Close</button>
             </div>
+          ) : (
+            <CountdownRing ms={toast.duration} />
           )}
         </div>
       )}
@@ -1823,9 +1935,11 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
 function CommitDetails({
   commit,
   avatarUrl,
+  stats,
 }: {
   commit: CommitNode;
   avatarUrl: string | null;
+  stats: WorkStats | null;
 }) {
   const description = commitDescription(commit);
   const absoluteTime = new Date(commit.time * 1000).toLocaleString();
@@ -1854,12 +1968,19 @@ function CommitDetails({
           {description && <div className="commit-detail-description">{description}</div>}
           <div className="commit-detail-author" title={commit.email}>
             {commit.author}
+            {commit.email && <span className="commit-detail-email">{commit.email}</span>}
           </div>
         </div>
       </div>
       <div className="commit-detail-meta">
         <span title={commit.id}>{commit.short_id}</span>
         <span title={absoluteTime}>{relativeTime(commit.time)}</span>
+        {stats && (stats.insertions > 0 || stats.deletions > 0) && (
+          <span className="commit-detail-diffstat">
+            <span className="wip-add">+{stats.insertions}</span>
+            <span className="wip-del">-{stats.deletions}</span>
+          </span>
+        )}
       </div>
     </div>
   );
@@ -1871,6 +1992,18 @@ function commitDescription(commit: CommitNode): string {
   const lines = message.split(/\r?\n/);
   if (lines[0]?.trim() === commit.summary.trim()) lines.shift();
   return lines.join("\n").trim();
+}
+
+/// Shrinking ring that visualizes a toast's time left before it auto-dismisses.
+/// Pure CSS: the arc's dash-offset animates to the full circumference over `ms`,
+/// emptying the ring. Remounted per toast (keyed by seq) so it replays.
+function CountdownRing({ ms }: { ms: number }) {
+  return (
+    <svg className="toast-countdown" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <circle className="toast-countdown-track" cx="8" cy="8" r="6" />
+      <circle className="toast-countdown-arc" cx="8" cy="8" r="6" style={{ animationDuration: `${ms}ms` }} />
+    </svg>
+  );
 }
 
 /// A single-text-field modal used for "new branch", "tag here", etc.

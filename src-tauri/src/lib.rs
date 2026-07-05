@@ -15,7 +15,7 @@ fn open(path: &str) -> AppResult<Repository> {
     Ok(Repository::open(path)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn open_repo(path: String) -> AppResult<repo::RepoInfo> {
     repo::info(&open(&path)?)
 }
@@ -121,6 +121,11 @@ fn file_content(
 #[tauri::command]
 fn commit_diff(repo: String, id: String) -> AppResult<Vec<diff::FileDiff>> {
     diff::commit_diff(&open(&repo)?, &id)
+}
+
+#[tauri::command(async)]
+fn commit_stats(repo: String, id: String) -> AppResult<repo::WorkStats> {
+    diff::commit_stats(&open(&repo)?, &id)
 }
 
 #[tauri::command]
@@ -380,7 +385,7 @@ fn open_default(repo: String, path: String) -> AppResult<()> {
 }
 
 /// Open a repo/commit/branch/file on its GitHub/GitLab web UI in the browser.
-#[tauri::command]
+#[tauri::command(async)]
 fn open_on_web(
     repo: String,
     kind: String,
@@ -492,6 +497,7 @@ pub fn run() {
             file_diff,
             file_content,
             commit_diff,
+            commit_stats,
             diff_commits,
             reflog,
             file_history,
