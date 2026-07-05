@@ -54,6 +54,14 @@ function animateScrollTop(el: HTMLElement, to: number, duration = 320): () => vo
   return () => cancelAnimationFrame(raf);
 }
 
+/// Scroll offset that centers row `i` in the scroll container. Computed from row
+/// geometry (not the row's DOM node) so it works even when the row is virtualized
+/// out. Shared by the search-match and sidebar-reveal scrolls.
+function centerRowScrollTop(sc: HTMLElement, g: HTMLElement, i: number, offset: number, rowH: number): number {
+  const gTop = g.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+  return gTop + (i + offset) * rowH + rowH / 2 - sc.clientHeight / 2;
+}
+
 interface Props {
   nodes: CommitNode[];
   selectedId: string | null;
@@ -292,8 +300,7 @@ export default function GraphView({
     const g = graphRef.current;
     if (i === undefined || !sc || !g) return;
     lastScrolled.current = currentMatchId;
-    const gTop = g.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
-    sc.scrollTop = gTop + (i + offset) * ROW_H + ROW_H / 2 - sc.clientHeight / 2;
+    sc.scrollTop = centerRowScrollTop(sc, g, i, offset, ROW_H);
   }, [currentMatchId, index, offset]);
 
   // Reveal a commit picked in the sidebar: smoothly center its row (computed
@@ -307,8 +314,7 @@ export default function GraphView({
     const sc = scRef.current;
     const g = graphRef.current;
     if (i === undefined || !sc || !g) return;
-    const gTop = g.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
-    const to = gTop + (i + offset) * ROW_H + ROW_H / 2 - sc.clientHeight / 2;
+    const to = centerRowScrollTop(sc, g, i, offset, ROW_H);
     const clamped = Math.max(0, Math.min(to, sc.scrollHeight - sc.clientHeight));
     revealCancel.current?.();
     revealCancel.current = animateScrollTop(sc, clamped);
@@ -931,21 +937,11 @@ function RefBadge({
   onContextMenu?: () => void;
 }) {
   const primary = kinds.includes("branch") ? "branch" : kinds[0];
-  // Badges are lane-colored with white text/icons and border == background (no
-  // contrast between them). The checked-out branch is a SOLID fill (darkened a
-  // touch so white stays legible on light palette entries) so it stands out; all
-  // other badges are a faint tint. The icon shape still tells the kinds apart.
-  const style: CSSProperties | undefined = color
-    ? current
-      ? (() => {
-          const fill = `color-mix(in srgb, ${color} 82%, #000)`;
-          return { color: "#fff", background: fill, borderColor: fill };
-        })()
-      : (() => {
-          const fill = `color-mix(in srgb, ${color} 15%, transparent)`;
-          return { color: "#fff", background: fill, borderColor: fill };
-        })()
-    : undefined;
+  // All badge color derives from the lane color in CSS (via --lane), so it can
+  // adapt per theme: white text on the faint tint in dark themes, a darkened lane
+  // color on light (where white would be unreadable). The checked-out branch gets
+  // a solid fill + bold; the icon shape tells the kinds apart.
+  const style = color ? ({ ["--lane"]: color } as CSSProperties) : undefined;
   return (
     <span
       className={`ref-badge ref-${primary}${current ? " current" : ""}`}
