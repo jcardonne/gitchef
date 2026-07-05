@@ -41,8 +41,12 @@ describe("GitChef conflict resolution", () => {
   });
 
   it("opens the conflict resolver for the conflicted file", async () => {
-    // Click the conflicted file in the change list to preview it.
-    const row = await $(".change-list .file-row .file-path=file.txt");
+    // Click the conflicted file in the change list to preview it. (A compound
+    // `.a .b=text` selector isn't valid in WebdriverIO - match the row by its
+    // file-path text instead, the same pattern used for the buttons below.)
+    const row = await $$(".change-list .file-row").find(
+      async (r) => (await r.$(".file-path").getText()) === "file.txt"
+    );
     await row.click();
     await $(".conflict-block").waitForExist({ timeout: 10000 });
     // ours + theirs sides both rendered.
