@@ -985,8 +985,9 @@ function RefBadge({
         </svg>
       )}
       <span className="ref-name">{name}</span>
-      {hasPr && kinds.includes("branch") ? (
-        // A branch with an open PR shows a single fork, not monitor+cloud.
+      {hasPr ? (
+        // A branch with an open PR shows a single fork, not monitor+cloud - for
+        // local, remote-only (origin/x you haven't checked out), or both.
         <RefIcon kind="branch" hasPr />
       ) : (
         kinds.map((kind) => <RefIcon key={kind} kind={kind} />)
