@@ -683,6 +683,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const reload = async () => {
     setRepo(await api.openRepo(path));
     await refresh();
+    // Re-list PRs: a merge/pull/push may have merged or closed one server-side,
+    // and a stale open-PR entry must not linger in the sidebar.
+    refreshPrs();
   };
 
   const onCheckout = (name: string) =>
@@ -793,9 +796,21 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     const id = window.setInterval(() => {
       if (busyRef.current || document.visibilityState === "hidden") return;
       api.fetchRemotes(path).then(() => refresh({ stats: false })).catch(() => {});
+      refreshPrs(); // self-heal the PR list so merged/closed ones drop off
     }, minutes * 60_000);
     return () => window.clearInterval(id);
-  }, [isActive, path, refresh, autoFetchTick]);
+  }, [isActive, path, refresh, refreshPrs, autoFetchTick]);
+
+  // Re-list PRs when the app regains focus - a PR merged/closed on the provider's
+  // web UI while you were away must not linger as "open" in the sidebar.
+  useEffect(() => {
+    if (!isActive) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refreshPrs();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [isActive, refreshPrs]);
 
   // --- commit context-menu actions ---
   const headBranch = branches.find((b) => b.is_head)?.name ?? "HEAD";
