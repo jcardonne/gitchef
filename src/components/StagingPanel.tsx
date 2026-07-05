@@ -482,7 +482,7 @@ export default function StagingPanel({
           value={message}
           onChange={(e) => setMessage(e.target.value)}
         />
-        {(type || subjectFirstLine) && (
+        {type && (
           <div className="commit-preview" title="How the commit subject will read">
             {type && (
               <span
