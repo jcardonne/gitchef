@@ -1121,6 +1121,14 @@ button {
 :root[data-theme="light"] .ref-badge:not(.current) {
   color: color-mix(in srgb, var(--lane) 45%, #000);
 }
+/* Ghost badge: the branch a ref-less row belongs to, shown on hover. No fill +
+   a dashed lane-colored border so it reads as a transient hint, not a real ref. */
+.ref-ghost {
+  background: transparent;
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--lane) 50%, transparent);
+  opacity: 0.9;
+}
 .ref-badge .ref-name {
   overflow: hidden;
   text-overflow: ellipsis;
