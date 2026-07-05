@@ -93,6 +93,20 @@ export interface BranchInfo {
   target: string | null;
 }
 
+/// A pull request (GitHub) / merge request (GitLab), normalized across providers.
+/// GitLab rows are degraded: checks/review are "none" and author_avatar is null.
+export interface PullRequest {
+  number: number;
+  title: string;
+  url: string;
+  branch: string; // source branch - links a PR to a branch row/badge
+  draft: boolean;
+  author: string;
+  author_avatar: string | null;
+  checks: "success" | "failure" | "pending" | "none";
+  review: "approved" | "changes_requested" | "review_required" | "none";
+}
+
 export interface TagInfo {
   name: string;
   target: string; // commit SHA the tag points at

@@ -8,6 +8,7 @@ import type {
   FileContent,
   FileDiff,
   FileHistoryEntry,
+  PullRequest,
   ReflogNode,
   RepoInfo,
   SequencerState,
@@ -79,6 +80,10 @@ export const fileBlame = (repo: string, path: string, rev: string | null) =>
 /// Create a PR (GitHub) / MR (GitLab) via the gh/glab CLI; resolves to its URL.
 export const createPr = (repo: string, title: string, body: string, base: string) =>
   invoke<string>("create_pr", { repo, title, body, base });
+/// Open pull/merge requests for the repo's remote (empty for non-forge remotes).
+export const listPrs = (repo: string) => invoke<PullRequest[]>("list_prs", { repo });
+/// Open a web URL in the default browser (backend validates it's http/https).
+export const openUrl = (url: string) => invoke<void>("open_url", { url });
 
 export const commit = (repo: string, message: string) =>
   invoke<string>("commit", { repo, message });
