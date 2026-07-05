@@ -122,7 +122,14 @@ fn host_from_url(url: &str) -> Option<String> {
 
 fn normalize_host(host: &str) -> Option<String> {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
-    (!host.is_empty()).then_some(host)
+    // Reject empties and anything starting with '-': a host is later passed as a
+    // positional arg to `ssh -G <host>` (alias resolution), where a leading '-'
+    // would be parsed as an option flag - argument injection (CWE-88) reachable
+    // just by opening a repo with a crafted remote URL.
+    if host.is_empty() || host.starts_with('-') {
+        return None;
+    }
+    Some(host)
 }
 
 /// Provider for a remote host: github.com -> GitHub; gitlab.com and self-hosted
@@ -146,11 +153,40 @@ fn provider_for(host: &str) -> Option<RemoteProvider> {
 /// changed. ponytail: shells out only for hosts that aren't already a known
 /// provider (see canonical_host), so normal github/gitlab remotes never pay it.
 fn resolve_ssh_alias(host: &str) -> Option<String> {
-    let out = std::process::Command::new("ssh").args(["-G", host]).output().ok()?;
-    if !out.status.success() {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    // BatchMode avoids any interactive prompt; the host is validated to not start
+    // with '-' (see normalize_host) so it can't be read as a flag.
+    let mut child = Command::new("ssh")
+        .args(["-G", "-o", "BatchMode=yes", host])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // Bound the wait: a pathological ssh config (e.g. CanonicalizeHostname doing a
+    // DNS lookup, or a `Match exec`) could otherwise hang the command thread. 3s is
+    // ample for a local config eval; on timeout we kill the child.
+    // ponytail: 3s hard cap, poll every 20ms - fine for a rare, small subprocess.
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let status = loop {
+        if let Some(s) = child.try_wait().ok()? {
+            break s;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    if !status.success() {
         return None;
     }
-    let text = String::from_utf8_lossy(&out.stdout);
+    // Process has exited; `ssh -G` output is small, so a plain read can't deadlock.
+    let mut text = String::new();
+    child.stdout.take()?.read_to_string(&mut text).ok()?;
     let real = text.lines().find_map(|l| l.strip_prefix("hostname "))?.trim();
     if real.eq_ignore_ascii_case(host) {
         return None;
@@ -380,6 +416,10 @@ mod tests {
             ("GIT@GitHub.com:Owner/Repo.git", Some("github.com")),
             ("/Users/me/repo", None),
             ("C:\\src\\repo", None),
+            // Security: a host that would be read as an ssh flag is rejected, so it
+            // can never reach `ssh -G <host>` as an option (arg injection).
+            ("ssh://-oProxyCommand=evil/x", None),
+            ("-oProxyCommand=x.y:path", None),
         ];
         for (url, want) in cases {
             assert_eq!(host_from_url(url).as_deref(), want, "host_from_url({url})");

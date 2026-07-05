@@ -15,7 +15,7 @@ fn open(path: &str) -> AppResult<Repository> {
     Ok(Repository::open(path)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn open_repo(path: String) -> AppResult<repo::RepoInfo> {
     repo::info(&open(&path)?)
 }
@@ -385,7 +385,7 @@ fn open_default(repo: String, path: String) -> AppResult<()> {
 }
 
 /// Open a repo/commit/branch/file on its GitHub/GitLab web UI in the browser.
-#[tauri::command]
+#[tauri::command(async)]
 fn open_on_web(
     repo: String,
     kind: String,

@@ -1536,8 +1536,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // Escape closes an open file preview, whatever opened it. Runs in the capture
   // phase and stops propagation so it beats the commit-files handler above (which
   // would otherwise deselect the whole commit); typing in an input is left alone.
+  // Bails while any modal/overlay is open so it doesn't swallow the Escape that
+  // should close the modal on top (it, not the diff behind it, must win).
+  const modalOpen =
+    paletteOpen || reflogOpen || prOpen || !!historyPath || !!rebasePlanBase || !!namePrompt;
   useEffect(() => {
-    if (!isActive || !diff) return;
+    if (!isActive || !diff || modalOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const tag = (e.target as HTMLElement | null)?.tagName;
@@ -1549,7 +1553,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, diff]);
+  }, [isActive, diff, modalOpen]);
 
   const repoActions = useMemo(
     () => ({ repoPath: path, busy, activeAction, run, refresh, notify }),
