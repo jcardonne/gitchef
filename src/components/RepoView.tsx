@@ -1799,6 +1799,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                     )
                   : nodes
               }
+              headBranch={branches.find((b) => b.is_head)?.name ?? null}
               selectedId={selectedCommit}
               reveal={reveal}
               onSelect={selectCommit}
