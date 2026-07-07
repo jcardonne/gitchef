@@ -64,6 +64,10 @@ function centerRowScrollTop(sc: HTMLElement, g: HTMLElement, i: number, offset: 
 
 interface Props {
   nodes: CommitNode[];
+  /// The checked-out branch name (authoritative `branch.is_head()`), or null when
+  /// detached. Drives the "current" fill by NAME, so two branches sharing the HEAD
+  /// commit don't both light up.
+  headBranch: string | null;
   selectedId: string | null;
   /// A request to scroll a commit into view (from the sidebar). `seq` bumps so
   /// the same id can be revealed again.
@@ -92,6 +96,7 @@ interface Props {
 /// "WIP" node is drawn one row above HEAD (like GitKraken).
 export default function GraphView({
   nodes,
+  headBranch,
   selectedId,
   reveal,
   onSelect,
@@ -810,6 +815,7 @@ export default function GraphView({
                     refs={n.refs}
                     color={laneColor(n.color)}
                     prBranches={prBranches}
+                    headBranch={headBranch}
                     onBranchMenu={(branchName, isRemote) =>
                       onBranchMenu(branchName, isRemote, n.id)
                     }
@@ -903,6 +909,7 @@ function CommitRefs({
   refs,
   color,
   prBranches,
+  headBranch,
   onBranchMenu,
   onTagMenu,
 }: {
@@ -912,6 +919,7 @@ function CommitRefs({
   color: string;
   /// Branch names with an open PR/MR - those badges show the fork icon.
   prBranches: ReadonlySet<string>;
+  headBranch: string | null;
   onBranchMenu: (branchName: string, isRemote: boolean) => void;
   onTagMenu: (tagName: string) => void;
 }) {
@@ -933,7 +941,7 @@ function CommitRefs({
           ]}
           name={g.name}
           title={branchGroupTitle(g)}
-          current={g.locals.length > 0 && isHead}
+          current={headBranch != null && g.locals.includes(headBranch)}
           color={color}
           hasPr={prBranches.has(g.name)}
           onContextMenu={() =>
