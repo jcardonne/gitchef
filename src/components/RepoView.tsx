@@ -280,6 +280,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
 
   const run = useCallback(
     async (fn: () => Promise<void>, action?: string) => {
+      // Re-entrancy guard: one op at a time. busyRef is set synchronously (not
+      // via the `busy` state, which lags a render) so a rapid double-trigger -
+      // e.g. hitting the pull/push keyboard shortcut twice - can't launch two
+      // concurrent git ops racing on the same .git lock files.
+      if (busyRef.current) return;
+      busyRef.current = true;
       setBusy(true);
       setActiveAction(action ?? null);
       try {
@@ -287,6 +293,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       } catch (e) {
         notify(String(e), true);
       } finally {
+        busyRef.current = false;
         setBusy(false);
         setActiveAction(null);
       }
@@ -778,13 +785,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     return () => window.removeEventListener("keydown", onKey);
   }, [isActive, onPush, onPullAction]);
 
-  // Auto-fetch: mirror `busy` into a ref, re-read the setting on a prefs change,
-  // and run a background fetch on the active tab at the chosen interval. Skips a
-  // tick while an op is in flight or the window is hidden, and never toasts on
-  // failure (a background fetch offline shouldn't nag).
-  useEffect(() => {
-    busyRef.current = busy;
-  }, [busy]);
+  // Auto-fetch: re-read the setting on a prefs change, and run a background
+  // fetch on the active tab at the chosen interval. Skips a tick while an op is
+  // in flight (busyRef, owned by run()) or the window is hidden, and never
+  // toasts on failure (a background fetch offline shouldn't nag).
   useEffect(() => {
     const onPrefs = () => setAutoFetchTick((t) => t + 1);
     window.addEventListener("gitchef:prefs", onPrefs);

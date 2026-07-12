@@ -183,22 +183,24 @@ fn create_branch(repo: String, name: String, checkout: bool) -> AppResult<()> {
     branch::create_branch(&open(&repo)?, &name, checkout)
 }
 
-#[tauri::command]
+// Network ops block for seconds (remote IO). `(async)` runs them on a worker
+// thread so they don't freeze the UI/IPC - same rationale as the reads above.
+#[tauri::command(async)]
 fn push(repo: String) -> AppResult<String> {
     ops::push(&open(&repo)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn push_force(repo: String) -> AppResult<String> {
     ops::push_force(&open(&repo)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn pull(repo: String, mode: String) -> AppResult<String> {
     ops::pull(&open(&repo)?, &mode)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn fetch(repo: String) -> AppResult<String> {
     ops::fetch(&open(&repo)?)
 }
