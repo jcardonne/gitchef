@@ -22,7 +22,7 @@ import type {
   SubmoduleInfo,
   StashInfo,
 } from "../types";
-import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, relativeTime } from "../util";
+import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, isRateLimited, rateLimitBackoffMs, relativeTime } from "../util";
 import Toolbar from "./Toolbar";
 import Sidebar from "./Sidebar";
 import GraphView from "./GraphView";
@@ -166,6 +166,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // Epoch ms our last own git op settled - the watcher listener ignores its own
   // debounced echo within a short grace window after this (see run()).
   const lastOpAt = useRef(0);
+  // Epoch ms until which background network is paused after a provider rate-limit
+  // (see noteBackoff). Foreground/user-initiated ops are never gated by this.
+  const backoffUntil = useRef(0);
 
   // Play the exit animation, then unmount after it (kept in sync with the
   // .toast.closing CSS below).
@@ -190,6 +193,22 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     [dismissToast]
   );
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+
+  // A background network error that looks like a provider rate-limit pauses the
+  // auto-fetch loop until the window passes, instead of retrying on schedule
+  // (which can prolong a secondary limit). Only extends the pause forward, and
+  // toasts once - on entering backoff, not on every subsequent throttled hit.
+  const noteBackoff = useCallback(
+    (msg: string) => {
+      if (!isRateLimited(msg)) return; // transient/offline: the normal throttle covers it
+      const wasActive = Date.now() < backoffUntil.current;
+      backoffUntil.current = Math.max(backoffUntil.current, Date.now() + rateLimitBackoffMs(msg));
+      if (!wasActive) {
+        notify(`Auto-fetch paused: rate limited. Resuming around ${new Date(backoffUntil.current).toLocaleTimeString()}.`);
+      }
+    },
+    [notify]
+  );
 
   // Provider account avatars (GitHub/GitLab profile pictures) for the committers
   // in view, resolved by the backend (cached on disk) and merged in as they
@@ -254,8 +273,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       setPrs([]);
       return;
     }
-    api.listPrs(path).then(setPrs).catch(() => {});
-  }, [path, repo?.provider]);
+    api.listPrs(path).then(setPrs).catch((e) => noteBackoff(String(e)));
+  }, [path, repo?.provider, noteBackoff]);
   useEffect(() => refreshPrs(), [refreshPrs]);
 
   // Branch name -> its open PR, for the graph badge icon + "Open pull request" menu.
@@ -376,16 +395,22 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // background fetch offline shouldn't nag.
   const backgroundFetch = useCallback(() => {
     // Self-gating so every caller (interval + focus) honours ONE throttle: skip
-    // if auto-fetch is off, offline, or a fetch ran within the last interval.
-    // Without this the fixed interval tick could fire seconds after a focus fetch.
+    // if auto-fetch is off, offline, still inside a rate-limit backoff, or a fetch
+    // ran within the last interval. Without this the fixed interval tick could
+    // fire seconds after a focus fetch.
     const minutes = getFetchIntervalMinutes();
-    if (minutes <= 0 || !navigator.onLine || Date.now() - lastFetchRef.current < minutes * 60_000) {
+    if (
+      minutes <= 0 ||
+      !navigator.onLine ||
+      Date.now() < backoffUntil.current ||
+      Date.now() - lastFetchRef.current < minutes * 60_000
+    ) {
       return;
     }
     lastFetchRef.current = Date.now();
-    api.fetchRemotes(path).then(() => refresh({ stats: false })).catch(() => {});
+    api.fetchRemotes(path).then(() => refresh({ stats: false })).catch((e) => noteBackoff(String(e)));
     refreshPrs();
-  }, [path, refresh, refreshPrs]);
+  }, [path, refresh, refreshPrs, noteBackoff]);
 
   // Per-worktree dirty ("WIP") indicators are an opt-in scan: each worktree is
   // opened and status-walked, so this runs on demand (first load + the sidebar
