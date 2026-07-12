@@ -231,7 +231,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
 
               <div className="settings-field">
                 <div className="settings-field-label">{TITLE.fetch}<span>Auto-fetch</span></div>
-                <div className="settings-field-hint">Fetch from remotes in the background for the active tab.</div>
+                <div className="settings-field-hint">Fetch from remotes in the background for the active tab (default 5 min; only the active tab fetches, and it backs off if the provider rate-limits). Local changes always refresh instantly.</div>
                 <div className="mode-seg">
                   {FETCH_INTERVALS.map((o) => (
                     <button key={o.minutes} className={fetchInterval === o.minutes ? "active" : ""} onClick={() => changeFetchInterval(o.minutes)}>
