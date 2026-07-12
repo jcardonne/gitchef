@@ -124,6 +124,23 @@ export function hasUncommittedChange(status: StatusResult, path: string): boolea
   );
 }
 
+/// Does this git / gh / glab error look like a provider rate-limit (primary,
+/// secondary/abuse, or a 429 throttle)? We match the text GitHub and GitLab
+/// surface because the CLI path gives us no structured headers - only stderr.
+/// Deliberately NOT matching a bare 403 (that's usually auth, not throttling).
+export function isRateLimited(msg: string): boolean {
+  return /rate limit|secondary rate|abuse detection|too many requests|\b429\b/i.test(msg);
+}
+
+/// How long to pause background network after a rate-limit error. Honours an
+/// explicit "retry after <n>s" / "try again in <n> seconds" hint when the
+/// provider gives one (clamped to 30s..1h), else a conservative default.
+export function rateLimitBackoffMs(msg: string, fallbackMs = 15 * 60_000): number {
+  const m = msg.match(/retry[\s-]?after[\s:]+(\d+)/i) || msg.match(/try again in (\d+)\s*second/i);
+  if (m) return Math.min(60 * 60_000, Math.max(30_000, Number(m[1]) * 1000));
+  return fallbackMs;
+}
+
 /// The git paths a stage/unstage/discard must touch for these files. A renamed
 /// file needs BOTH its new path and its rename source (`old_path`) so the old
 /// name's deletion and the new name's addition always move together.
