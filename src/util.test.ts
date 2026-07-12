@@ -117,14 +117,23 @@ describe("affectedPaths", () => {
 });
 
 describe("isRateLimited", () => {
-  it("matches GitHub primary + secondary and GitLab 429 wording", () => {
-    expect(isRateLimited("API rate limit exceeded for user")).toBe(true);
-    expect(isRateLimited("You have exceeded a secondary rate limit")).toBe(true);
+  // These are the verbatim strings GitHub (gh), GitLab (glab) and git surface -
+  // the regex is only useful if it matches what providers actually emit.
+  it("matches real GitHub primary / secondary + GitLab / git 429 output", () => {
+    expect(isRateLimited("GitHub API rate limit exceeded. Please wait a minute and try again.")).toBe(true);
+    expect(isRateLimited("GraphQL: API rate limit exceeded for user ID 123")).toBe(true);
+    expect(isRateLimited("HTTP 403: You have exceeded a secondary rate limit. Please wait a few minutes before you try again.")).toBe(true);
+    expect(isRateLimited("You have triggered an abuse detection mechanism")).toBe(true);
     expect(isRateLimited("429 Too Many Requests")).toBe(true);
+    expect(isRateLimited("error: RPC failed; HTTP 429 curl 22")).toBe(true);
   });
   it("does not treat plain auth 403 / network errors as rate limits", () => {
     expect(isRateLimited("HTTP 403: Bad credentials")).toBe(false);
     expect(isRateLimited("could not resolve host github.com")).toBe(false);
+    expect(isRateLimited("fatal: Authentication failed")).toBe(false);
+  });
+  it("word-boundaries 429 so it doesn't fire on embedded digits", () => {
+    expect(isRateLimited("commit 1429ab wrote 4290 objects")).toBe(false);
   });
 });
 

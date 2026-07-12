@@ -23,6 +23,7 @@ import type {
   StashInfo,
 } from "../types";
 import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, isRateLimited, rateLimitBackoffMs, relativeTime } from "../util";
+import { shouldBackgroundFetch, shouldHandleRepoChange, shouldRefreshPrs, extendBackoff } from "../refreshPolicy";
 import Toolbar from "./Toolbar";
 import Sidebar from "./Sidebar";
 import GraphView from "./GraphView";
@@ -42,6 +43,11 @@ import FileHistoryModal from "./FileHistoryModal";
 import CreatePrModal from "./CreatePrModal";
 
 const EMPTY_STATUS: StatusResult = { staged: [], unstaged: [] };
+
+// PR/MR listing spawns a gh/glab subprocess and hits the REST/GraphQL API bucket,
+// unlike the cheap git-protocol fetch - so the background fetch loop refreshes it
+// at this coarser cadence. Focus/return + user ops still refresh PRs immediately.
+const PR_REFRESH_MS = 15 * 60_000;
 
 interface Props {
   path: string;
@@ -166,6 +172,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // Epoch ms our last own git op settled - the watcher listener ignores its own
   // debounced echo within a short grace window after this (see run()).
   const lastOpAt = useRef(0);
+  // Epoch ms of the last PR/MR listing, so the background loop can list at a
+  // coarser cadence than the fetch (any listing - focus, load, user op - counts).
+  const lastPrAt = useRef(0);
   // Epoch ms until which background network is paused after a provider rate-limit
   // (see noteBackoff). Foreground/user-initiated ops are never gated by this.
   const backoffUntil = useRef(0);
@@ -198,16 +207,23 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // auto-fetch loop until the window passes, instead of retrying on schedule
   // (which can prolong a secondary limit). Only extends the pause forward, and
   // toasts once - on entering backoff, not on every subsequent throttled hit.
-  const noteBackoff = useCallback(
-    (msg: string) => {
-      if (!isRateLimited(msg)) return; // transient/offline: the normal throttle covers it
-      const wasActive = Date.now() < backoffUntil.current;
-      backoffUntil.current = Math.max(backoffUntil.current, Date.now() + rateLimitBackoffMs(msg));
-      if (!wasActive) {
-        notify(`Auto-fetch paused: rate limited. Resuming around ${new Date(backoffUntil.current).toLocaleTimeString()}.`);
+  const enterBackoff = useCallback(
+    (ms: number) => {
+      const { until, enteredNow } = extendBackoff(backoffUntil.current, Date.now(), ms);
+      backoffUntil.current = until;
+      if (enteredNow) {
+        notify(`Auto-fetch paused: rate limited. Resuming around ${new Date(until).toLocaleTimeString()}.`);
       }
     },
     [notify]
+  );
+  // Text-heuristic entry point: a CLI error (gh/glab/git) carries no headers, so
+  // we recognise the rate-limit from its message and use the parsed/fallback delay.
+  const noteBackoff = useCallback(
+    (msg: string) => {
+      if (isRateLimited(msg)) enterBackoff(rateLimitBackoffMs(msg)); // else: transient/offline
+    },
+    [enterBackoff]
   );
 
   // Provider account avatars (GitHub/GitLab profile pictures) for the committers
@@ -216,6 +232,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // remote isn't a known provider.
   useEffect(() => {
     if (repo?.provider !== "github" && repo?.provider !== "gitlab") return;
+    // Don't add to a rate-limit we're already backing off from (avatars hit the
+    // same API bucket). They fill in on the next graph change after it clears.
+    if (Date.now() < backoffUntil.current) return;
     const emails = [...new Set(nodes.map((n) => n.email).filter(Boolean))];
     if (emails.length === 0) return;
     let alive = true;
@@ -273,6 +292,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       setPrs([]);
       return;
     }
+    lastPrAt.current = Date.now();
     api.listPrs(path).then(setPrs).catch((e) => noteBackoff(String(e)));
   }, [path, repo?.provider, noteBackoff]);
   useEffect(() => refreshPrs(), [refreshPrs]);
@@ -394,22 +414,25 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // fetch-on-focus throttle against a shared clock. Silent on failure - a
   // background fetch offline shouldn't nag.
   const backgroundFetch = useCallback(() => {
-    // Self-gating so every caller (interval + focus) honours ONE throttle: skip
-    // if auto-fetch is off, offline, still inside a rate-limit backoff, or a fetch
-    // ran within the last interval. Without this the fixed interval tick could
-    // fire seconds after a focus fetch.
-    const minutes = getFetchIntervalMinutes();
+    // Self-gating (see shouldBackgroundFetch) so every caller - the interval and a
+    // focus refresh - honours ONE throttle, and neither hammers a rate-limited or
+    // offline remote.
+    const now = Date.now();
     if (
-      minutes <= 0 ||
-      !navigator.onLine ||
-      Date.now() < backoffUntil.current ||
-      Date.now() - lastFetchRef.current < minutes * 60_000
+      !shouldBackgroundFetch({
+        minutes: getFetchIntervalMinutes(),
+        online: navigator.onLine,
+        now,
+        lastFetch: lastFetchRef.current,
+        backoffUntil: backoffUntil.current,
+      })
     ) {
       return;
     }
-    lastFetchRef.current = Date.now();
+    lastFetchRef.current = now;
     api.fetchRemotes(path).then(() => refresh({ stats: false })).catch((e) => noteBackoff(String(e)));
-    refreshPrs();
+    // Fetch runs every tick (cheap); PR-list only at its own coarser cadence.
+    if (shouldRefreshPrs(now, lastPrAt.current, PR_REFRESH_MS)) refreshPrs();
   }, [path, refresh, refreshPrs, noteBackoff]);
 
   // Per-worktree dirty ("WIP") indicators are an opt-in scan: each worktree is
@@ -559,14 +582,15 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     let unlisten: (() => void) | undefined;
     let disposed = false;
     listen<string>("repo-changed", (e) => {
-      if (
-        e.payload !== path ||
-        busyRef.current ||
-        Date.now() - lastOpAt.current < OWN_OP_GRACE_MS ||
-        document.visibilityState === "hidden"
-      )
-        return;
-      refresh({ stats: false }).catch(() => {});
+      const ok = shouldHandleRepoChange({
+        matchesPath: e.payload === path,
+        busy: busyRef.current,
+        now: Date.now(),
+        lastOpAt: lastOpAt.current,
+        graceMs: OWN_OP_GRACE_MS,
+        hidden: document.visibilityState === "hidden",
+      });
+      if (ok) refresh({ stats: false }).catch(() => {});
     }).then((fn) => (disposed ? fn() : (unlisten = fn)));
     return () => {
       disposed = true;
@@ -576,6 +600,22 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
 
   // Stop watching when the tab closes (this instance unmounts).
   useEffect(() => () => void api.unwatchRepo(path).catch(() => {}), [path]);
+
+  // The backend emits `rate-limited` (backoff seconds, derived from the provider's
+  // Retry-After / RateLimit-Reset headers on the avatar API path) - a header-exact
+  // pause, more precise than the CLI-error string heuristic.
+  useEffect(() => {
+    if (!isActive) return;
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    listen<number>("rate-limited", (e) => enterBackoff(Math.max(0, e.payload) * 1000)).then((fn) =>
+      disposed ? fn() : (unlisten = fn)
+    );
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isActive, enterBackoff]);
 
   const closeDiff = () => {
     setDiff(null);
