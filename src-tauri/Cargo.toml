@@ -32,6 +32,12 @@ ureq = { version = "2", features = ["json"] }
 # project rule (guards returned directly, no poison-unwrap boilerplate).
 parking_lot = "0.12"
 thiserror = "2"
+# Filesystem watcher for the .git dir, so external git ops (CLI, other tools) and
+# checkouts/commits reflect instantly without a manual refresh. -mini wraps notify
+# with built-in debounce, collapsing the write burst a single git op produces into
+# one event. macOS backend is FSEvents (no openssl), so it cross-compiles like the
+# rest.
+notify-debouncer-mini = "0.4"
 
 [profile.dev]
 incremental = true
