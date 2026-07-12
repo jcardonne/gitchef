@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// The avatar disc in the graph is small; 64px covers retina.
 const AVATAR_SIZE: u32 = 64;
@@ -116,14 +116,26 @@ pub fn resolve(
 
     // Only write the cache when the fetch completed: on a transient error keep
     // the cached positives and retry next time (don't poison with negatives).
-    if let Ok(found) = fetched {
+    if let Ok((found, backoff)) = fetched {
+        if let Some(secs) = backoff {
+            // Header-exact: tell the UI precisely how long to pause background fetch.
+            let _ = app.emit("rate-limited", secs);
+        }
         let mut st = CACHE.lock();
         for email in &missing {
-            let url = found.get(email).cloned().unwrap_or_default();
-            if !url.is_empty() {
-                out.insert(email.clone(), url.clone());
+            match found.get(email).filter(|u| !u.is_empty()) {
+                Some(url) => {
+                    out.insert(email.clone(), url.clone());
+                    st.map.insert(email.clone(), CacheEntry { url: url.clone(), fetched_at: now });
+                }
+                // Negative-cache a real miss only when the scan completed; a
+                // rate-limit cut it short, so don't mark un-scanned authors as
+                // "no avatar" (which would show Gravatar for the whole NEG TTL).
+                None if backoff.is_none() => {
+                    st.map.insert(email.clone(), CacheEntry { url: String::new(), fetched_at: now });
+                }
+                None => {}
             }
-            st.map.insert(email.clone(), CacheEntry { url, fetched_at: now });
         }
         save_cache(&path, &st.map);
     }
@@ -196,11 +208,37 @@ pub(crate) fn encode_path(path: &str) -> String {
         .join("/")
 }
 
+/// Seconds to pause background network after a rate-limit response. An explicit
+/// `Retry-After` (seconds) wins; else the `*-RateLimit-Reset` epoch minus now;
+/// clamped to 30s..1h; else a 15-min fallback that matches the frontend default.
+fn backoff_secs(retry_after: Option<&str>, reset: Option<&str>, now: u64) -> u64 {
+    if let Some(ra) = retry_after.and_then(|v| v.trim().parse::<u64>().ok()) {
+        return ra.clamp(30, 3600);
+    }
+    if let Some(reset) = reset.and_then(|v| v.trim().parse::<u64>().ok()) {
+        if reset > now {
+            return (reset - now).clamp(30, 3600);
+        }
+    }
+    900
+}
+
+/// Pull the backoff window out of a rate-limited response's headers.
+fn resp_backoff(resp: &ureq::Response) -> u64 {
+    backoff_secs(
+        resp.header("retry-after"),
+        resp.header("x-ratelimit-reset").or_else(|| resp.header("ratelimit-reset")),
+        now_secs(),
+    )
+}
+
+/// Returns the resolved avatars plus, when the API rate-limited us mid-scan, the
+/// seconds to back off (so `resolve` can tell the UI exactly how long to pause).
 fn fetch_github(
     target: &RemoteTarget,
     head: Option<&str>,
     wanted: &HashSet<String>,
-) -> AppResult<HashMap<String, String>> {
+) -> AppResult<(HashMap<String, String>, Option<u64>)> {
     let token = provider_token("github", &target.host);
     let path = encode_path(&target.path);
     let mut out = HashMap::new();
@@ -219,13 +257,15 @@ fn fetch_github(
     // so resolve() caches nothing and retries next time - deliberately NOT falling
     // through to cache a partial result, which would negative-cache feature-branch
     // authors the aborted head scan never got to.
+    let mut backoff = None;
     if let Some(h) = head {
-        scan_commits(&path, Some(&encode_path(h)), token.as_deref(), wanted, &mut out, &mut remaining)?;
+        backoff = scan_commits(&path, Some(&encode_path(h)), token.as_deref(), wanted, &mut out, &mut remaining)?;
     }
-    if remaining > 0 {
-        scan_commits(&path, None, token.as_deref(), wanted, &mut out, &mut remaining)?;
+    // A rate-limited head scan means the default scan would hit the same wall.
+    if remaining > 0 && backoff.is_none() {
+        backoff = scan_commits(&path, None, token.as_deref(), wanted, &mut out, &mut remaining)?;
     }
-    Ok(out)
+    Ok((out, backoff))
 }
 
 /// Page through a repo's commits (optionally pinned to `sha` = a branch/ref),
@@ -239,7 +279,7 @@ fn scan_commits(
     wanted: &HashSet<String>,
     out: &mut HashMap<String, String>,
     remaining: &mut usize,
-) -> AppResult<()> {
+) -> AppResult<Option<u64>> {
     for page in 1..=MAX_PAGES {
         if *remaining == 0 {
             break;
@@ -258,7 +298,12 @@ fn scan_commits(
         }
         let commits: Vec<GhCommit> = match req.call() {
             Ok(r) => r.into_json()?,
-            Err(ureq::Error::Status(_, _)) => break,
+            // 403/429 = rate-limited: surface the reset so the UI backs off exactly.
+            // Any other Status (e.g. 404 unpushed ref) just ends the scan with what
+            // we have.
+            Err(ureq::Error::Status(code, resp)) => {
+                return Ok((code == 403 || code == 429).then(|| resp_backoff(&resp)));
+            }
             Err(ureq::Error::Transport(_)) => return Err(AppError::Msg("github request failed".into())),
         };
         let n = commits.len();
@@ -270,7 +315,7 @@ fn scan_commits(
             break; // last page
         }
     }
-    Ok(())
+    Ok(None)
 }
 
 fn sized_github(url: &str) -> String {
@@ -327,12 +372,12 @@ fn fetch_gitlab(
     target: &RemoteTarget,
     head: Option<&str>,
     wanted: &HashSet<String>,
-) -> AppResult<HashMap<String, String>> {
+) -> AppResult<(HashMap<String, String>, Option<u64>)> {
     // Private repos (the common case) require auth; with no token there's nothing
     // to resolve, so bail to Gravatar instead of erroring.
     let token = match provider_token("gitlab", &target.host) {
         Some(t) => t,
-        None => return Ok(HashMap::new()),
+        None => return Ok((HashMap::new(), None)),
     };
     let refname = head.unwrap_or("HEAD");
     let endpoint = format!("https://{}/api/graphql", target.host);
@@ -352,7 +397,12 @@ fn fetch_gitlab(
             .send_json(body)
         {
             Ok(r) => r.into_json()?,
-            Err(ureq::Error::Status(_, _)) => break,
+            Err(ureq::Error::Status(code, resp)) => {
+                if code == 403 || code == 429 {
+                    return Ok((out, Some(resp_backoff(&resp))));
+                }
+                break; // other Status (bad ref / no access): keep the partial result
+            }
             Err(ureq::Error::Transport(_)) => return Err(AppError::Msg("gitlab request failed".into())),
         };
         let commits = match resp
@@ -376,7 +426,7 @@ fn fetch_gitlab(
             None => break,
         }
     }
-    Ok(out)
+    Ok((out, None))
 }
 
 /// GitLab `avatarUrl` is instance-relative (`/uploads/.../avatar.png`); make it
@@ -477,6 +527,21 @@ mod tests {
     }
 
     #[test]
+    fn backoff_prefers_retry_after_then_reset_then_default() {
+        // Retry-After (seconds) wins, clamped to 30s..1h.
+        assert_eq!(backoff_secs(Some("90"), Some("999999"), 1000), 90);
+        assert_eq!(backoff_secs(Some("5"), None, 1000), 30); // clamp min
+        assert_eq!(backoff_secs(Some("99999"), None, 1000), 3600); // clamp max
+        // Else X-RateLimit-Reset (epoch) minus now.
+        assert_eq!(backoff_secs(None, Some("1300"), 1000), 300);
+        // Reset already in the past -> fall through to the default.
+        assert_eq!(backoff_secs(None, Some("900"), 1000), 900);
+        // No usable header, or an unparseable one -> 15-min default.
+        assert_eq!(backoff_secs(None, None, 1000), 900);
+        assert_eq!(backoff_secs(Some("soon"), None, 1000), 900);
+    }
+
+    #[test]
     fn sizes_github_url() {
         assert_eq!(
             sized_github("https://avatars.githubusercontent.com/u/1?v=4"),
@@ -529,7 +594,7 @@ mod tests {
             .collect();
         assert!(!wanted.is_empty(), "no linked GitHub author emails discovered");
         // Emails were discovered from the default branch (no sha), so scan that.
-        let out = fetch_github(&t, None, &wanted).unwrap();
+        let (out, _backoff) = fetch_github(&t, None, &wanted).unwrap();
         assert!(!out.is_empty(), "expected resolved GitHub avatars for {} emails: {out:?}", wanted.len());
     }
 
@@ -563,7 +628,7 @@ mod tests {
             })
             .unwrap_or_default();
         assert!(!wanted.is_empty(), "no linked GitLab author emails discovered");
-        let out = fetch_gitlab(&t, Some("main"), &wanted).unwrap();
+        let (out, _backoff) = fetch_gitlab(&t, Some("main"), &wanted).unwrap();
         assert!(!out.is_empty(), "expected resolved GitLab avatars for {} emails: {out:?}", wanted.len());
     }
 }
