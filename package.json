@@ -1,6 +1,6 @@
 {
   "name": "gitchef",
-  "version": "0.28.2",
+  "version": "0.28.3",
   "description": "Open-source visual Git client",
   "type": "module",
   "scripts": {
