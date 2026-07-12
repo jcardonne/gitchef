@@ -1,5 +1,6 @@
 mod error;
 mod git;
+mod watch;
 
 use error::AppResult;
 use git::{
@@ -203,6 +204,19 @@ fn pull(repo: String, mode: String) -> AppResult<String> {
 #[tauri::command(async)]
 fn fetch(repo: String) -> AppResult<String> {
     ops::fetch(&open(&repo)?)
+}
+
+/// Start watching a repo's git dir so external changes push a `repo-changed`
+/// event to the UI. Idempotent per path.
+#[tauri::command]
+fn watch_repo(app: tauri::AppHandle, watchers: tauri::State<watch::Watchers>, repo: String) -> AppResult<()> {
+    watch::watch(&app, &watchers, &repo)
+}
+
+/// Stop watching a repo (its tab was closed).
+#[tauri::command]
+fn unwatch_repo(watchers: tauri::State<watch::Watchers>, repo: String) {
+    watch::unwatch(&watchers, &repo)
 }
 
 #[tauri::command]
@@ -479,7 +493,8 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build());
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(watch::Watchers::default());
 
     // macOS binds Cmd+W to the default Window menu's "Close Window". Replace the
     // menu with just App + Edit (no Window menu) so Cmd+W is free for the JS
@@ -530,6 +545,8 @@ pub fn run() {
             push_force,
             pull,
             fetch,
+            watch_repo,
+            unwatch_repo,
             merge,
             fast_forward_to,
             rebase_onto,

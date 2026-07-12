@@ -98,6 +98,9 @@ export const pushForce = (repo: string) => invoke<string>("push_force", { repo }
 export type PullMode = "ff" | "ff-only" | "rebase";
 export const pull = (repo: string, mode: PullMode) => invoke<string>("pull", { repo, mode });
 export const fetchRemotes = (repo: string) => invoke<string>("fetch", { repo });
+/// Start/stop watching a repo's git dir; changes emit a `repo-changed` event.
+export const watchRepo = (repo: string) => invoke<void>("watch_repo", { repo });
+export const unwatchRepo = (repo: string) => invoke<void>("unwatch_repo", { repo });
 export const merge = (repo: string, branch: string) => invoke<string>("merge", { repo, branch });
 export const fastForwardTo = (repo: string, branch: string) =>
   invoke<string>("fast_forward_to", { repo, branch });

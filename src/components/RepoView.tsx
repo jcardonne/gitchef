@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { confirm, save } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import * as api from "../api";
 import { RepoContext, type RefreshOpts } from "../repoContext";
@@ -159,6 +160,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const rightRef = useRef<HTMLDivElement>(null);
   // Live mirror of `busy` for the auto-fetch interval's stale closure.
   const busyRef = useRef(false);
+  // Epoch ms of the last background fetch, shared by the interval + fetch-on-focus
+  // so the two paths throttle against each other (no double-fetch on refocus).
+  const lastFetchRef = useRef(0);
+  // Epoch ms our last own git op settled - the watcher listener ignores its own
+  // debounced echo within a short grace window after this (see run()).
+  const lastOpAt = useRef(0);
 
   // Play the exit animation, then unmount after it (kept in sync with the
   // .toast.closing CSS below).
@@ -294,6 +301,11 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         notify(String(e), true);
       } finally {
         busyRef.current = false;
+        // Stamp when our own op settled. Its .git writes fire a debounced
+        // `repo-changed` ~400ms later, AFTER busyRef has already flipped back for
+        // a fast op - so the watcher listener also skips within this grace window,
+        // else every local op would echo a redundant refresh of its own writes.
+        lastOpAt.current = Date.now();
         setBusy(false);
         setActiveAction(null);
       }
@@ -357,6 +369,23 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     },
     [path, graphLimit, refreshStats]
   );
+
+  // One background (non-blocking) fetch: pull remote state + prune, repaint the
+  // graph, and self-heal the PR list. Stamps lastFetchRef so the interval and
+  // fetch-on-focus throttle against a shared clock. Silent on failure - a
+  // background fetch offline shouldn't nag.
+  const backgroundFetch = useCallback(() => {
+    // Self-gating so every caller (interval + focus) honours ONE throttle: skip
+    // if auto-fetch is off, offline, or a fetch ran within the last interval.
+    // Without this the fixed interval tick could fire seconds after a focus fetch.
+    const minutes = getFetchIntervalMinutes();
+    if (minutes <= 0 || !navigator.onLine || Date.now() - lastFetchRef.current < minutes * 60_000) {
+      return;
+    }
+    lastFetchRef.current = Date.now();
+    api.fetchRemotes(path).then(() => refresh({ stats: false })).catch(() => {});
+    refreshPrs();
+  }, [path, refresh, refreshPrs]);
 
   // Per-worktree dirty ("WIP") indicators are an opt-in scan: each worktree is
   // opened and status-walked, so this runs on demand (first load + the sidebar
@@ -447,7 +476,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         onLoaded(path, info);
         if (!loadedRef.current) {
           await refresh();
+          // The tab may have closed during that await; don't register a watcher
+          // the unmount cleanup has already run past (it would leak, never freed).
+          if (!alive) return;
           refreshWips().catch(() => {});
+          // Watch this repo's .git so external changes refresh the tab live.
+          api.watchRepo(path).catch(() => {});
           loadedRef.current = true;
         }
       } catch (e) {
@@ -473,6 +507,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         refresh({ stats: false }).catch((e) => notify(String(e), true));
+        // When auto-fetch is on, regaining focus also pulls remote state.
+        // backgroundFetch self-throttles, so alt-tabbing can't hammer the remote.
+        backgroundFetch();
       }, 200);
     };
     schedule();
@@ -483,7 +520,37 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       window.removeEventListener("focus", schedule);
       document.removeEventListener("visibilitychange", schedule);
     };
-  }, [isActive, notify, refresh]);
+  }, [isActive, notify, refresh, backgroundFetch]);
+
+  // Live refresh when this repo's .git changes on disk (external commit/checkout/
+  // stash/rebase from a terminal or other tool). The backend debounces the write
+  // burst into one event; we skip our own writes' echo (in flight via busyRef, or
+  // just-settled via lastOpAt - the 400ms debounce lands after a fast op clears
+  // busy) and while the window is hidden (the focus handler covers the return).
+  // Local only - no network, so nothing to rate-limit.
+  const OWN_OP_GRACE_MS = 700; // > the backend's 400ms debounce
+  useEffect(() => {
+    if (!isActive) return;
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    listen<string>("repo-changed", (e) => {
+      if (
+        e.payload !== path ||
+        busyRef.current ||
+        Date.now() - lastOpAt.current < OWN_OP_GRACE_MS ||
+        document.visibilityState === "hidden"
+      )
+        return;
+      refresh({ stats: false }).catch(() => {});
+    }).then((fn) => (disposed ? fn() : (unlisten = fn)));
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isActive, path, refresh]);
+
+  // Stop watching when the tab closes (this instance unmounts).
+  useEffect(() => () => void api.unwatchRepo(path).catch(() => {}), [path]);
 
   const closeDiff = () => {
     setDiff(null);
@@ -799,11 +866,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     if (!isActive || minutes <= 0) return;
     const id = window.setInterval(() => {
       if (busyRef.current || document.visibilityState === "hidden") return;
-      api.fetchRemotes(path).then(() => refresh({ stats: false })).catch(() => {});
-      refreshPrs(); // self-heal the PR list so merged/closed ones drop off
+      backgroundFetch();
     }, minutes * 60_000);
     return () => window.clearInterval(id);
-  }, [isActive, path, refresh, refreshPrs, autoFetchTick]);
+  }, [isActive, backgroundFetch, autoFetchTick]);
 
   // Re-list PRs when the app regains focus - a PR merged/closed on the provider's
   // web UI while you were away must not linger as "open" in the sidebar.
