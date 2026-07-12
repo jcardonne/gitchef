@@ -137,8 +137,11 @@ export function setRightPanelWidth(width: number): void {
 const FETCH_INTERVAL_KEY = "gitchef.fetchIntervalMinutes";
 
 /// Minutes between background auto-fetches for the active repo; 0 = disabled.
+/// Defaults to 5 (safe on GitHub/GitLab: only the active+visible tab fetches, and
+/// backgroundFetch backs off on a rate-limit). Users who explicitly picked "Off"
+/// have 0 stored, so this default only affects those who never touched it.
 export function getFetchIntervalMinutes(): number {
-  return read<number>(FETCH_INTERVAL_KEY, 0);
+  return read<number>(FETCH_INTERVAL_KEY, 5);
 }
 export function setFetchIntervalMinutes(minutes: number): void {
   localStorage.setItem(FETCH_INTERVAL_KEY, JSON.stringify(minutes));

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { affectedPaths, avatarUrl, edgePath, noreplyAvatarUrl } from "./util";
+import { affectedPaths, avatarUrl, edgePath, isRateLimited, noreplyAvatarUrl, rateLimitBackoffMs } from "./util";
 import type { FileStatus } from "./types";
 
 describe("noreplyAvatarUrl", () => {
@@ -113,5 +113,28 @@ describe("affectedPaths", () => {
 
   it("returns only the path for non-renames and dedupes repeats", () => {
     expect(affectedPaths([fs("a.ts"), fs("a.ts")])).toEqual(["a.ts"]);
+  });
+});
+
+describe("isRateLimited", () => {
+  it("matches GitHub primary + secondary and GitLab 429 wording", () => {
+    expect(isRateLimited("API rate limit exceeded for user")).toBe(true);
+    expect(isRateLimited("You have exceeded a secondary rate limit")).toBe(true);
+    expect(isRateLimited("429 Too Many Requests")).toBe(true);
+  });
+  it("does not treat plain auth 403 / network errors as rate limits", () => {
+    expect(isRateLimited("HTTP 403: Bad credentials")).toBe(false);
+    expect(isRateLimited("could not resolve host github.com")).toBe(false);
+  });
+});
+
+describe("rateLimitBackoffMs", () => {
+  it("honours an explicit retry-after hint, clamped", () => {
+    expect(rateLimitBackoffMs("secondary rate limit; retry after 90")).toBe(90_000);
+    expect(rateLimitBackoffMs("retry-after: 5")).toBe(30_000); // clamped up to 30s min
+    expect(rateLimitBackoffMs("retry after 99999")).toBe(60 * 60_000); // clamped to 1h max
+  });
+  it("falls back to the default when no hint is present", () => {
+    expect(rateLimitBackoffMs("API rate limit exceeded")).toBe(15 * 60_000);
   });
 });
