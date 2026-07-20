@@ -22,16 +22,20 @@ A keypair was generated at `~/.tauri/gitchef.key` (private) and
 > an update again - users would be stranded on their current version.
 
 The key currently has **no password**. The private key becomes a GitHub secret;
-anyone who reads that secret can sign updates that every client installs silently.
-For a stronger posture, regenerate with a passphrase and store it in
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` so a secret-store leak yields only an
-encrypted blob:
+anyone who reads that secret can sign updates that every client installs
+silently, with no prompt. Regenerating it with a passphrase is the single
+highest-value hardening step left:
 
 ```sh
 pnpm tauri signer generate -w ~/.tauri/gitchef.key -f   # prompts for a password
 ```
 
-Then update `plugins.updater.pubkey` with the new `~/.tauri/gitchef.key.pub`.
+> **Do not just swap the key.** A client only trusts the pubkey baked into the
+> build it is already running, so the new pubkey has to ship (signed by the OLD
+> key) and be picked up BEFORE anything is signed with the new key - otherwise
+> every installed client rejects all future updates and has to be reinstalled by
+> hand. Follow the ordered procedure under
+> [Supply-chain posture](#supply-chain-posture) below.
 
 ### 2. Cloudflare R2 bucket (all via wrangler CLI)
 
@@ -180,22 +184,69 @@ pnpm tauri icon app-icon-tile.png
   `process:allow-restart` (restart only - not the broader `process:default`,
   which would also expose `exit`).
 
-## Hardening backlog (optional)
+## Supply-chain posture
 
-- Add a passphrase to the signing key (see step 1).
-- Pin third-party actions (`tauri-apps/tauri-action@v0`, `swatinem/rust-cache`, etc.)
-  to commit SHAs - the tauri-action step holds the signing key; add Dependabot.
-  (`dtolnay/rust-toolchain` is already pinned to `1.96.0`.)
-- Set a restrictive `csp` in `tauri.conf.json` (currently `null`). Avatar images
-  load from a provider-dependent set of hosts, so it must allow at least
-  `img-src 'self' data: https://*.gravatar.com https://avatars.githubusercontent.com https://github.com https://gitlab.com`
-  (`github.com/<user>.png` redirects to the avatars CDN, so both GitHub hosts are
-  needed; GitLab account/Gravatar-fallback avatars come from `gitlab.com` /
-  `*.gravatar.com`). No `connect-src` entry is required: the GitHub/GitLab
-  account lookups run in the Rust backend (`git/avatars.rs`, via `ureq`), which
-  isn't subject to the webview CSP - only the resulting `<img>` URLs are. A
-  self-hosted GitLab serves avatars from its own host, which can't be enumerated
-  up front, so a strict CSP drops those images (Gravatar still renders).
+Done:
+
+- **The release is gated on `ci`.** `release.yml` triggers on `workflow_run`
+  (workflow `ci`, conclusion `success`, branch `main`), not on `push`. It used to
+  run in PARALLEL with `ci`, so a commit that failed the tests could still be
+  tagged, published, and silently auto-installed. A guard step also re-checks
+  that `main` still points at the exact SHA `ci` validated, and skips if another
+  push landed meanwhile (that commit's own `ci` run releases it).
+- **Every third-party action is pinned to a full commit SHA**, with the version
+  in a trailing comment. A moving tag is controlled by its owner, and the
+  `tauri-action` step holds the signing key. `.github/dependabot.yml` opens
+  weekly bump PRs so the pins don't rot.
+- **`wrangler` is pinned to an exact version** in the publish step. `npx` ignores
+  the 14-day `minimumReleaseAge` in `pnpm-workspace.yaml`, so `wrangler@4`
+  resolved to whatever was newest at release time - in a step holding a
+  Cloudflare token with write access to the bucket the updater reads. When
+  bumping it, pick a version at least 14 days old.
+- **The updater-endpoint injection verifies itself.** `sed` exits 0 whether or
+  not it substituted anything; the step now fails if the placeholder survives or
+  the URL is absent, instead of shipping a dead endpoint on a green release.
+- **The CSP is set** - see `csp` in `src-tauri/tauri.conf.json` (`default-src
+  'self'`, `script-src 'self'`, scoped `img-src`, `connect-src 'self' ipc:`).
+  Avatars need a provider-dependent set of image hosts, so `img-src` allows
+  `data:`, `*.gravatar.com`, `avatars.githubusercontent.com`, `github.com` and
+  `gitlab.com` (`github.com/<user>.png` redirects to the avatars CDN, so both
+  GitHub hosts are needed). No `connect-src` entry is required for the account
+  lookups: those run in the Rust backend (`git/avatars.rs`, via `ureq`), which
+  isn't subject to the webview CSP - only the resulting `<img>` URLs are.
+  Known limitation: a self-hosted GitLab serves avatars from its own host, which
+  can't be enumerated up front, so those images are dropped (Gravatar still
+  renders).
+
+Still open:
+
+- **The signing key has no passphrase** (see step 1). This is the one remaining
+  high-severity item: updates install silently and relaunch, so anyone who can
+  read the `TAURI_SIGNING_PRIVATE_KEY` secret can sign an update that every
+  client executes without a prompt. With a passphrase, a secret-store leak
+  yields only an encrypted blob. Rotating it is a deliberate, ordered operation:
+
+  1. `pnpm tauri signer generate -w ~/.tauri/gitchef.key -f` and set a real
+     passphrase (keep the OLD key and `.pub` until step 5 is verified).
+  2. Put the new `~/.tauri/gitchef.key.pub` contents in
+     `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`, and ship that as a
+     normal release built with the **old** key. Clients must be running a build
+     that trusts the new pubkey BEFORE anything is signed with the new key.
+  3. Wait until installed clients have picked that release up. Anyone still on an
+     older build trusts only the old pubkey and will reject later updates -
+     they'd have to reinstall by hand.
+  4. `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/gitchef.key` and
+     `gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the real passphrase,
+     not an empty string).
+  5. Cut a throwaway patch release and confirm an installed client updates. Only
+     then destroy the old key.
+- **The tag and GitHub Release are published before the builds run.** The
+  `version` job tags and creates the Release, then `build` compiles; with
+  `fail-fast: false` and no rollback, a failed build leaves `main` bumped and a
+  Release page live with missing or partial installers. Lower risk now that a
+  green `ci` is a precondition, but the fix is to publish the Release from a
+  final job gated on `build`, or add a cleanup job that deletes the tag and
+  Release on failure.
 
 ## Testing the flow end-to-end
 

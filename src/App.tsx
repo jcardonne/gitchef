@@ -144,7 +144,15 @@ export default function App() {
   // RepoView reports the real repo name once libgit2 opens it; refine the tab
   // label (was a path basename) and record the repo in recents.
   const onRepoLoaded = (path: string, info: RepoInfo) => {
-    setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, name: info.name } : t)));
+    // RepoView calls this on every activation, not just the first load. Return
+    // the SAME array when the name is unchanged: a fresh one re-runs the session
+    // persist effect and re-registers the window keydown listener on every tab
+    // switch.
+    setTabs((prev) =>
+      prev.some((t) => t.path === path && t.name !== info.name)
+        ? prev.map((t) => (t.path === path ? { ...t, name: info.name } : t))
+        : prev
+    );
     store.addRecent({ path, name: info.name });
     refreshRecents();
   };

@@ -55,7 +55,7 @@ export default function CommitFiles({ files, selectedPath, onSelect, onContext }
         }}
         className={`file-row${selectedPath === f.path ? " selected" : ""}`}
         style={{ paddingLeft: BASE_PAD + depth * INDENT }}
-        title={f.old_path ? `${f.old_path} → ${f.path}` : undefined}
+        title={f.old_path ? `${f.old_path} → ${f.path}` : f.path}
         onClick={() => onSelect(f)}
         onContextMenu={(e) => {
           e.preventDefault();

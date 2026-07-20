@@ -568,7 +568,7 @@ button {
   background: var(--bg-elev2);
 }
 .tag-glyph {
-  color: #e0af68;
+  color: var(--mod);
   width: 14px;
   flex: 0 0 auto;
   display: inline-flex;
@@ -683,7 +683,7 @@ button {
 }
 .sm-badge.stale {
   background: transparent;
-  color: var(--warn, var(--accent));
+  color: var(--mod);
   font-size: 12px;
   padding: 0;
 }
@@ -730,7 +730,7 @@ button {
   background: var(--del);
 }
 .pr-ci-pending {
-  background: #e0af68;
+  background: var(--mod);
 }
 .pr-review {
   flex: 0 0 auto;
@@ -1062,7 +1062,9 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  /* Dark ink, not #fff: the background is an inline lane color and every lane
+     in the palette is a light pastel, where white drops to ~1.8:1. */
+  color: #0b0f14;
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
@@ -1213,7 +1215,9 @@ button {
   color: var(--add);
 }
 .row-action.row-stage:hover:not(:disabled) {
-  color: #fff;
+  /* --bg, not #fff: --add is a light green in several palettes, where a white
+     glyph on it drops under the 3:1 an icon needs. */
+  color: var(--bg);
   background: var(--add);
   border-color: var(--add);
 }
@@ -1266,7 +1270,7 @@ button {
   color: var(--mod);
 }
 .s-conflicted {
-  color: #ff9e64;
+  color: var(--mod);
 }
 .mini-btn {
   background: var(--bg-elev2);
@@ -1355,7 +1359,7 @@ button {
   color: var(--add);
 }
 .commit-preview-count.warn {
-  color: #e0af68;
+  color: var(--mod);
 }
 .commit-preview-count.over {
   color: var(--del);
@@ -1508,6 +1512,15 @@ button {
   color: var(--text-dim);
   border-bottom: 1px solid var(--border);
   background: var(--bg-elev);
+}
+.preview-note {
+  font-size: 11px;
+  color: var(--mod);
+  border: 1px solid color-mix(in srgb, var(--mod) 40%, transparent);
+  background: color-mix(in srgb, var(--mod) 12%, transparent);
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
 }
 .preview-path {
   flex: 1 1 auto;
@@ -1778,7 +1791,7 @@ button {
   align-items: center;
   gap: 5px;
   font-weight: 650;
-  color: #f7768e;
+  color: var(--del);
 }
 .toast-countdown-wrap {
   display: flex;
@@ -1805,7 +1818,7 @@ button {
   animation-fill-mode: forwards;
 }
 .toast-error .toast-countdown-arc {
-  stroke: #f7768e;
+  stroke: var(--del);
 }
 @keyframes toast-countdown {
   to {
@@ -1938,7 +1951,7 @@ button {
 }
 .palette-item.active {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 .palette-empty {
   padding: 12px 14px;
@@ -2090,7 +2103,7 @@ button {
   cursor: grabbing;
   position: relative;
   z-index: 5;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-float);
 }
 /* FLIP: glide tabs to their new positions after a reorder */
 .tab.flipping {
@@ -2516,7 +2529,7 @@ button {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 9px;
-  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-float);
   font-size: 12.5px;
   color: var(--text);
 }
@@ -2556,7 +2569,7 @@ button {
   gap: 8px;
   max-width: 60%;
   align-items: stretch;
-  border-color: color-mix(in srgb, #f7768e 55%, var(--border));
+  border-color: color-mix(in srgb, var(--del) 55%, var(--border));
   text-align: left;
 }
 .toast-error .toast-msg {

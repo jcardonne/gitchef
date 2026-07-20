@@ -125,3 +125,34 @@ describe("tab colors", () => {
     expect(store.getTabColors()).toEqual({ "/repos/a": "blue" });
   });
 });
+
+// A value written by an older schema (or a truncated write) must not reach
+// App's `session.paths.map(...)` useState initializer, which would throw on the
+// first render and leave a permanently blank window.
+describe("malformed persisted values", () => {
+  it("degrades a bad session to an empty one instead of throwing", () => {
+    // A non-object and unparseable JSON both degrade to an empty session.
+    for (const bad of ["42", "{oops"]) {
+      localStorage.setItem("gitchef.session", bad);
+      expect(store.getSession()).toEqual({ paths: [], activePath: null });
+    }
+    // An activePath naming no restored tab is dropped: App hides the Home tab
+    // whenever it is set, so keeping it would render a blank window on launch.
+    localStorage.setItem("gitchef.session", '{"activePath":"/x"}');
+    expect(store.getSession()).toEqual({ paths: [], activePath: null });
+    localStorage.setItem("gitchef.session", JSON.stringify({ paths: ["/a"], activePath: "/gone" }));
+    expect(store.getSession()).toEqual({ paths: ["/a"], activePath: null });
+  });
+
+  it("drops non-string paths but keeps the good ones", () => {
+    localStorage.setItem("gitchef.session", JSON.stringify({ paths: ["/a", 7, null, "/b"], activePath: "/a" }));
+    expect(store.getSession()).toEqual({ paths: ["/a", "/b"], activePath: "/a" });
+  });
+
+  it("degrades bad recents to an empty list", () => {
+    localStorage.setItem("gitchef.recents", '{"not":"an array"}');
+    expect(store.getRecents()).toEqual([]);
+    localStorage.setItem("gitchef.recents", JSON.stringify([{ path: "/a", name: "a" }, null, { name: "no path" }]));
+    expect(store.getRecents()).toEqual([{ path: "/a", name: "a" }]);
+  });
+});

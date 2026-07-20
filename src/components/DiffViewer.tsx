@@ -97,7 +97,8 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified" }: Props
           const adds = lines.slice(d, a);
           for (let x = 0; x < Math.max(dels.length, adds.length); x++)
             out.push({ left: dels[x] ?? null, right: adds[x] ?? null });
-          k = a;
+          // Always advance: an unrecognised origin must not stall the loop.
+          k = a > k ? a : k + 1;
         }
       }
     });

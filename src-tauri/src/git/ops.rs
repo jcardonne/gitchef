@@ -1,4 +1,4 @@
-use super::{run_git, sequencer, workdir};
+use super::{literal, run_git, sequencer, workdir};
 use crate::error::{AppError, AppResult};
 use crate::git::repo;
 use git2::Repository;
@@ -182,7 +182,7 @@ pub fn save_commit_patch(repo: &Repository, sha: &str, dest: &str) -> AppResult<
 pub fn save_commit_file_patch(repo: &Repository, sha: &str, path: &str, dest: &str) -> AppResult<()> {
     let patch = run_git(
         workdir(repo)?,
-        &["diff-tree", "-p", "--no-commit-id", "-r", "--root", sha, "--", path],
+        &["diff-tree", "-p", "--no-commit-id", "-r", "--root", sha, "--", &literal(path)],
     )?;
     std::fs::write(dest, patch)?;
     Ok(())

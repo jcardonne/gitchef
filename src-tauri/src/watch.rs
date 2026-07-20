@@ -62,8 +62,8 @@ fn git_dirs(repo: &str) -> AppResult<Vec<PathBuf>> {
 
 /// Is this changed path worth a UI refresh? A git-dir write (refs/HEAD/index/new
 /// objects) always is. A working-tree write matters only if git doesn't ignore it
-/// - otherwise a build dir (node_modules, target, dist) churning would spam
-/// refreshes. Anything outside both trees is noise.
+/// (otherwise a build dir like node_modules, target or dist churning would spam
+/// refreshes). Anything outside both trees is noise.
 fn is_relevant_change(
     path: &Path,
     git_dirs: &[PathBuf],
@@ -77,7 +77,7 @@ fn is_relevant_change(
         Some(wd) if path.starts_with(wd) => {
             let rel = path.strip_prefix(wd).unwrap_or(path);
             // No repo handle (open failed) -> can't check ignore, treat as relevant.
-            repo.map_or(true, |r| !r.is_path_ignored(rel).unwrap_or(false))
+            repo.is_none_or(|r| !r.is_path_ignored(rel).unwrap_or(false))
         }
         _ => false,
     }

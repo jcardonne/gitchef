@@ -109,6 +109,12 @@ fn diff_to_files(diff: &git2::Diff, max: usize) -> AppResult<Vec<FileDiff>> {
 
         match line.origin() {
             'F' => {} // file header - skip, we already have the path
+            // libgit2's "\ No newline at end of file" markers (ADD_EOFNL '>',
+            // DEL_EOFNL '<', CONTEXT_EOFNL '='). They carry no content and no
+            // line numbers - git prints them as a note under the hunk, not as a
+            // diff line. Forwarding them made the split view render a stray '>'
+            // gutter row and broke the -/+ run pairing either side of them.
+            '>' | '<' | '=' => {}
             'H' => file.hunks.push(DiffHunk {
                 header: String::from_utf8_lossy(line.content()).trim_end().to_string(),
                 lines: Vec::new(),
@@ -347,7 +353,7 @@ pub fn diff_commits(repo: &Repository, a: &str, b: &str) -> AppResult<Vec<FileDi
 
 #[cfg(test)]
 mod tests {
-    use super::{file_content, MAX_DIFF_LINES};
+    use super::{file_content, file_diff, MAX_DIFF_LINES};
     use crate::git::run_git;
     use git2::Repository;
     use std::path::{Path, PathBuf};
@@ -367,6 +373,32 @@ mod tests {
     // cached index hides changes the git CLI made.
     fn fresh(dir: &Path) -> Repository {
         Repository::open(dir).unwrap()
+    }
+
+    /// A file with no trailing newline makes libgit2 emit "\ No newline at end
+    /// of file" pseudo-lines (origins '>', '<', '='). They must not reach the
+    /// UI: the split view's -/+ pairing loop cannot advance past such an origin
+    /// and spins forever, hanging the webview.
+    #[test]
+    fn eofnl_markers_are_not_emitted_as_diff_lines() {
+        let dir = tmp("eofnl");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("f.txt"), "a\nb").unwrap(); // no trailing newline
+        run_git(&dir, &["add", "f.txt"]).unwrap();
+        run_git(&dir, &["commit", "-m", "init"]).unwrap();
+        std::fs::write(dir.join("f.txt"), "a\nB").unwrap(); // still none
+
+        let fd = file_diff(&fresh(&dir), "f.txt", false, false).unwrap();
+        let origins: Vec<&str> =
+            fd.hunks.iter().flat_map(|h| h.lines.iter().map(|l| l.origin.as_str())).collect();
+        assert!(!origins.is_empty(), "the edit should produce diff lines: {origins:?}");
+        assert!(
+            origins.iter().all(|o| matches!(*o, " " | "+" | "-")),
+            "only real diff origins may reach the UI: {origins:?}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// Commit "v1", stage "v2\nv2b", then leave "v3" in the working tree, so all

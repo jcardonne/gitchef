@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { PALETTES, getDensity, setDensity, type Palette, type Theme, type Density } from "../theme";
 import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, getFetchIntervalMinutes, setFetchIntervalMinutes, notifyPrefs, type PullAction, type GraphColumnVisibility } from "../storage";
 import { SHORTCUT_SECTIONS, comboHint, keyLabel } from "../shortcuts";
+import { GRAPH_COLUMNS } from "./GraphView";
 import { useKeycapPresses } from "../useKeycapPresses";
 
 interface Props {
@@ -62,13 +63,17 @@ const SORTS: { label: string; asc: boolean; icon: ReactNode }[] = [
   { label: "Oldest first", asc: true, icon: gi(<path d="M12 19V5M6 11l6-6 6 6" />) },
 ];
 
-const COLUMNS: { key: keyof GraphColumnVisibility; label: string; icon: ReactNode }[] = [
-  { key: "graph", label: "Group", icon: gi(<><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></>) },
-  { key: "message", label: "Message", icon: gi(<path d="M4 7h16M4 12h16M4 17h9" />) },
-  { key: "author", label: "Author", icon: gi(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>) },
-  { key: "sha", label: "SHA", icon: gi(<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18" />) },
-  { key: "date", label: "Date", icon: gi(<><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></>) },
-];
+// Keys and labels come from GRAPH_COLUMNS so this panel can't drift from the
+// graph header again; only the icons are Settings' own.
+const COLUMN_ICONS: Record<keyof GraphColumnVisibility, ReactNode> = {
+  refs: gi(<><path d="M3 7h9l3 5-3 5H3z" /><circle cx="19" cy="12" r="2" /></>),
+  graph: gi(<><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></>),
+  message: gi(<path d="M4 7h16M4 12h16M4 17h9" />),
+  author: gi(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>),
+  sha: gi(<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18" />),
+  date: gi(<><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></>),
+};
+const COLUMNS = GRAPH_COLUMNS.map((c) => ({ ...c, icon: COLUMN_ICONS[c.key] }));
 
 const icon = (path: ReactNode) => (
   <svg className="settings-nav-icon" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

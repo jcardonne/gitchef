@@ -76,3 +76,16 @@ describe("extendBackoff", () => {
     expect(r.until).toBe(10_000);
   });
 });
+
+describe("shouldBackgroundFetch interval slack", () => {
+  const base = { minutes: 5, online: true, backoffUntil: 0 };
+  const PERIOD = 5 * 60_000;
+
+  // The interval timer and this throttle share a period, so a fetch stamped a
+  // few hundred ms off the tick (the focus path does exactly that) must not
+  // make the next tick miss - that silently doubles the effective period.
+  it("fires on a tick that lands a sliver early", () => {
+    expect(shouldBackgroundFetch({ ...base, now: PERIOD, lastFetch: 200 })).toBe(true);
+  });
+
+});
