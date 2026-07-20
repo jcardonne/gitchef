@@ -137,6 +137,11 @@ pub fn resolve(
                 None => {}
             }
         }
+        // Evict what `fresh` would no longer serve. Without this the map is
+        // append-only across every repo ever opened, and save_cache rewrites the
+        // whole file on each render that had a miss - an ever-growing O(all
+        // emails ever) disk write.
+        st.map.retain(|_, e| fresh(e, now));
         save_cache(&path, &st.map);
     }
     Ok(out)

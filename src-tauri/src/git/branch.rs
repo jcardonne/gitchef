@@ -25,7 +25,11 @@ pub fn list_branches(repo: &Repository) -> AppResult<Vec<BranchInfo>> {
     let mut out = Vec::new();
     for item in repo.branches(None)? {
         let (branch, btype) = item?;
-        let name = branch.name()?.unwrap_or_default().to_string();
+        // Skip, don't propagate: `name()` errs on a ref name that isn't valid
+        // UTF-8, and one legacy latin-1 branch would otherwise abort the whole
+        // listing and replace the sidebar with an error toast.
+        let Ok(Some(name)) = branch.name() else { continue };
+        let name = name.to_string();
         if name.is_empty() {
             continue;
         }

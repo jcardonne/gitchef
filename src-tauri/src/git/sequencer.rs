@@ -96,6 +96,17 @@ pub fn state(repo: &Repository) -> AppResult<SequencerState> {
 /// error.
 pub fn run_step(repo: &Repository, args: &[&str], envs: &[(&str, &str)]) -> AppResult<String> {
     let dir = workdir(repo)?;
+    // Snapshot the state BEFORE running. "Non-zero exit + repo in a sequencer
+    // state" only means "paused for conflicts" when THIS command created that
+    // state, or when it is a --continue/--skip/--abort driving the operation
+    // already in progress (which can pause again on the next conflict).
+    // Otherwise git refused to start precisely BECAUSE something was already in
+    // flight - `merge` during a paused rebase exits 128 - and reporting that as
+    // success made the UI claim a merge/pull/cherry-pick that never happened.
+    let was_running = kind_of(repo.state()).is_some();
+    let drives_existing = args
+        .iter()
+        .any(|a| matches!(*a, "--continue" | "--skip" | "--abort"));
     let mut cmd = std::process::Command::new("git");
     cmd.current_dir(dir).args(args);
     for (k, v) in envs {
@@ -111,7 +122,7 @@ pub fn run_step(repo: &Repository, args: &[&str], envs: &[(&str, &str)]) -> AppR
         return Ok(text);
     }
     // re-reads .git from disk, so it reflects the subprocess's mutations
-    if kind_of(repo.state()).is_some() {
+    if kind_of(repo.state()).is_some() && (!was_running || drives_existing) {
         return Ok(text); // paused for conflicts / edit - not a failure
     }
     Err(AppError::Msg(format!("git {}: {}", args.join(" "), text)))
@@ -139,7 +150,7 @@ pub fn act(repo: &Repository, action: &str) -> AppResult<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{act, state, SequencerKind};
+    use super::{act, run_step, state, SequencerKind};
     use crate::git::{conflict, ops, run_git};
     use git2::Repository;
     use std::path::{Path, PathBuf};
@@ -194,6 +205,39 @@ mod tests {
         assert!(state(&repo).unwrap().kind.is_none(), "rebase finished, tree clean");
         let f = std::fs::read_to_string(dir.join("f.txt")).unwrap();
         assert!(!f.contains("<<<<<<<"), "no conflict markers left: {f:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A command git REFUSES because an operation is already in progress exits
+    /// non-zero while the repo is still in a sequencer state - the same shape as
+    /// a conflict pause. It must surface as an error, not be reported to the UI
+    /// as a merge that succeeded.
+    #[test]
+    fn a_command_rejected_by_an_in_progress_operation_is_an_error() {
+        let dir = tmp("seq-busy");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        commit(&dir, "base\n", "base");
+        let main = run_git(&dir, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap().trim().to_string();
+        run_git(&dir, &["checkout", "-q", "-b", "feature"]).unwrap();
+        commit(&dir, "feature\n", "feature edit");
+        run_git(&dir, &["checkout", "-q", &main]).unwrap();
+        commit(&dir, "main\n", "main edit");
+        run_git(&dir, &["checkout", "-q", "feature"]).unwrap();
+
+        let repo = Repository::open(&dir).unwrap();
+        ops::rebase_onto(&repo, &main).unwrap(); // pauses on the conflict
+        assert!(state(&repo).unwrap().kind.is_some(), "precondition: rebase paused");
+
+        let repo = Repository::open(&dir).unwrap(); // stateless, like the real backend
+        let err = run_step(&repo, &["merge", &main], &[]);
+        assert!(err.is_err(), "a merge refused mid-rebase must not report success: {err:?}");
+
+        // The paused rebase itself is untouched and can still be driven.
+        let repo = Repository::open(&dir).unwrap();
+        assert!(state(&repo).unwrap().kind.is_some(), "the rebase is still paused");
+        act(&repo, "--abort").unwrap();
         std::fs::remove_dir_all(&dir).ok();
     }
 }
