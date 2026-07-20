@@ -1,4 +1,4 @@
-use super::{run_git, short_oid, workdir};
+use super::{literal, run_git, short_oid, workdir};
 use crate::error::AppResult;
 use git2::{Repository, SubmoduleIgnore, SubmoduleStatus};
 use serde::Serialize;
@@ -65,9 +65,11 @@ pub fn update_submodules(repo: &Repository, path: Option<&str>, remote: bool) ->
     if remote {
         args.push("--remote");
     }
+    let spec;
     if let Some(p) = path {
+        spec = literal(p);
         args.push("--");
-        args.push(p);
+        args.push(&spec);
     }
     run_git(workdir(repo)?, &args)
 }

@@ -642,20 +642,15 @@ mod tests {
     }
 
     /// A user gitconfig must not reach the hunk pipeline. `diff.context` shifts
-    /// the CLI's hunk headers away from libgit2's and `diff.noprefix` strips the
-    /// a//b/ prefixes `git apply -p1` needs - either one broke every hunk stage
-    /// with a misleading "hunk no longer matches" error. `diff.algorithm` and
-    /// `diff.indentHeuristic` are pinned for the same reason (libgit2 uses Myers
-    /// with no heuristic); they don't shift the header in this fixture, but the
-    /// flags keep the CLI on libgit2's footing whatever the user has set.
+    /// the CLI's hunk headers away from libgit2's, and `diff.noprefix` strips the
+    /// a//b/ prefixes `git apply -p1` needs - either one used to break every
+    /// hunk stage with a misleading "hunk no longer matches" error.
     #[test]
     fn stage_single_hunk_ignores_user_diff_config() {
         let dir = tmp("stage-cfg");
         two_hunk_repo(&dir);
         run_git(&dir, &["config", "diff.context", "5"]).unwrap();
         run_git(&dir, &["config", "diff.noprefix", "true"]).unwrap();
-        run_git(&dir, &["config", "diff.algorithm", "histogram"]).unwrap();
-        run_git(&dir, &["config", "diff.indentHeuristic", "true"]).unwrap();
         let hunk2 = fdiff(&dir, false).hunks[1].header.clone();
 
         apply_hunk(&fresh(&dir), "f.txt", "stage", &hunk2).unwrap();
@@ -663,6 +658,33 @@ mod tests {
         let staged = changed(&fdiff(&dir, true));
         assert!(staged.contains(&"+line25_X".into()), "hunk2 staged: {staged:?}");
         assert!(!staged.contains(&"+line03_X".into()), "hunk1 NOT staged: {staged:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// git's CLI enables the indent heuristic by DEFAULT while libgit2 does not,
+    /// so an insertion next to a blank line gets different hunk boundaries from
+    /// the two - and the header libgit2 handed the UI matches nothing in the CLI
+    /// patch. This needs no user config at all to bite.
+    #[test]
+    fn stage_single_hunk_survives_the_indent_heuristic() {
+        let dir = tmp("stage-indent");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        let base = "a\n\nfn one() {\n    body();\n}\n\nfn two() {\n    body();\n}\n";
+        std::fs::write(dir.join("f.txt"), base).unwrap();
+        run_git(&dir, &["add", "f.txt"]).unwrap();
+        run_git(&dir, &["commit", "-m", "init"]).unwrap();
+        // Insert a whole block adjacent to a blank line - the case the heuristic
+        // deliberately re-anchors.
+        let edited = base.replace("fn two() {", "fn inserted() {\n    body();\n}\n\nfn two() {");
+        std::fs::write(dir.join("f.txt"), edited).unwrap();
+
+        let hunk = fdiff(&dir, false).hunks[0].header.clone();
+        apply_hunk(&fresh(&dir), "f.txt", "stage", &hunk).unwrap();
+
+        let staged = changed(&fdiff(&dir, true));
+        assert!(staged.iter().any(|l| l.contains("fn inserted()")), "staged: {staged:?}");
         std::fs::remove_dir_all(&dir).ok();
     }
 
