@@ -17,6 +17,13 @@ async function openRepo(dir) {
     await browser.pause(1500);
     try {
       await $(".change-list .file-row").waitForExist({ timeout: 30000 });
+      // The banner belongs to a COMPLETE load of this fixture (it is always
+      // paused mid-rebase), so wait for it here, inside the retry. Waiting in
+      // the first it() instead meant a launch that painted the file list but not
+      // yet the banner failed the whole spec rather than retrying the reload -
+      // and now that the release is gated on ci, an e2e flake silently blocks
+      // the release itself.
+      await $(".seq-banner").waitForExist({ timeout: 20000 });
       return;
     } catch (e) {
       lastErr = e;
@@ -32,9 +39,9 @@ describe("GitChef conflict resolution", () => {
   });
 
   it("shows the sequencer banner with a conflict to resolve", async () => {
-    await $(".seq-banner").waitForExist({ timeout: 20000 });
-    // Paused with conflicts: the banner is in its blocking state and Continue is
-    // disabled until the file is resolved.
+    // openRepo already waited for the banner to exist; what this owns is its
+    // STATE - paused with conflicts, so it's blocking and Continue is disabled
+    // until the file is resolved.
     await expect($(".seq-banner.has-conflicts")).toExist();
     const cont = await $(".seq-banner .mini-btn.primary");
     await expect(cont).toHaveAttribute("disabled");
