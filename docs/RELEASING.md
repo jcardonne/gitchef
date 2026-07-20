@@ -188,6 +188,14 @@ pnpm tauri icon app-icon-tile.png
 
 Done:
 
+- **No half-published releases.** semantic-release publishes the GitHub Release
+  the moment it tags - before a single bundle is built - so a failed build used
+  to leave a live Release page with missing or partial installers for users to
+  download. The `version` job now immediately flips it to a **draft**, and the
+  `finalize` job publishes it only after every bundle is attached AND the
+  updater manifest is live on R2. So by the time the Release page is visible,
+  auto-update already works for that version. If anything fails in between,
+  `report-incomplete` states the recovery instead of leaving a puzzle.
 - **The release is gated on `ci`.** `release.yml` triggers on `workflow_run`
   (workflow `ci`, conclusion `success`, branch `main`), not on `push`. It used to
   run in PARALLEL with `ci`, so a commit that failed the tests could still be
@@ -240,13 +248,15 @@ Still open:
      not an empty string).
   5. Cut a throwaway patch release and confirm an installed client updates. Only
      then destroy the old key.
-- **The tag and GitHub Release are published before the builds run.** The
-  `version` job tags and creates the Release, then `build` compiles; with
-  `fail-fast: false` and no rollback, a failed build leaves `main` bumped and a
-  Release page live with missing or partial installers. Lower risk now that a
-  green `ci` is a precondition, but the fix is to publish the Release from a
-  final job gated on `build`, or add a cleanup job that deletes the tag and
-  Release on failure.
+- **A failed build still leaves `main` bumped and tagged.** The Release page
+  itself is no longer exposed (see "No half-published releases" above), and
+  nothing reaches R2, so users are unaffected - but the version commit and tag
+  are already pushed by the time the build runs, and semantic-release cannot
+  un-push them. The `report-incomplete` job spells out the recovery: fix the
+  failure, delete the tag and its draft release, re-run. Fully closing this
+  would mean tagging from a final job instead of from semantic-release, which
+  means giving up its version computation - not worth it for a state that is
+  now invisible to users.
 
 ## Testing the flow end-to-end
 

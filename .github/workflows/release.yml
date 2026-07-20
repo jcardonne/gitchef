@@ -78,6 +78,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # semantic-release publishes the Release as soon as it tags, i.e. BEFORE a
+      # single bundle is built. A failed build then leaves a live Release page
+      # with no installers - or worse, a partial set - that users download.
+      # Hide it immediately; `finalize` publishes it once the bundles are up.
+      # `gh release upload` works fine against a draft.
+      - name: Hide the release until the bundles exist
+        if: steps.gate.outputs.ok == 'true' && steps.semantic.outputs.new_release_published == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.semantic.outputs.new_release_version }}
+        run: gh release edit "v$VERSION" --draft=true --repo "$GITHUB_REPOSITORY"
+
   build:
     needs: version
     if: needs.version.outputs.published == 'true'
@@ -155,6 +167,22 @@ jobs:
           workspaces: src-tauri
 
       - run: pnpm install --frozen-lockfile
+
+      # The signing key gates silent auto-update on every installed machine, so
+      # a passphrase-less key means anyone who can read the secret can sign an
+      # update that every client executes unprompted. Warn (not fail - that
+      # would block releases until it's rotated) so the state stays visible in
+      # every run rather than only in the docs. Rotating it is an ORDERED
+      # procedure: see docs/RELEASING.md.
+      - name: Check the signing key is passphrase-protected
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        env:
+          KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEY_PASSWORD" ]; then
+            echo "::warning title=Updater signing key has no passphrase::A leak of TAURI_SIGNING_PRIVATE_KEY would be directly usable to sign an update that every client installs silently. See the rotation procedure in docs/RELEASING.md."
+          fi
 
       - name: Build + sign bundles
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
@@ -274,3 +302,36 @@ jobs:
           npx --yes "$WRANGLER" r2 object put \
             "${BUCKET}/latest.json" --file latest.json \
             --content-type application/json --remote
+
+  # The Release is created as a draft (see "Hide the release until the bundles
+  # exist") and only becomes visible here, once every bundle is attached and the
+  # updater manifest is live on R2. Ordering matters: `publish` writes
+  # latest.json, so by the time the Release page appears, auto-update already
+  # works for it.
+  finalize:
+    needs: [version, build, publish]
+    if: needs.version.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # flipping the release out of draft
+    steps:
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: gh release edit "v$VERSION" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+
+  # A failed build/publish leaves a half-finished state that isn't obvious from a
+  # red run: main is already version-bumped and tagged. Say so explicitly, with
+  # the recovery, rather than leaving it to be worked out later.
+  report-incomplete:
+    needs: [version, build, publish]
+    if: always() && needs.version.outputs.published == 'true' && contains(needs.*.result, 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain the half-released state
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          echo "::error::Release v${VERSION} did not complete. main is already bumped to ${VERSION} and tagged v${VERSION}, and the GitHub release is left as a DRAFT so no user can download a partial build. Nothing was published to R2, so installed clients are unaffected and stay on the previous version. To recover: fix the failure, delete tag v${VERSION} and its draft release, then re-run - semantic-release will recompute the same version."
+          exit 1
