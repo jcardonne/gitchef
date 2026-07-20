@@ -11,20 +11,22 @@ import { affectedPaths } from "../util";
 
 /// Conventional Commits types offered by the optional prefix helper.
 const COMMIT_TYPES = ["feat", "fix", "docs", "refactor", "perf", "test", "build", "ci", "chore", "style", "revert"];
-/// Color per conventional-commit type for the live preview badge (mirrors the
-/// graph's lane palette so the two feel like one system).
+/// Color per conventional-commit type for the live preview badge. Theme tokens,
+/// not literals: the badge paints `color: <this>` over a 16%-tint of itself, so
+/// a fixed dark-theme hex (the old `#9ece6a` etc.) fell to ~2:1 against the
+/// light theme's white background and the label all but vanished.
 const TYPE_COLORS: Record<string, string> = {
-  feat: "#9ece6a",
-  fix: "#f7768e",
-  docs: "#7dcfff",
-  refactor: "#e0af68",
-  perf: "#ff9e64",
-  test: "#7dcfff",
-  build: "#a0a4ad",
-  ci: "#a0a4ad",
-  chore: "#a0a4ad",
-  style: "#bb9af7",
-  revert: "#f7768e",
+  feat: "var(--add)",
+  fix: "var(--del)",
+  docs: "var(--accent)",
+  refactor: "var(--mod)",
+  perf: "var(--mod)",
+  test: "var(--accent)",
+  build: "var(--text-dim)",
+  ci: "var(--text-dim)",
+  chore: "var(--text-dim)",
+  style: "var(--accent)",
+  revert: "var(--del)",
 };
 
 interface Props {

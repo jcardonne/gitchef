@@ -154,6 +154,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     opts?: { initial?: string; cta?: string }
   ) => setNamePrompt({ title, placeholder, onSubmit, ...opts });
 
+  // Any modal/overlay on top owns the keyboard: the window-level key handlers
+  // below must not act on keystrokes meant for it. Declared up here so every
+  // handler's dependency array can see it.
+  const modalOpen =
+    paletteOpen || reflogOpen || prOpen || !!historyPath || !!rebasePlanBase || !!namePrompt;
+
   const loadedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
   const toastSeq = useRef(0);
@@ -163,7 +169,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const commitReq = useRef(0);
   const fileReq = useRef(0);
   const statsReq = useRef(0);
+  const graphReq = useRef(0);
   const rightRef = useRef<HTMLDivElement>(null);
+  const dragTeardown = useRef<(() => void) | null>(null);
   // Live mirror of `busy` for the auto-fetch interval's stale closure.
   const busyRef = useRef(false);
   // Epoch ms of the last background fetch, shared by the interval + fetch-on-focus
@@ -230,12 +238,20 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // in view, resolved by the backend (cached on disk) and merged in as they
   // arrive - upgrading the no-reply/Gravatar fallbacks. Skipped for repos whose
   // remote isn't a known provider.
+  // Keyed on the committer SET, not on `nodes`: every refresh calls setNodes with
+  // a fresh array, so depending on its identity re-resolved up to 500 authors
+  // through the rate-limited provider API on each commit, pull and external
+  // .git write - even when the committers hadn't changed at all.
+  const emailKey = useMemo(
+    () => [...new Set(nodes.map((n) => n.email).filter(Boolean))].sort().join("\n"),
+    [nodes]
+  );
   useEffect(() => {
     if (repo?.provider !== "github" && repo?.provider !== "gitlab") return;
     // Don't add to a rate-limit we're already backing off from (avatars hit the
     // same API bucket). They fill in on the next graph change after it clears.
     if (Date.now() < backoffUntil.current) return;
-    const emails = [...new Set(nodes.map((n) => n.email).filter(Boolean))];
+    const emails = emailKey ? emailKey.split("\n") : [];
     if (emails.length === 0) return;
     let alive = true;
     api.commitAvatars(path, emails).then(
@@ -249,7 +265,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     return () => {
       alive = false;
     };
-  }, [path, repo?.provider, nodes]);
+  }, [path, repo?.provider, emailKey]);
 
   // Stable ctx identity so the avatar effects only re-run when the resolved
   // account map actually changes.
@@ -349,6 +365,17 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         setActiveAction(null);
       }
     },
+    [notify]
+  );
+
+  // Read-only loads (a diff, file content, blame, a deeper graph page) must NOT
+  // take run()'s mutex. They fire from the same click or effect flush as a git
+  // op, and run() returns early while one is in flight - so the load is dropped
+  // silently and the panel keeps showing the previous file's body under the new
+  // file's header. There is no .git lock to serialize here; the per-request id
+  // guards at each call site already drop a stale response. Errors still toast.
+  const load = useCallback(
+    (fn: () => Promise<void>) => void fn().catch((e) => notify(String(e), true)),
     [notify]
   );
 
@@ -503,11 +530,20 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     const up = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+      dragTeardown.current = null;
       setRightWidth(w);
     };
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
+    // Closing the tab mid-drag (Cmd+W still fires) unmounts us before mouseup,
+    // so hold the teardown for the unmount effect - otherwise both listeners
+    // outlive the component and the eventual mouseup writes to a detached ref.
+    dragTeardown.current = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
   };
+  useEffect(() => () => dragTeardown.current?.(), []);
 
   // Load repo data on first activation (lazy: background tabs never hit the
   // backend until focused). `path`/`refresh`/`onLoaded` are intentionally NOT in
@@ -618,6 +654,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   }, [isActive, enterBackoff]);
 
   const closeDiff = () => {
+    // Invalidate any in-flight file diff: the request-id guards only order
+    // request-vs-request, so without this a slow response for the file we just
+    // closed lands afterwards and re-opens the panel.
+    fileReq.current++;
     setDiff(null);
     setSelectedPath(null);
     setWorkSel(null);
@@ -637,7 +677,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // the compareView header takes render priority over the commit detail.
   const runCompare = (a: string, b: string) => {
     const req = ++commitReq.current;
-    run(async () => {
+    load(async () => {
       setSelectedCommit(b);
       setCompareMode(false); // this is a two-commit compare, not vs working dir
       setCompareView({ a, b });
@@ -662,7 +702,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       return;
     }
     const req = ++commitReq.current;
-    run(async () => {
+    load(async () => {
       setSelectedCommit(id);
       setRightTab("commit");
       setSelectedPath(null);
@@ -683,12 +723,19 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       setReveal({ id, seq: ++revealSeq.current });
       return;
     }
-    run(async () => {
+    // Own request id: this is the one load() site that loops, so two of them
+    // started from the same base would interleave and let the slower round's
+    // smaller graph land last - shrinking `nodes` and regressing `graphLimit`
+    // below what was actually loaded, after which the reveal targets a commit
+    // that is no longer there.
+    const req = ++graphReq.current;
+    load(async () => {
       let limit = graphLimit;
       let found = false;
       for (let round = 0; round < 40; round++) {
         limit += 500;
         const g = await api.commitGraph(path, limit);
+        if (graphReq.current !== req) return; // a newer deep search took over
         setGraphLimit(limit);
         setNodes(g);
         if (g.some((n) => n.id === id)) {
@@ -712,7 +759,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     setSelectedPath(p);
     setWorkSel({ path: p, staged });
     const req = ++fileReq.current;
-    run(async () => {
+    load(async () => {
       const d = await api.fileDiff(path, p, staged);
       if (fileReq.current === req) setDiff(d);
     });
@@ -723,6 +770,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       closeDiff();
       return;
     }
+    fileReq.current++; // this sets `diff` synchronously; drop any in-flight fetch
     setSelectedPath(file.path);
     setWorkSel(null);
     setDiff(file);
@@ -764,7 +812,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     const { rev, staged } =
       previewMode === "blame" ? { rev: blameRev(), staged: false } : fileContentSource();
     let cancelled = false;
-    run(async () => {
+    load(async () => {
       const c = await api.fileContent(path, selectedPath, rev, staged);
       if (!cancelled) setFileContent(c);
     });
@@ -780,7 +828,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     const rev = blameRev();
     setBlame([]); // drop stale hunks so they can't pair with the new file's content
     let cancelled = false;
-    run(async () => {
+    load(async () => {
       const h = await api.fileBlame(path, selectedPath, rev);
       if (!cancelled) setBlame(h);
     });
@@ -901,7 +949,13 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
 
   // Keyboard: push / pull on the active tab.
   useEffect(() => {
-    if (!isActive) return;
+    // modalOpen: Cmd+Shift+P is command-palette muscle memory, and without this
+    // guard hitting it over the "Create pull request" modal fires a real push
+    // whose toast is then hidden under the overlay. Deliberately NO
+    // INPUT/TEXTAREA check: Cmd/Ctrl+Shift+P/L aren't text-editing keystrokes,
+    // and the commit-message textarea is focused for the whole write-then-push
+    // flow, so skipping on it would break the app's most common sequence.
+    if (!isActive || modalOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
       const k = e.key.toLowerCase();
@@ -915,7 +969,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isActive, onPush, onPullAction]);
+  }, [isActive, onPush, onPullAction, modalOpen]);
 
   // Auto-fetch: re-read the setting on a prefs change, and run a background
   // fetch on the active tab at the chosen interval. Skips a tick while an op is
@@ -1695,7 +1749,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // tree view, stepping into a manually-collapsed folder still previews the file
   // but shows no row highlight (the row is unmounted) - acceptable edge case.
   useEffect(() => {
-    if (!isActive || rightTab !== "commit" || commitFiles.length === 0) return;
+    // modalOpen: ReflogModal/FileHistoryModal register their own window Escape
+    // handlers and are not INPUT/TEXTAREA, so without this the Escape that
+    // closes a modal ALSO deselects the commit and clears its file list behind it.
+    if (!isActive || rightTab !== "commit" || commitFiles.length === 0 || modalOpen) return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -1719,15 +1776,13 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, rightTab, commitFiles, selectedPath, selectedCommit]);
+  }, [isActive, rightTab, commitFiles, selectedPath, selectedCommit, modalOpen]);
 
   // Escape closes an open file preview, whatever opened it. Runs in the capture
   // phase and stops propagation so it beats the commit-files handler above (which
   // would otherwise deselect the whole commit); typing in an input is left alone.
   // Bails while any modal/overlay is open so it doesn't swallow the Escape that
   // should close the modal on top (it, not the diff behind it, must win).
-  const modalOpen =
-    paletteOpen || reflogOpen || prOpen || !!historyPath || !!rebasePlanBase || !!namePrompt;
   useEffect(() => {
     if (!isActive || !diff || modalOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -1856,7 +1911,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
               </button>
               <div className="preview-header">
-                <span className="preview-path">{selectedPath}</span>
+                <span className="preview-path" title={selectedPath ?? undefined}>
+                  {selectedPath}
+                </span>
                 <div className="seg" role="tablist">
                   <button
                     className={previewMode === "diff" ? "active" : ""}
@@ -1902,6 +1959,16 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                     Load full file
                   </button>
                 )}
+                {/* A commit's diff has no "load the rest" path (that reads the
+                    working tree), but the user still has to be told the diff
+                    stops early - otherwise it just ends mid-file silently. */}
+                {(previewMode === "diff" || previewMode === "split") &&
+                  diff?.truncated &&
+                  !workSel && (
+                    <span className="preview-note" title="This diff was capped; the rest is not shown.">
+                      Truncated
+                    </span>
+                  )}
               </div>
               {previewMode === "file" ? (
                 <FileView content={fileContent} />

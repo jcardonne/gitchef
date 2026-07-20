@@ -1,0 +1,11 @@
+version: 2
+
+# Actions are SHA-pinned; this keeps the pins from rotting. The `chore` prefix
+# keeps bump PRs out of semantic-release.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore

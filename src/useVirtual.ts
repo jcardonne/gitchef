@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const OVERSCAN = 20;
 
@@ -13,33 +13,44 @@ const OVERSCAN = 20;
 /// underlying content changes (a newly selected file/diff); omit it to keep the
 /// scroll position across updates (the file list as you stage rows).
 export function useVirtual(total: number, rowH: number, resetKey?: unknown) {
-  const ref = useRef<HTMLDivElement>(null);
+  // Callback ref, not a plain object ref: callers render an empty state instead
+  // of the scroll container until their content arrives, so on the first render
+  // there is no node. An object ref can't announce the node appearing later, and
+  // a mount-only effect would leave viewportH at 0 forever - only the overscan
+  // rows would render and scrolling would do nothing. React calls this on
+  // mount/unmount, which re-runs the effect at the right moment. `el` is exposed
+  // for callers that need to read/query the node (see ChangeList).
+  const el = useRef<HTMLDivElement | null>(null);
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  const ref = useCallback((n: HTMLDivElement | null) => {
+    el.current = n;
+    setNode(n);
+  }, []);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
 
   // Track the scroll viewport so only the rows in/around it stay mounted.
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const onScroll = () => setScrollTop(el.scrollTop);
-    el.addEventListener("scroll", onScroll);
-    const ro = new ResizeObserver(() => setViewportH(el.clientHeight));
-    ro.observe(el);
-    setViewportH(el.clientHeight);
+    if (!node) return;
+    const onScroll = () => setScrollTop(node.scrollTop);
+    node.addEventListener("scroll", onScroll);
+    const ro = new ResizeObserver(() => setViewportH(node.clientHeight));
+    ro.observe(node);
+    setViewportH(node.clientHeight);
     return () => {
-      el.removeEventListener("scroll", onScroll);
+      node.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
-  }, []);
+  }, [node]);
 
   // Jump back to the top when the underlying content changes. With no resetKey
   // this runs only on mount (a no-op), preserving scroll across updates.
   useEffect(() => {
-    if (ref.current) ref.current.scrollTop = 0;
+    if (el.current) el.current.scrollTop = 0;
     setScrollTop(0);
   }, [resetKey]);
 
   const start = Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN);
   const end = Math.min(total, Math.ceil((scrollTop + viewportH) / rowH) + OVERSCAN);
-  return { ref, start, end, scrollTop, padTop: start * rowH, padBottom: (total - end) * rowH };
+  return { ref, el, start, end, scrollTop, padTop: start * rowH, padBottom: (total - end) * rowH };
 }

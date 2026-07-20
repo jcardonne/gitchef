@@ -22,6 +22,16 @@ pub fn workdir(repo: &git2::Repository) -> AppResult<&Path> {
         .ok_or_else(|| AppError::Msg("bare repository has no working directory".into()))
 }
 
+/// Wrap a repo-relative path so git treats it as a literal filename, not a
+/// pathspec pattern. Everything after `--` is a PATHSPEC: a real file named
+/// `foo[1].txt` or `report(*).md` otherwise also matches its neighbours, so
+/// `checkout --ours -- <path>` overwrites them, `stash push -- <path>` stashes
+/// them away, and a diff returns the wrong file's patch. Use this at every site
+/// that passes a user-supplied path to the git CLI.
+pub fn literal(path: &str) -> String {
+    format!(":(literal){path}")
+}
+
 /// First 7 hex chars of an object id, for display.
 pub fn short_oid(oid: git2::Oid) -> String {
     oid.to_string().chars().take(7).collect()

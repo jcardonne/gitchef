@@ -25,7 +25,12 @@ pub fn list_branches(repo: &Repository) -> AppResult<Vec<BranchInfo>> {
     let mut out = Vec::new();
     for item in repo.branches(None)? {
         let (branch, btype) = item?;
-        let name = branch.name()?.unwrap_or_default().to_string();
+        // Skip, don't propagate: `name()` errs when libgit2 can't read the ref
+        // at all, and one bad entry would otherwise abort the whole listing and
+        // replace the sidebar with an error toast. (A non-UTF-8 name yields
+        // Ok(None), which the empty check below already skipped.)
+        let Ok(Some(name)) = branch.name() else { continue };
+        let name = name.to_string();
         if name.is_empty() {
             continue;
         }

@@ -38,7 +38,9 @@ export default function SequencerBanner({
     if (state.interactive) detail += " (interactive)";
     if (state.head_name) detail += ` ${state.head_name}`;
     if (state.onto) detail += ` onto ${state.onto}`;
-    if (state.total) detail += ` - step ${state.current}/${state.total}`;
+    // `current` is 0 when git hasn't written a step number yet - "step 0/N"
+    // reads like a stalled rebase, so say nothing until there's a real step.
+    if (state.total && state.current) detail += ` - step ${state.current}/${state.total}`;
   }
 
   return (

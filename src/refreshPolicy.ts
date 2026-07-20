@@ -14,6 +14,13 @@ export interface BackgroundFetchState {
   backoffUntil: number;
 }
 
+/// Tolerance on the "one interval has passed" test. The timer period and this
+/// throttle are the same value, so a fetch that landed slightly off the tick -
+/// which the focus path does on every tab activation - would leave the next tick
+/// a few hundred ms short, skip it, and silently double the effective period
+/// (a 5-minute setting fetching every 10). Well under the 1-minute minimum.
+const INTERVAL_SLACK_MS = 5_000;
+
 /// Whether a background fetch should fire now: auto-fetch on, online, not inside a
 /// rate-limit backoff, and at least one interval since the last fetch (so the
 /// interval tick and a focus refresh share one throttle instead of double-firing).
@@ -22,7 +29,7 @@ export function shouldBackgroundFetch(s: BackgroundFetchState): boolean {
     s.minutes > 0 &&
     s.online &&
     s.now >= s.backoffUntil &&
-    s.now - s.lastFetch >= s.minutes * 60_000
+    s.now - s.lastFetch >= s.minutes * 60_000 - INTERVAL_SLACK_MS
   );
 }
 

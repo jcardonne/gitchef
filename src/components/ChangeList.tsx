@@ -100,7 +100,9 @@ function ChangeList({
 
   // Fixed-row windowing shared with FileView/DiffViewer. No resetKey: the list
   // keeps its scroll position as rows are staged in/out.
-  const { ref: listRef, start, end, scrollTop, padTop, padBottom } = useVirtual(rows.length, ROW_H);
+  // `listRef` goes on the container; `listEl` is the node itself, for the
+  // scroll-into-view / focus queries below.
+  const { ref: listRef, el: listEl, start, end, scrollTop, padTop, padBottom } = useVirtual(rows.length, ROW_H);
 
   // Virtualization unmounts off-screen rows, so positional focus no longer
   // works. Scroll the target row into the window, then focus it once it mounts
@@ -108,7 +110,7 @@ function ChangeList({
   const flushFocus = () => {
     const t = pendingFocus.current;
     if (t == null) return;
-    const node = listRef.current?.querySelector<HTMLElement>(`.file-row[data-idx="${t}"]`);
+    const node = listEl.current?.querySelector<HTMLElement>(`.file-row[data-idx="${t}"]`);
     if (node) {
       node.focus();
       pendingFocus.current = null;
@@ -116,7 +118,7 @@ function ChangeList({
   };
   const focusFile = (target: number) => {
     pendingFocus.current = target;
-    const el = listRef.current;
+    const el = listEl.current;
     if (el) {
       const top = (rowIndexOf.get(orderedFiles[target]) ?? target) * ROW_H;
       let want = el.scrollTop;
@@ -197,7 +199,7 @@ function ChangeList({
         className={`file-row${selected.has(keyOf(f)) ? " selected" : ""}${recentlyMoved?.has(f.path) ? " just-moved" : ""}`}
         style={{ paddingLeft: BASE_PAD + depth * INDENT }}
         data-idx={index}
-        title={f.old_path ? `${f.old_path} → ${f.path}` : undefined}
+        title={f.old_path ? `${f.old_path} → ${f.path}` : f.path}
         onClick={(e) => handleClick(f, index, e)}
         tabIndex={0}
         onKeyDown={(e) => handleKey(f, index, e)}

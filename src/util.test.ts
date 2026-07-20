@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { affectedPaths, avatarUrl, edgePath, isRateLimited, noreplyAvatarUrl, rateLimitBackoffMs } from "./util";
+import { affectedPaths, avatarUrl, edgePath, isRateLimited, noreplyAvatarUrl, rateLimitBackoffMs, relativeTime } from "./util";
 import type { FileStatus } from "./types";
 
 describe("noreplyAvatarUrl", () => {
@@ -145,5 +145,32 @@ describe("rateLimitBackoffMs", () => {
   });
   it("falls back to the default when no hint is present", () => {
     expect(rateLimitBackoffMs("API rate limit exceeded")).toBe(15 * 60_000);
+  });
+});
+
+describe("relativeTime", () => {
+  const now = () => Date.now() / 1000;
+
+  it("formats each bucket", () => {
+    expect(relativeTime(now() - 5)).toBe("just now");
+    expect(relativeTime(now() - 5 * 60)).toBe("5m ago");
+    expect(relativeTime(now() - 3 * 3600)).toBe("3h ago");
+    expect(relativeTime(now() - 4 * 86400)).toBe("4d ago");
+    expect(relativeTime(now() - 90 * 86400)).toBe("3mo ago");
+    expect(relativeTime(now() - 800 * 86400)).toBe("2y ago");
+  });
+
+  // A recents entry written by an older schema deserializes to undefined ->
+  // NaN, which used to fall through every comparison and render "NaN y ago".
+  it("renders nothing for a non-finite timestamp", () => {
+    expect(relativeTime(NaN)).toBe("");
+    expect(relativeTime(undefined as unknown as number)).toBe("");
+  });
+
+  // Characterizing existing behaviour, not a change: clock skew and rewritten
+  // author dates do produce future stamps, and "just now" is the intended
+  // rendering. Pinned so a later refactor can't turn it into "-1m ago".
+  it("treats a future timestamp as just now, never a negative age", () => {
+    expect(relativeTime(now() + 3600)).toBe("just now");
   });
 });

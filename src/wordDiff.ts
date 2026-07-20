@@ -25,8 +25,19 @@ export function wordDiff(oldText: string, newText: string): { del: Segment[]; ad
 
 // Split into runs of whitespace, identifier characters, and single punctuation,
 // so highlighting lands on word boundaries rather than individual characters.
+// Unicode-aware (`u`): without it the punctuation branch matches one UTF-16
+// code unit, so an emoji is split across two tokens and a segment can end on a
+// lone surrogate - which renders as a replacement character.
+//
+// The alternation must be exhaustive, because anything it fails to match is
+// silently DROPPED from the diff row. A word therefore carries its combining
+// marks (macOS hands us NFD text, where "café" is "cafe" + U+0301, and matching
+// only `\p{L}` would strip the accent), `\P{M}\p{M}*` keeps any other code point
+// with its marks, and the final `[\s\S]` catches a stray leading mark that
+// starts no cluster. Verified to tokenize plain ASCII exactly as the previous
+// expression did.
 function tokenize(s: string): string[] {
-  return s.match(/\s+|[A-Za-z0-9_]+|[^\sA-Za-z0-9_]/g) ?? [];
+  return s.match(/\s+|[\p{L}\p{N}_][\p{L}\p{N}_\p{M}]*|\P{M}\p{M}*|[\s\S]/gu) ?? [];
 }
 
 // LCS over tokens, then backtrack to flag the longest common subsequence as
