@@ -97,7 +97,11 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified" }: Props
           const adds = lines.slice(d, a);
           for (let x = 0; x < Math.max(dels.length, adds.length); x++)
             out.push({ left: dels[x] ?? null, right: adds[x] ?? null });
-          k = a;
+          // An origin that is neither " ", "+" nor "-" leaves a === k, so
+          // assigning k = a would spin forever and hang the webview. The backend
+          // drops the only such origins libgit2 emits, but never let an unknown
+          // one freeze the app: skip the line instead.
+          k = a > k ? a : k + 1;
         }
       }
     });
