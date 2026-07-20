@@ -1,15 +1,11 @@
 version: 2
 
-# The workflows pin every third-party action to a full commit SHA (a moving tag
-# is controlled by its owner, and one release step holds the updater signing
-# key). Pinning without tracking just means running stale, unpatched actions -
-# so let Dependabot open the bump PRs. It rewrites the SHA and the `# vN`
-# comment together, and ci gates the PR like any other change.
+# Actions are SHA-pinned; this keeps the pins from rotting. The `chore` prefix
+# keeps bump PRs out of semantic-release.
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
     commit-message:
       prefix: chore
