@@ -1,4 +1,4 @@
-use super::{run_git, run_git_stdin, workdir};
+use super::{literal, run_git, run_git_stdin, workdir};
 use crate::error::{AppError, AppResult};
 use git2::{build::CheckoutBuilder, ObjectType, Repository};
 use std::io::Write;
@@ -39,7 +39,11 @@ pub fn stage_paths(repo: &Repository, paths: Vec<String>) -> AppResult<()> {
     for p in &paths {
         let rel = Path::new(p);
         // Path gone from disk -> a staged deletion; otherwise stage its content.
-        if wd.join(p).exists() {
+        // symlink_metadata, not exists(): the latter follows the link, so a
+        // dangling symlink (common in dotfiles repos) would look deleted, and
+        // remove_path on a path that was never in the index errors out - failing
+        // the whole batch, so "Stage all" would stage nothing at all.
+        if wd.join(p).symlink_metadata().is_ok() {
             index.add_path(rel)?;
         } else {
             index.remove_path(rel)?;
@@ -131,6 +135,33 @@ fn carve_hunk(patch: &str, target: &str) -> AppResult<(String, String)> {
     Ok((header, hunk))
 }
 
+/// `git diff` for the hunk pipeline, pinned so the patch has the exact shape
+/// `carve_hunk` and `git apply -p1` expect no matter what the user's gitconfig
+/// says. `diff.context` (header offsets stop matching libgit2's `-U3` headers),
+/// `diff.noprefix` (apply rejects the patch), `diff.external` and a textconv
+/// attribute (no usable patch at all) each otherwise break EVERY hunk
+/// stage/unstage/discard with a misleading "hunk no longer matches" error. The
+/// path goes through as a LITERAL pathspec so a filename containing glob
+/// metacharacters (`foo[1].txt`) can't drag in another file's hunks and stage
+/// the wrong file.
+fn pinned_diff(dir: &Path, staged: bool, path: &str) -> AppResult<String> {
+    let mut args = vec![
+        "diff",
+        "-U3",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+    ];
+    if staged {
+        args.push("--cached");
+    }
+    let spec = literal(path);
+    args.push("--");
+    args.push(&spec);
+    run_git(dir, &args)
+}
+
 /// Stage, unstage, or discard a single hunk. Rather than reconstruct a patch
 /// (fragile around "\ No newline" markers), carve the matching hunk out of git's
 /// own `git diff` output and pipe it back through `git apply`:
@@ -139,14 +170,14 @@ fn carve_hunk(patch: &str, target: &str) -> AppResult<(String, String)> {
 ///   discard - worktree-vs-index diff, reverse-applied to the working tree
 pub fn apply_hunk(repo: &Repository, path: &str, action: &str, hunk_header: &str) -> AppResult<()> {
     let dir = workdir(repo)?;
-    let (diff_args, apply_args): (&[&str], &[&str]) = match action {
-        "stage" => (&["diff", "--", path], &["apply", "--cached"]),
-        "unstage" => (&["diff", "--cached", "--", path], &["apply", "--cached", "--reverse"]),
-        "discard" => (&["diff", "--", path], &["apply", "--reverse"]),
+    let (staged, apply_args): (bool, &[&str]) = match action {
+        "stage" => (false, &["apply", "--cached"]),
+        "unstage" => (true, &["apply", "--cached", "--reverse"]),
+        "discard" => (false, &["apply", "--reverse"]),
         other => return Err(AppError::Msg(format!("unknown hunk action: {other}"))),
     };
     let target = hunk_key(hunk_header).ok_or_else(|| AppError::Msg("malformed hunk header".into()))?;
-    let patch = run_git(dir, diff_args)?;
+    let patch = pinned_diff(dir, staged, path)?;
     let (header, hunk) = carve_hunk(&patch, target)?;
     run_git_stdin(dir, apply_args, &format!("{header}{hunk}"))?;
     Ok(())
@@ -177,17 +208,14 @@ pub fn apply_lines(
 ) -> AppResult<()> {
     let dir = workdir(repo)?;
     let reverse = matches!(action, "discard" | "unstage");
-    let (diff_args, apply_args): (&[&str], &[&str]) = match action {
-        "stage" => (&["diff", "--", path], &["apply", "--cached", "--recount"]),
-        "unstage" => (
-            &["diff", "--cached", "--", path],
-            &["apply", "--cached", "--reverse", "--recount"],
-        ),
-        "discard" => (&["diff", "--", path], &["apply", "--reverse", "--recount"]),
+    let (staged, apply_args): (bool, &[&str]) = match action {
+        "stage" => (false, &["apply", "--cached", "--recount"]),
+        "unstage" => (true, &["apply", "--cached", "--reverse", "--recount"]),
+        "discard" => (false, &["apply", "--reverse", "--recount"]),
         other => return Err(AppError::Msg(format!("unknown line action: {other}"))),
     };
     let target = hunk_key(hunk_header).ok_or_else(|| AppError::Msg("malformed hunk header".into()))?;
-    let patch = run_git(dir, diff_args)?;
+    let patch = pinned_diff(dir, staged, path)?;
     let (header, hunk) = carve_hunk(&patch, target)?;
 
     // The "\ No newline at end of file" marker can't be repositioned correctly
@@ -315,12 +343,12 @@ pub fn ignore_path(repo: &Repository, pattern: &str) -> AppResult<()> {
 /// too; the pathspec keeps it scoped to just this file, so other untracked files
 /// are left alone.
 pub fn stash_file(repo: &Repository, path: &str) -> AppResult<String> {
-    run_git(workdir(repo)?, &["stash", "push", "--include-untracked", "--", path])
+    run_git(workdir(repo)?, &["stash", "push", "--include-untracked", "--", &literal(path)])
 }
 
 /// Write a unified diff for one file (staged + unstaged vs HEAD) to `dest`.
 pub fn save_patch(repo: &Repository, path: &str, dest: &str) -> AppResult<()> {
-    let patch = run_git(workdir(repo)?, &["diff", "HEAD", "--", path])?;
+    let patch = run_git(workdir(repo)?, &["diff", "HEAD", "--", &literal(path)])?;
     std::fs::write(dest, patch)?;
     Ok(())
 }
@@ -531,7 +559,7 @@ fn extract_commit_blob(repo: &Repository, sha: &str, path: &str) -> AppResult<St
 pub fn open_difftool(repo: &Repository, path: &str) -> AppResult<()> {
     Command::new("git")
         .current_dir(workdir(repo)?)
-        .args(["difftool", "--no-prompt", "--", path])
+        .args(["difftool", "--no-prompt", "--", &literal(path)])
         .spawn()?;
     Ok(())
 }
@@ -608,6 +636,77 @@ mod tests {
         assert!(!staged.contains(&"+line03_X".into()), "hunk1 NOT staged: {staged:?}");
         assert!(still.contains(&"+line03_X".into()), "hunk1 still unstaged: {still:?}");
         assert!(!still.contains(&"+line25_X".into()), "hunk2 left unstaged set: {still:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A user gitconfig must not reach the hunk pipeline. `diff.context` shifts
+    /// the CLI's hunk headers away from libgit2's, and `diff.noprefix` strips the
+    /// a//b/ prefixes `git apply -p1` needs - either one used to break every
+    /// hunk stage with a misleading "hunk no longer matches" error.
+    #[test]
+    fn stage_single_hunk_ignores_user_diff_config() {
+        let dir = tmp("stage-cfg");
+        two_hunk_repo(&dir);
+        run_git(&dir, &["config", "diff.context", "5"]).unwrap();
+        run_git(&dir, &["config", "diff.noprefix", "true"]).unwrap();
+        let hunk2 = fdiff(&dir, false).hunks[1].header.clone();
+
+        apply_hunk(&fresh(&dir), "f.txt", "stage", &hunk2).unwrap();
+
+        let staged = changed(&fdiff(&dir, true));
+        assert!(staged.contains(&"+line25_X".into()), "hunk2 staged: {staged:?}");
+        assert!(!staged.contains(&"+line03_X".into()), "hunk1 NOT staged: {staged:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A dangling symlink reads as "gone" to `Path::exists`, which made
+    /// `stage_paths` take the deletion branch and fail the WHOLE batch.
+    #[test]
+    #[cfg(unix)]
+    fn stage_paths_handles_a_broken_symlink_without_failing_the_batch() {
+        let dir = tmp("stage-symlink");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("real.txt"), "a\n").unwrap();
+        std::os::unix::fs::symlink("/nonexistent/target", dir.join("broken.link")).unwrap();
+
+        stage_paths(&fresh(&dir), vec!["broken.link".into(), "real.txt".into()]).unwrap();
+
+        let staged = run_git(&dir, &["diff", "--cached", "--name-only"]).unwrap();
+        assert!(staged.contains("real.txt"), "the rest of the batch must still stage: {staged:?}");
+        assert!(staged.contains("broken.link"), "the dangling symlink itself stages: {staged:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Everything after `--` is a PATHSPEC. A real file named `foo[1].txt` also
+    /// matches `foo1.txt` as a glob, so without `:(literal)` stashing one file
+    /// silently stashed its neighbour away too.
+    #[test]
+    fn a_glob_metacharacter_filename_only_affects_itself() {
+        let dir = tmp("glob-path");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("foo1.txt"), "neighbour\n").unwrap();
+        std::fs::write(dir.join("foo[1].txt"), "target\n").unwrap();
+        run_git(&dir, &["add", "-A"]).unwrap();
+        run_git(&dir, &["commit", "-m", "init"]).unwrap();
+        std::fs::write(dir.join("foo1.txt"), "neighbour edited\n").unwrap();
+        std::fs::write(dir.join("foo[1].txt"), "target edited\n").unwrap();
+
+        stash_file(&fresh(&dir), "foo[1].txt").unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("foo1.txt")).unwrap(),
+            "neighbour edited\n",
+            "the glob-matching neighbour must be left untouched"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("foo[1].txt")).unwrap(),
+            "target\n",
+            "the named file itself is stashed back to HEAD"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
