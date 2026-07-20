@@ -3,7 +3,7 @@
 //! user has diff3 markers); the UI picks a side per block and we rebuild the
 //! file from those choices, then stage it to mark the path resolved.
 
-use super::{run_git, workdir};
+use super::{literal, run_git, workdir};
 use crate::error::{AppError, AppResult};
 use git2::Repository;
 use serde::Serialize;
@@ -35,8 +35,21 @@ enum Region {
     Theirs,
 }
 
-/// Parse conflict markers out of `text` into ordered segments. Marker lines are
-/// matched by their 7-char prefix the way git writes them.
+/// Is this line a git conflict marker of the given kind? Git writes markers as
+/// EXACTLY seven marker chars, optionally followed by a space and a label. A
+/// bare `starts_with` would also swallow ordinary content - a Markdown setext
+/// heading underline (`==========`), an ASCII rule, a `|||||||||` table edge -
+/// and misparsing a content line as a marker makes `resolve()` write the file
+/// back with the user's real lines deleted. Tolerates a CRLF line ending.
+fn is_marker(line: &str, marker: &str) -> bool {
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    match line.strip_prefix(marker) {
+        Some(rest) => rest.is_empty() || rest.starts_with(' '),
+        None => false,
+    }
+}
+
+/// Parse conflict markers out of `text` into ordered segments.
 fn parse_text(text: &str) -> Vec<Segment> {
     let mut segments = Vec::new();
     let mut ctx: Vec<String> = Vec::new();
@@ -54,7 +67,7 @@ fn parse_text(text: &str) -> Vec<Segment> {
 
     for line in text.split('\n') {
         match region {
-            Region::Outside if line.starts_with("<<<<<<<") => {
+            Region::Outside if is_marker(line, "<<<<<<<") => {
                 flush_ctx(&mut ctx, &mut segments);
                 ours.clear();
                 base.clear();
@@ -62,13 +75,13 @@ fn parse_text(text: &str) -> Vec<Segment> {
                 has_base = false;
                 region = Region::Ours;
             }
-            Region::Ours if line.starts_with("|||||||") => {
+            Region::Ours if is_marker(line, "|||||||") => {
                 has_base = true;
                 region = Region::Base;
             }
-            Region::Ours if line.starts_with("=======") => region = Region::Theirs,
-            Region::Base if line.starts_with("=======") => region = Region::Theirs,
-            Region::Theirs if line.starts_with(">>>>>>>") => {
+            Region::Ours if is_marker(line, "=======") => region = Region::Theirs,
+            Region::Base if is_marker(line, "=======") => region = Region::Theirs,
+            Region::Theirs if is_marker(line, ">>>>>>>") => {
                 segments.push(Segment::Conflict {
                     ours: std::mem::take(&mut ours),
                     theirs: std::mem::take(&mut theirs),
@@ -164,7 +177,7 @@ pub fn resolve(repo: &Repository, path: &str, choices: &[String]) -> AppResult<(
     std::fs::write(&full, body)?;
     // `git add` clears the conflict's higher-stage index entries; libgit2's
     // index.add_path does too, but the CLI is the one with all the safety rails.
-    run_git(workdir(repo)?, &["add", "--", path])?;
+    run_git(workdir(repo)?, &["add", "--", &literal(path)])?;
     Ok(())
 }
 
@@ -177,8 +190,8 @@ pub fn take_side(repo: &Repository, path: &str, side: &str) -> AppResult<()> {
         other => return Err(AppError::Msg(format!("unknown side: {other}"))),
     };
     let dir = workdir(repo)?;
-    run_git(dir, &["checkout", flag, "--", path])?;
-    run_git(dir, &["add", "--", path])?;
+    run_git(dir, &["checkout", flag, "--", &literal(path)])?;
+    run_git(dir, &["add", "--", &literal(path)])?;
     Ok(())
 }
 
@@ -190,6 +203,49 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     const SAMPLE: &str = "keep\n<<<<<<< HEAD\nours line\n=======\ntheirs line\n>>>>>>> branch\ntail\n";
+
+    /// A conflict whose sides carry Markdown setext heading underlines - lines of
+    /// 10 `=` that are content, not markers. Parsing must key on the exact
+    /// 7-char marker, else the first underline is read as the separator and the
+    /// rest of the user's text is silently dropped when the block is resolved.
+    #[test]
+    fn long_runs_of_marker_chars_in_content_are_not_markers() {
+        let text = "intro\n\
+                    <<<<<<< HEAD\n\
+                    Ours Title\n\
+                    ==========\n\
+                    ours body\n\
+                    =======\n\
+                    Theirs Title\n\
+                    ==========\n\
+                    theirs body\n\
+                    >>>>>>> feature\n\
+                    tail\n";
+        let segments = parse_text(text);
+        let conflict = segments
+            .iter()
+            .find_map(|s| match s {
+                Segment::Conflict { ours, theirs, .. } => Some((ours, theirs)),
+                _ => None,
+            })
+            .expect("the block must parse as one conflict");
+        assert_eq!(conflict.0, &["Ours Title", "==========", "ours body"]);
+        assert_eq!(conflict.1, &["Theirs Title", "==========", "theirs body"]);
+    }
+
+    /// Markers still parse with a CRLF line ending and with no trailing label.
+    #[test]
+    fn markers_parse_with_crlf_and_without_labels() {
+        let text = "a\r\n<<<<<<<\r\nmine\r\n=======\r\nyours\r\n>>>>>>>\r\nb\r\n";
+        let ours = parse_text(text)
+            .into_iter()
+            .find_map(|s| match s {
+                Segment::Conflict { ours, .. } => Some(ours),
+                _ => None,
+            })
+            .expect("bare markers must still be recognised");
+        assert_eq!(ours, ["mine\r"]);
+    }
 
     fn tmp(tag: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
