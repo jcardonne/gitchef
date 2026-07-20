@@ -24,6 +24,15 @@ describe("wordDiff", () => {
     });
   });
 
+  it("never splits an astral character across segments", () => {
+    const r = wordDiff('const label = "done 🎉";', 'const label = "ok 🎈";');
+    // A lone surrogate in any segment renders as U+FFFD in the diff row.
+    for (const seg of [...r!.del, ...r!.add])
+      expect(seg.text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    expect(r!.del.map((s) => s.text).join("")).toBe('const label = "done 🎉";');
+    expect(r!.add.map((s) => s.text).join("")).toBe('const label = "ok 🎈";');
+  });
+
   it("bails out on pathologically long lines", () => {
     expect(wordDiff("a".repeat(500), "b")).toBeNull();
   });

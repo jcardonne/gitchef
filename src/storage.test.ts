@@ -125,3 +125,29 @@ describe("tab colors", () => {
     expect(store.getTabColors()).toEqual({ "/repos/a": "blue" });
   });
 });
+
+// A value written by an older schema (or a truncated write) must not reach
+// App's `session.paths.map(...)` useState initializer, which would throw on the
+// first render and leave a permanently blank window.
+describe("malformed persisted values", () => {
+  it("degrades a bad session to an empty one instead of throwing", () => {
+    for (const bad of ['"a string"', "42", "null", "[1,2]", '{"activePath":"/x"}', "{oops"]) {
+      localStorage.setItem("gitchef.session", bad);
+      const s = store.getSession();
+      expect(Array.isArray(s.paths)).toBe(true);
+      expect(() => s.paths.map((p) => p)).not.toThrow();
+    }
+  });
+
+  it("drops non-string paths but keeps the good ones", () => {
+    localStorage.setItem("gitchef.session", JSON.stringify({ paths: ["/a", 7, null, "/b"], activePath: "/a" }));
+    expect(store.getSession()).toEqual({ paths: ["/a", "/b"], activePath: "/a" });
+  });
+
+  it("degrades bad recents to an empty list", () => {
+    localStorage.setItem("gitchef.recents", '{"not":"an array"}');
+    expect(store.getRecents()).toEqual([]);
+    localStorage.setItem("gitchef.recents", JSON.stringify([{ path: "/a", name: "a" }, null, { name: "no path" }]));
+    expect(store.getRecents()).toEqual([{ path: "/a", name: "a" }]);
+  });
+});
