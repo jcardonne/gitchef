@@ -7,9 +7,21 @@ name: release
 # semantic-release computes the next version, bumps the 3 version files + tag,
 # then the same run builds signed bundles on each OS and uploads them to R2.
 # Commits without a release-worthy type (chore/docs/refactor/...) publish nothing.
+#
+# Gated on ci: this fires only AFTER the ci workflow finishes successfully for a
+# push to main. On `push` it would start in PARALLEL with ci, so a commit that
+# fails the test suite could still be tagged, published, and silently
+# auto-installed on every user's machine. semantic-release's own version commit
+# carries `[skip ci]`, so it runs no ci and cannot loop back into a release.
+#
+# Third-party actions are pinned to a full commit SHA, not a tag: a moving tag
+# is controlled by its owner, and one of the steps below holds the updater
+# signing key. Refresh them deliberately (see docs/RELEASING.md).
 
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main]
 
 # Least privilege at the top level; only the version job needs write (below).
@@ -19,6 +31,10 @@ permissions:
 jobs:
   version:
     runs-on: ubuntu-latest
+    # Only a GREEN ci run on a real push may release.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
     permissions:
       contents: write # semantic-release pushes the version commit + tag
       issues: write # semantic-release/github success comments
@@ -27,15 +43,34 @@ jobs:
       published: ${{ steps.semantic.outputs.new_release_published }}
       version: ${{ steps.semantic.outputs.new_release_version }}
     steps:
-      - uses: actions/checkout@v5
+      # The branch, not the validated SHA: semantic-release pushes the version
+      # commit, which needs a branch ref rather than a detached HEAD. The step
+      # below re-checks that the branch tip is still what ci actually validated.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
+          ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 0 # semantic-release needs full history + tags
-      - uses: actions/setup-node@v5
+      - name: Confirm main still points at the commit ci validated
+        id: gate
+        run: |
+          want='${{ github.event.workflow_run.head_sha }}'
+          have="$(git rev-parse HEAD)"
+          if [ "$want" = "$have" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            # Another push landed while ci ran. Releasing now would ship code
+            # this run never tested; that commit's own ci run releases it.
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::main moved on ($want -> $have); skipping. The newer commit's ci run will release it."
+          fi
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        if: steps.gate.outputs.ok == 'true'
         with:
           node-version: 24
       - name: Semantic release (version + tag)
         id: semantic
-        uses: cycjimmy/semantic-release-action@v5
+        if: steps.gate.outputs.ok == 'true'
+        uses: cycjimmy/semantic-release-action@ba330626c4750c19d8299de843f05c7aa5574f62 # v5
         with:
           extra_plugins: |
             @semantic-release/exec
@@ -63,7 +98,7 @@ jobs:
     permissions:
       contents: write # build attaches release installers + uploads artifacts
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           ref: v${{ needs.version.outputs.version }} # the bumped + tagged commit
           persist-credentials: false
@@ -82,6 +117,17 @@ jobs:
           sed -i.bak "s|https://REPLACE_WITH_R2_DEV_URL.r2.dev|${R2_PUBLIC_URL%/}|" \
             src-tauri/tauri.conf.json
           rm -f src-tauri/tauri.conf.json.bak
+          # sed exits 0 whether or not it substituted anything, so verify. Without
+          # this, a renamed or pre-replaced placeholder ships a dead updater
+          # endpoint and the release still completes green.
+          if grep -q 'REPLACE_WITH_R2_DEV_URL' src-tauri/tauri.conf.json; then
+            echo "::error::updater endpoint injection failed - the placeholder is still present."
+            exit 1
+          fi
+          grep -q "${R2_PUBLIC_URL%/}" src-tauri/tauri.conf.json || {
+            echo "::error::updater endpoint injection did not write \$R2_PUBLIC_URL."
+            exit 1
+          }
 
       - name: Install Linux build deps
         if: matrix.platform == 'ubuntu-22.04'
@@ -90,28 +136,28 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
             librsvg2-dev patchelf libgtk-3-dev libssl-dev build-essential libxdo-dev file
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
         with:
           version: 10
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
           cache: pnpm
 
       # Pinned (not @stable) to keep release builds on a known toolchain.
-      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: dtolnay/rust-toolchain@191af2e1955bbe165f9bbacff2d2438002dff4d4 # 1.96.0
         with:
           targets: ${{ matrix.rust-targets }}
 
-      - uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: src-tauri
 
       - run: pnpm install --frozen-lockfile
 
       - name: Build + sign bundles
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -131,7 +177,7 @@ jobs:
           \) -exec cp {} dist-updater/ \;
           ls -la dist-updater
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: updater-${{ matrix.platform }}
           path: dist-updater/*
@@ -183,16 +229,16 @@ jobs:
     permissions:
       contents: read # publish only reads the repo; R2 upload uses Cloudflare secrets
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 24
 
       - name: Download all updater artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: updater-*
           path: dist-updater
@@ -212,13 +258,19 @@ jobs:
           BUCKET: ${{ vars.R2_BUCKET }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          # Exact version, not the `@4` range: npx ignores pnpm settings, so the
+          # range resolved to whatever was newest at release time - defeating the
+          # 14-day minimumReleaseAge in pnpm-workspace.yaml, in a step that holds
+          # a Cloudflare token with write access to the bucket the updater reads.
+          # Bump deliberately, keeping the new version at least 14 days old.
+          WRANGLER=wrangler@4.107.0
           # Versioned binaries (skip the .sig - its content lives in the manifest).
           for f in dist-updater/*; do
             case "$f" in *.sig) continue ;; esac
-            npx --yes wrangler@4 r2 object put \
+            npx --yes "$WRANGLER" r2 object put \
               "${BUCKET}/v${VERSION}/$(basename "$f")" --file "$f" --remote
           done
           # The manifest the app polls, always at the bucket root.
-          npx --yes wrangler@4 r2 object put \
+          npx --yes "$WRANGLER" r2 object put \
             "${BUCKET}/latest.json" --file latest.json \
             --content-type application/json --remote
