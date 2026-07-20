@@ -170,7 +170,9 @@ function read<T>(key: string, fallback: T): T {
 }
 
 export function getRecents(): RecentRepo[] {
-  return read<RecentRepo[]>(RECENTS_KEY, []);
+  const list = read<unknown>(RECENTS_KEY, []);
+  if (!Array.isArray(list)) return [];
+  return list.filter((r): r is RecentRepo => !!r && typeof (r as RecentRepo).path === "string");
 }
 
 export function addRecent(repo: { path: string; name: string }): void {
@@ -184,8 +186,17 @@ export function removeRecent(path: string): void {
   localStorage.setItem(RECENTS_KEY, JSON.stringify(list));
 }
 
+/// Shape-checked, not just cast: App restores the session in a useState
+/// initializer (`session.paths.map(...)`), so a value written by an older schema
+/// or a truncated write would throw on the very first render - a permanently
+/// blank window, because the effect that would overwrite the bad value never
+/// gets to run. Anything unexpected degrades to "no session".
 export function getSession(): Session {
-  return read<Session>(SESSION_KEY, { paths: [], activePath: null });
+  const s = read<Partial<Session>>(SESSION_KEY, {});
+  return {
+    paths: Array.isArray(s?.paths) ? s.paths.filter((p) => typeof p === "string") : [],
+    activePath: typeof s?.activePath === "string" ? s.activePath : null,
+  };
 }
 
 export function saveSession(session: Session): void {
