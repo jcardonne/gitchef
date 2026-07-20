@@ -22,7 +22,11 @@ const DOT_R = 6;
 const AVATAR_R = 10; // committer avatar disc radius (~20px, fits one lane); also drives the author-column avatar size via --avatar-d
 const PAD_X = 14;
 const OVERSCAN = 8; // rows kept mounted above/below the viewport
-const GRAPH_COLUMNS: { key: keyof GraphColumnVisibility; label: string }[] = [
+/// The graph's toggleable columns, in header order. Exported as the single
+/// source of truth: Settings renders the same list, and when it kept its own
+/// copy the two drifted - `refs` was missing there entirely (so hiding it from
+/// the header menu made it unrestorable) and `graph` was mislabelled.
+export const GRAPH_COLUMNS: { key: keyof GraphColumnVisibility; label: string }[] = [
   { key: "refs", label: "Branch / Tag" },
   { key: "graph", label: "Graph" },
   { key: "message", label: "Message" },
@@ -349,7 +353,10 @@ export default function GraphView({
 
   const vStart = Math.min(band.start, total);
   const vEnd = Math.min(band.end, total);
-  const wipVisible = hasWip && wipRow >= vStart && wipRow <= vEnd;
+  // `vEnd` is exclusive (padBottom uses `total - vEnd`), so this bound must be
+  // too - otherwise, oldest-first, the WIP row renders AND padBottom still
+  // reserves a row for it, leaving a stray blank row at the bottom.
+  const wipVisible = hasWip && wipRow >= vStart && wipRow < vEnd;
   const visibleRows = displayed.slice(Math.max(0, vStart - offset), Math.max(0, vEnd - offset));
   const padTop = vStart * ROW_H;
   const padBottom = Math.max(0, (total - vEnd) * ROW_H);
@@ -527,7 +534,20 @@ export default function GraphView({
   );
 
   return (
-    <div className="graph-wrap" style={{ ["--avatar-d" as string]: `${AVATAR_R * 2}px` } as CSSProperties}>
+    <div
+      className="graph-wrap"
+      style={
+        {
+          ["--avatar-d" as string]: `${AVATAR_R * 2}px`,
+          // On the WRAP, not on `.graph`: the header is a sibling of `.graph`,
+          // so sizing only the latter widens the rows while the header stays at
+          // the pane width - the columns then disagree and, since `sticky top`
+          // does not stick horizontally, scrolling right slides the header off
+          // and leaves blank header above populated rows.
+          minWidth: minGraphW,
+        } as CSSProperties
+      }
+    >
       {searchOpen && (
         <div className="graph-search">
           <input
@@ -624,7 +644,7 @@ export default function GraphView({
           </div>
         )}
       </div>
-      <div className="graph" ref={graphRef} tabIndex={0} onKeyDown={onGraphKey} style={{ minWidth: minGraphW }}>
+      <div className="graph" ref={graphRef} tabIndex={0} onKeyDown={onGraphKey}>
       {visibleCols.graph && (
         <svg
           className="graph-svg"

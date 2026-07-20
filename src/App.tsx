@@ -145,9 +145,9 @@ export default function App() {
   // label (was a path basename) and record the repo in recents.
   const onRepoLoaded = (path: string, info: RepoInfo) => {
     // RepoView calls this on every activation, not just the first load. Return
-    // the SAME array when nothing changed: a fresh one re-runs the session
+    // the SAME array when the name is unchanged: a fresh one re-runs the session
     // persist effect and re-registers the window keydown listener on every tab
-    // switch, and reorders recents for a repo the user only glanced at.
+    // switch.
     setTabs((prev) =>
       prev.some((t) => t.path === path && t.name !== info.name)
         ? prev.map((t) => (t.path === path ? { ...t, name: info.name } : t))

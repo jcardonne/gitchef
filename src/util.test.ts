@@ -167,7 +167,9 @@ describe("relativeTime", () => {
     expect(relativeTime(undefined as unknown as number)).toBe("");
   });
 
-  // Clock skew / a rewritten author date puts the stamp in the future.
+  // Characterizing existing behaviour, not a change: clock skew and rewritten
+  // author dates do produce future stamps, and "just now" is the intended
+  // rendering. Pinned so a later refactor can't turn it into "-1m ago".
   it("treats a future timestamp as just now, never a negative age", () => {
     expect(relativeTime(now() + 3600)).toBe("just now");
   });

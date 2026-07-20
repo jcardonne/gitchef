@@ -193,10 +193,14 @@ export function removeRecent(path: string): void {
 /// gets to run. Anything unexpected degrades to "no session".
 export function getSession(): Session {
   const s = read<Partial<Session>>(SESSION_KEY, {});
-  return {
-    paths: Array.isArray(s?.paths) ? s.paths.filter((p) => typeof p === "string") : [],
-    activePath: typeof s?.activePath === "string" ? s.activePath : null,
-  };
+  const paths = Array.isArray(s?.paths) ? s.paths.filter((p) => typeof p === "string") : [];
+  // activePath must name one of the restored tabs. App hides the Home tab
+  // whenever it is non-null, so an activePath with no matching tab renders a
+  // blank window on launch.
+  const activePath = typeof s?.activePath === "string" && paths.includes(s.activePath)
+    ? s.activePath
+    : null;
+  return { paths, activePath };
 }
 
 export function saveSession(session: Session): void {

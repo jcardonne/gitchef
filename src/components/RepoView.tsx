@@ -169,6 +169,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const commitReq = useRef(0);
   const fileReq = useRef(0);
   const statsReq = useRef(0);
+  const graphReq = useRef(0);
   const rightRef = useRef<HTMLDivElement>(null);
   const dragTeardown = useRef<(() => void) | null>(null);
   // Live mirror of `busy` for the auto-fetch interval's stale closure.
@@ -653,6 +654,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   }, [isActive, enterBackoff]);
 
   const closeDiff = () => {
+    // Invalidate any in-flight file diff: the request-id guards only order
+    // request-vs-request, so without this a slow response for the file we just
+    // closed lands afterwards and re-opens the panel.
+    fileReq.current++;
     setDiff(null);
     setSelectedPath(null);
     setWorkSel(null);
@@ -718,12 +723,19 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       setReveal({ id, seq: ++revealSeq.current });
       return;
     }
+    // Own request id: this is the one load() site that loops, so two of them
+    // started from the same base would interleave and let the slower round's
+    // smaller graph land last - shrinking `nodes` and regressing `graphLimit`
+    // below what was actually loaded, after which the reveal targets a commit
+    // that is no longer there.
+    const req = ++graphReq.current;
     load(async () => {
       let limit = graphLimit;
       let found = false;
       for (let round = 0; round < 40; round++) {
         limit += 500;
         const g = await api.commitGraph(path, limit);
+        if (graphReq.current !== req) return; // a newer deep search took over
         setGraphLimit(limit);
         setNodes(g);
         if (g.some((n) => n.id === id)) {
@@ -758,6 +770,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       closeDiff();
       return;
     }
+    fileReq.current++; // this sets `diff` synchronously; drop any in-flight fetch
     setSelectedPath(file.path);
     setWorkSel(null);
     setDiff(file);
@@ -938,11 +951,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   useEffect(() => {
     // modalOpen: Cmd+Shift+P is command-palette muscle memory, and without this
     // guard hitting it over the "Create pull request" modal fires a real push
-    // whose toast is then hidden under the overlay.
+    // whose toast is then hidden under the overlay. Deliberately NO
+    // INPUT/TEXTAREA check: Cmd/Ctrl+Shift+P/L aren't text-editing keystrokes,
+    // and the commit-message textarea is focused for the whole write-then-push
+    // flow, so skipping on it would break the app's most common sequence.
     if (!isActive || modalOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
       const k = e.key.toLowerCase();
       if (k === "p") {

@@ -131,12 +131,17 @@ describe("tab colors", () => {
 // first render and leave a permanently blank window.
 describe("malformed persisted values", () => {
   it("degrades a bad session to an empty one instead of throwing", () => {
-    for (const bad of ['"a string"', "42", "null", "[1,2]", '{"activePath":"/x"}', "{oops"]) {
+    // A non-object and unparseable JSON both degrade to an empty session.
+    for (const bad of ["42", "{oops"]) {
       localStorage.setItem("gitchef.session", bad);
-      const s = store.getSession();
-      expect(Array.isArray(s.paths)).toBe(true);
-      expect(() => s.paths.map((p) => p)).not.toThrow();
+      expect(store.getSession()).toEqual({ paths: [], activePath: null });
     }
+    // An activePath naming no restored tab is dropped: App hides the Home tab
+    // whenever it is set, so keeping it would render a blank window on launch.
+    localStorage.setItem("gitchef.session", '{"activePath":"/x"}');
+    expect(store.getSession()).toEqual({ paths: [], activePath: null });
+    localStorage.setItem("gitchef.session", JSON.stringify({ paths: ["/a"], activePath: "/gone" }));
+    expect(store.getSession()).toEqual({ paths: ["/a"], activePath: null });
   });
 
   it("drops non-string paths but keeps the good ones", () => {

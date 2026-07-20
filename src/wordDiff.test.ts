@@ -24,6 +24,24 @@ describe("wordDiff", () => {
     });
   });
 
+  // Whatever the tokenizer fails to match is dropped from the rendered row, so
+  // the segments must always rejoin to the original line. NFD text (what macOS
+  // hands us) is the case that catches a non-exhaustive alternation.
+  it("never drops a character, whatever the input", () => {
+    const lines = [
+      'const x = foo(2);',
+      'const café = "crème";', // NFD then NFC accents
+      "́leading combining mark",
+      'const flag = "\u{1F1EB}\u{1F1F7}";',
+      "\tif (a !== b) { c += 1; }",
+      "中文 identifiers",
+    ];
+    for (const a of lines) {
+      const r = wordDiff(a, "x");
+      expect(r!.del.map((s) => s.text).join("")).toBe(a);
+    }
+  });
+
   it("never splits an astral character across segments", () => {
     const r = wordDiff('const label = "done 🎉";', 'const label = "ok 🎈";');
     // A lone surrogate in any segment renders as U+FFFD in the diff row.

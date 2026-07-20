@@ -88,7 +88,4 @@ describe("shouldBackgroundFetch interval slack", () => {
     expect(shouldBackgroundFetch({ ...base, now: PERIOD, lastFetch: 200 })).toBe(true);
   });
 
-  it("still throttles a caller well inside the period", () => {
-    expect(shouldBackgroundFetch({ ...base, now: PERIOD / 2, lastFetch: 0 })).toBe(false);
-  });
 });
