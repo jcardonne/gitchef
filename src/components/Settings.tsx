@@ -63,7 +63,11 @@ const SORTS: { label: string; asc: boolean; icon: ReactNode }[] = [
 ];
 
 const COLUMNS: { key: keyof GraphColumnVisibility; label: string; icon: ReactNode }[] = [
-  { key: "graph", label: "Group", icon: gi(<><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></>) },
+  // Labels must match GRAPH_COLUMNS in GraphView.tsx - the graph header's
+  // right-click menu toggles the same keys, and "refs" is only restorable from
+  // here if it's listed.
+  { key: "refs", label: "Branch / Tag", icon: gi(<><path d="M3 7h9l3 5-3 5H3z" /><circle cx="19" cy="12" r="2" /></>) },
+  { key: "graph", label: "Graph", icon: gi(<><line x1="6" y1="3" x2="6" y2="15" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M18 9a9 9 0 0 1-9 9" /></>) },
   { key: "message", label: "Message", icon: gi(<path d="M4 7h16M4 12h16M4 17h9" />) },
   { key: "author", label: "Author", icon: gi(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>) },
   { key: "sha", label: "SHA", icon: gi(<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18" />) },

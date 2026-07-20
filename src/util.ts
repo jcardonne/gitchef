@@ -101,6 +101,10 @@ async function gravatarUrl(email: string): Promise<string> {
 }
 
 export function relativeTime(unixSeconds: number): string {
+  // A missing/legacy persisted timestamp arrives as NaN, and every comparison
+  // below is false for NaN - so it would fall through to the last line and
+  // render a literal "NaN y ago" on the Home screen.
+  if (!Number.isFinite(unixSeconds)) return "";
   const diff = Date.now() / 1000 - unixSeconds;
   if (diff < 60) return "just now";
   const mins = Math.floor(diff / 60);

@@ -25,8 +25,13 @@ export function wordDiff(oldText: string, newText: string): { del: Segment[]; ad
 
 // Split into runs of whitespace, identifier characters, and single punctuation,
 // so highlighting lands on word boundaries rather than individual characters.
+// Unicode-aware (`u`): without it the punctuation branch matches one UTF-16
+// code unit, so an emoji is split across two tokens and a segment can end on a
+// lone surrogate - which renders as a replacement char. `\P{M}\p{M}*` keeps a
+// code point together with its combining marks, and `\p{L}\p{N}` keeps accented
+// words whole instead of breaking them at the accent.
 function tokenize(s: string): string[] {
-  return s.match(/\s+|[A-Za-z0-9_]+|[^\sA-Za-z0-9_]/g) ?? [];
+  return s.match(/\s+|[\p{L}\p{N}_]+|\P{M}\p{M}*/gu) ?? [];
 }
 
 // LCS over tokens, then backtrack to flag the longest common subsequence as

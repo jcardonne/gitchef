@@ -167,9 +167,13 @@ export default function GraphView({
     () => (matchSet ? ordered.filter((n) => matchSet.has(n.id)) : []),
     [ordered, matchSet]
   );
-  const currentMatchId = matchList[matchIdx]?.id ?? null;
+  // Clamp on read: a background fetch or "Load more" rebuilds matchList, and if
+  // it shrank, the stale index would render a counter past the end ("7/3") and
+  // leave currentMatchId null, so Enter would jump to the wrong row.
+  const safeIdx = Math.min(matchIdx, Math.max(0, matchList.length - 1));
+  const currentMatchId = matchList[safeIdx]?.id ?? null;
   const step = (d: number) =>
-    matchList.length && setMatchIdx((i) => (i + d + matchList.length) % matchList.length);
+    matchList.length && setMatchIdx((i) => (Math.min(i, matchList.length - 1) + d + matchList.length) % matchList.length);
   const closeSearch = () => onSearchClose();
 
   // Closing search (Esc / ✕) clears the query + filter, stopping highlighting.
@@ -294,15 +298,22 @@ export default function GraphView({
   // the auto refresh skips the costly work_stats diff, so gating on it would hide
   // the node when changes arrive via an external edit. workStats only feeds +/-.
   const hasWip = dirtyFiles > 0 && !filtering;
-  const offset = hasWip ? 1 : 0;
-  const wipLane = displayed[0]?.lane ?? 0;
-  const wipColor = laneColor(displayed[0]?.color ?? 0);
+  // The WIP node is "now", so it belongs on HEAD's side of the history: above it
+  // newest-first, below it oldest-first. Only when it sits ABOVE do the commit
+  // rows shift down by one. HEAD is displayed[0] newest-first and the last row
+  // oldest-first; anchoring the node and its dashed edge to that row (rather
+  // than always to row 0) is what keeps it attached to HEAD in both orders.
+  const wipRow = sortAsc ? displayed.length : 0;
+  const offset = hasWip && !sortAsc ? 1 : 0;
+  const headIdx = sortAsc ? displayed.length - 1 : 0;
+  const wipLane = displayed[headIdx]?.lane ?? 0;
+  const wipColor = laneColor(displayed[headIdx]?.color ?? 0);
 
   // --- virtualization: mount only the rows in/around the viewport ---
   const graphRef = useRef<HTMLDivElement>(null);
   const scRef = useRef<HTMLElement | null>(null);
   const [band, setBand] = useState({ start: 0, end: 60 });
-  const total = displayed.length + offset; // visual rows, incl. the WIP node
+  const total = displayed.length + (hasWip ? 1 : 0); // visual rows, incl. the WIP node
   const hasGraph = nodes.length > 0 || hasWip;
   // Track the visible band against the scrolling ancestor (.center-graph). The
   // SVG keeps its full height + absolute coordinates; we only cull its children
@@ -338,7 +349,7 @@ export default function GraphView({
 
   const vStart = Math.min(band.start, total);
   const vEnd = Math.min(band.end, total);
-  const wipVisible = hasWip && vStart === 0;
+  const wipVisible = hasWip && wipRow >= vStart && wipRow <= vEnd;
   const visibleRows = displayed.slice(Math.max(0, vStart - offset), Math.max(0, vEnd - offset));
   const padTop = vStart * ROW_H;
   const padBottom = Math.max(0, (total - vEnd) * ROW_H);
@@ -386,6 +397,20 @@ export default function GraphView({
   const authorW = cols.author ?? 150;
   const shaW = cols.sha ?? 64;
   const dateW = cols.date ?? 66;
+  // Every non-shrinkable column, plus a floor for the message. The header has no
+  // `overflow` so it always lays out at its intrinsic width, while `.commit-row`
+  // clips at `overflow: hidden` - if `.graph` isn't at least this wide, a narrow
+  // center pane leaves the header labels scrolling over blank rows with the
+  // commit message gone entirely. Sizing the whole graph instead makes the
+  // container scroll horizontally and keeps header and rows in lockstep.
+  const MSG_MIN_W = 120;
+  const minGraphW =
+    refsW +
+    (visibleCols.graph ? graphColW : 0) +
+    (visibleCols.message ? MSG_MIN_W : 0) +
+    (visibleCols.author ? authorW : 0) +
+    (visibleCols.sha ? shaW : 0) +
+    (visibleCols.date ? dateW : 0);
   const x = (lane: number) => PAD_X + lane * LANE_W;
 
   // Drag a header separator to resize a column (clamped, persisted on change).
@@ -427,7 +452,7 @@ export default function GraphView({
     await (await Menu.new({ items })).popup();
   };
   const y = (i: number) => (i + offset) * ROW_H + ROW_H / 2;
-  const wipY = ROW_H / 2;
+  const wipY = wipRow * ROW_H + ROW_H / 2;
 
   const scrollRowIntoView = (i: number) => {
     const sc = scRef.current;
@@ -466,6 +491,41 @@ export default function GraphView({
     );
   }
 
+  // The "Uncommitted changes" row. Held in a variable because its position in
+  // the list depends on the sort order (see wipRow) - it renders before the
+  // commit rows newest-first and after them oldest-first.
+  const wipRowEl = (
+    <div
+      className={`commit-row wip-row${workActive ? " selected" : ""}`}
+      style={{ height: ROW_H }}
+      onClick={onSelectWork}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onWorkMenu();
+      }}
+      onMouseEnter={() => setTraceId(null)}
+    >
+      {visibleCols.refs && <div className="col-refs" style={{ flex: `0 0 ${refsW}px` }} />}
+      {visibleCols.graph && <div className="col-graph" style={{ flex: `0 0 ${graphColW}px` }} />}
+      {visibleCols.message && (
+        <div className="col-msg">
+          <span className="commit-summary">Uncommitted changes</span>
+        </div>
+      )}
+      <div className="col-wip">
+        {workStats && (
+          <>
+            <span className="wip-add">+{workStats.insertions}</span>
+            <span className="wip-del">-{workStats.deletions}</span>
+          </>
+        )}
+        <span className="wip-files">
+          {dirtyFiles} file{dirtyFiles === 1 ? "" : "s"}
+        </span>
+      </div>
+    </div>
+  );
+
   return (
     <div className="graph-wrap" style={{ ["--avatar-d" as string]: `${AVATAR_R * 2}px` } as CSSProperties}>
       {searchOpen && (
@@ -487,7 +547,9 @@ export default function GraphView({
             }}
           />
           <span className="graph-search-count">
-            {matchList.length ? `${matchIdx + 1}/${matchList.length}` : query ? "0" : ""}
+            {/* Same n/m shape when empty, so the counter doesn't jitter as the
+                fixed-width box re-centers while typing. */}
+            {matchList.length ? `${safeIdx + 1}/${matchList.length}` : query ? "0/0" : ""}
           </span>
           <button
             className={`search-nav${filterMode ? " active" : ""}`}
@@ -562,12 +624,12 @@ export default function GraphView({
           </div>
         )}
       </div>
-      <div className="graph" ref={graphRef} tabIndex={0} onKeyDown={onGraphKey} style={{ minWidth: refsW + (visibleCols.graph ? graphColW : 0) }}>
+      <div className="graph" ref={graphRef} tabIndex={0} onKeyDown={onGraphKey} style={{ minWidth: minGraphW }}>
       {visibleCols.graph && (
         <svg
           className="graph-svg"
           width={graphWidth}
-          height={(displayed.length + offset) * ROW_H}
+          height={total * ROW_H}
           style={{ left: svgLeft }}
         >
         {/* One horizontal transparent->color gradient per lane color, reused by
@@ -580,10 +642,10 @@ export default function GraphView({
             </linearGradient>
           ))}
         </defs>
-        {/* dashed edge from the WIP node down into HEAD */}
-        {hasWip && nodes.length > 0 && (
+        {/* dashed edge between the WIP node and HEAD (above it oldest-first) */}
+        {hasWip && displayed.length > 0 && (
           <path
-            d={edgePath(x(wipLane), wipY, x(nodes[0].lane), y(0))}
+            d={edgePath(x(wipLane), wipY, x(displayed[headIdx].lane), y(headIdx))}
             fill="none"
             stroke={wipColor}
             strokeWidth={1.6}
@@ -751,39 +813,8 @@ export default function GraphView({
 
       <div className="graph-rows" onMouseLeave={() => setTraceId(null)}>
         <div aria-hidden style={{ height: padTop }} />
-        {wipVisible && (
-          <div
-            className={`commit-row wip-row${workActive ? " selected" : ""}`}
-            style={{ height: ROW_H }}
-            onClick={onSelectWork}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              onWorkMenu();
-            }}
-            onMouseEnter={() => setTraceId(null)}
-          >
-            {visibleCols.refs && <div className="col-refs" style={{ flex: `0 0 ${refsW}px` }} />}
-            {visibleCols.graph && (
-              <div className="col-graph" style={{ flex: `0 0 ${graphColW}px` }} />
-            )}
-            {visibleCols.message && (
-              <div className="col-msg">
-                <span className="commit-summary">Uncommitted changes</span>
-              </div>
-            )}
-            <div className="col-wip">
-              {workStats && (
-                <>
-                  <span className="wip-add">+{workStats.insertions}</span>
-                  <span className="wip-del">-{workStats.deletions}</span>
-                </>
-              )}
-              <span className="wip-files">
-                {dirtyFiles} file{dirtyFiles === 1 ? "" : "s"}
-              </span>
-            </div>
-          </div>
-        )}
+        {/* Newest-first the WIP row leads the list; oldest-first it trails it. */}
+        {wipVisible && !sortAsc && wipRowEl}
         {visibleRows.map((n) => {
           const url = n.email ? avatars.get(n.email) : undefined;
           // On hover of a row with no branch/remote badge, hint which branch the
@@ -838,7 +869,9 @@ export default function GraphView({
               )}
               {visibleCols.message && (
                 <div className="col-msg">
-                  <span className="commit-summary">{n.summary || "(no message)"}</span>
+                  <span className="commit-summary" title={n.summary || undefined}>
+                    {n.summary || "(no message)"}
+                  </span>
                 </div>
               )}
               {visibleCols.author && (
@@ -861,7 +894,9 @@ export default function GraphView({
                         onError={() => setFailedAvatars((s) => new Set(s).add(url))}
                       />
                     ))}
-                  <span className="col-author-name">{n.author}</span>
+                  <span className="col-author-name" title={n.email ? `${n.author} <${n.email}>` : n.author}>
+                    {n.author}
+                  </span>
                 </div>
               )}
               {visibleCols.sha && (
@@ -873,6 +908,7 @@ export default function GraphView({
             </div>
           );
         })}
+        {wipVisible && sortAsc && wipRowEl}
         <div aria-hidden style={{ height: padBottom }} />
         {canLoadMore && !filtering && (
           <div className="load-more-row">
