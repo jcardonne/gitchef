@@ -25,6 +25,7 @@ import "prismjs/components/prism-ruby";
 import "prismjs/components/prism-markdown";
 import "prismjs/components/prism-sql";
 import type { Segment } from "./wordDiff";
+import type { Hit } from "./find";
 
 // We tokenize on demand, never the DOM-scanning auto-highlighter.
 Prism.manual = true;
@@ -38,6 +39,11 @@ export interface RenderSpan {
   text: string;
   type?: string;
   changed: boolean;
+}
+
+export interface MarkedSpan extends RenderSpan {
+  hit?: boolean; // part of a find match
+  current?: boolean; // part of THE active find match
 }
 
 const EXT_LANG: Record<string, string> = {
@@ -111,6 +117,44 @@ export function composeSpans(tokens: Token[], segs: Segment[] | null): RenderSpa
         off = 0;
       }
     }
+  }
+  return out;
+}
+
+/// Split base render-spans at find-match boundaries so each resulting span is
+/// wholly inside a match or wholly outside it, tagging the inside runs (and the
+/// active one via `current`). `hits` are sorted, non-overlapping char ranges
+/// over the same line text the spans cover. This composes on top of syntax
+/// tokens + word-diff segments, so a match keeps its coloring while gaining a
+/// highlight. With no hits it just widens each span to MarkedSpan unchanged.
+export function overlayMatches(base: RenderSpan[], hits: Hit[]): MarkedSpan[] {
+  if (hits.length === 0) return base.map((s) => ({ text: s.text, type: s.type, changed: s.changed }));
+  const out: MarkedSpan[] = [];
+  const push = (text: string, s: RenderSpan, hit?: boolean, current?: boolean) => {
+    if (text) out.push({ text, type: s.type, changed: s.changed, hit, current });
+  };
+  let pos = 0; // absolute char offset at the start of the current span
+  let hi = 0; // first hit that might still overlap the current span onward
+  for (const s of base) {
+    const start = pos;
+    const end = pos + s.text.length;
+    // Drop hits that ended before this span; a hit straddling spans is kept.
+    while (hi < hits.length && hits[hi].end <= start) hi++;
+    let cur = start;
+    let j = hi;
+    while (cur < end) {
+      while (j < hits.length && hits[j].end <= cur) j++;
+      const h = hits[j];
+      if (!h || h.start >= end) {
+        push(s.text.slice(cur - start), s);
+        break;
+      }
+      if (h.start > cur) push(s.text.slice(cur - start, h.start - start), s);
+      const segEnd = Math.min(h.end, end);
+      push(s.text.slice(Math.max(h.start, cur) - start, segEnd - start), s, true, h.current);
+      cur = segEnd;
+    }
+    pos = end;
   }
   return out;
 }
