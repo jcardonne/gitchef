@@ -1128,7 +1128,7 @@ dependencies = [
 
 [[package]]
 name = "gitchef"
-version = "0.31.2"
+version = "0.32.0"
 dependencies = [
  "git2",
  "notify-debouncer-mini",
