@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { langForPath, highlightTokens, composeSpans } from "./highlight";
+import { langForPath, highlightTokens, composeSpans, overlayMatches } from "./highlight";
 
 describe("langForPath", () => {
   it("maps known extensions and rejects the rest", () => {
@@ -44,5 +44,53 @@ describe("composeSpans", () => {
     const tokens = highlightTokens("let y = 2;", "typescript");
     const spans = composeSpans(tokens, null);
     expect(spans.every((s) => !s.changed)).toBe(true);
+  });
+});
+
+describe("overlayMatches", () => {
+  it("returns base spans unchanged when there are no hits", () => {
+    const base = composeSpans(highlightTokens("let y = 2;", "typescript"), null);
+    const out = overlayMatches(base, []);
+    expect(out.map((s) => s.text).join("")).toBe("let y = 2;");
+    expect(out.every((s) => !s.hit)).toBe(true);
+  });
+
+  it("splits a span at a match boundary and flags the hit", () => {
+    const base = [{ text: "hello world", changed: false }];
+    const out = overlayMatches(base, [{ start: 6, end: 11, current: false }]);
+    expect(out.map((s) => s.text)).toEqual(["hello ", "world"]);
+    expect(out.find((s) => s.text === "world")?.hit).toBe(true);
+    expect(out.find((s) => s.text === "hello ")?.hit).toBeFalsy();
+  });
+
+  it("keeps the syntax type and marks the current hit", () => {
+    const base = highlightTokens("const x = 1;", "typescript").map((t) => ({ text: t.text, type: t.type, changed: false }));
+    // Highlight the "const" keyword as the active match.
+    const out = overlayMatches(base, [{ start: 0, end: 5, current: true }]);
+    const hit = out.find((s) => s.text === "const");
+    expect(hit?.hit).toBe(true);
+    expect(hit?.current).toBe(true);
+    expect(hit?.type).toBe("keyword"); // syntax color survives the overlay
+  });
+
+  it("marks a match that spans multiple base spans", () => {
+    // "x = 1" tokenizes into several spans; a match covering all of it must tag
+    // every piece as a hit while preserving the reconstructed text.
+    const base = highlightTokens("x = 1", "typescript").map((t) => ({ text: t.text, type: t.type, changed: false }));
+    const out = overlayMatches(base, [{ start: 0, end: 5, current: false }]);
+    expect(out.map((s) => s.text).join("")).toBe("x = 1");
+    expect(out.every((s) => s.hit)).toBe(true);
+  });
+
+  it("handles multiple hits in one line", () => {
+    const base = [{ text: "a foo b foo c", changed: false }];
+    const out = overlayMatches(base, [
+      { start: 2, end: 5, current: false },
+      { start: 8, end: 11, current: true },
+    ]);
+    const hits = out.filter((s) => s.hit);
+    expect(hits.map((s) => s.text)).toEqual(["foo", "foo"]);
+    expect(hits[1].current).toBe(true);
+    expect(out.map((s) => s.text).join("")).toBe("a foo b foo c");
   });
 });

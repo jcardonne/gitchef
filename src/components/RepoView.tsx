@@ -129,6 +129,13 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [graphLimit, setGraphLimit] = useState(500);
   const [searchOpen, setSearchOpen] = useState(false);
+  // Ctrl/Cmd+F opens the in-preview find when a file preview is open (else the
+  // commit-graph search). Owned here; the active preview view renders the bar.
+  const [findOpen, setFindOpen] = useState(false);
+  // Tracks whether a previewable pane (diff or conflict resolver) is open, so the
+  // Cmd/Ctrl+F handler can route to the in-preview find without depending on
+  // `showConflict` (declared far below). Updated by an effect once it exists.
+  const previewOpenRef = useRef(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [reflogOpen, setReflogOpen] = useState(false);
   const [historyPath, setHistoryPath] = useState<string | null>(null);
@@ -321,8 +328,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   }, [prs]);
   const prBranchSet = useMemo(() => new Set(prByBranch.keys()), [prByBranch]);
 
-  // Cmd/Ctrl+F opens commit search; Cmd/Ctrl+K opens the command palette (active
-  // tab only).
+  // Cmd/Ctrl+F: opens the in-preview find when a file preview is open, else the
+  // commit search. Cmd/Ctrl+K opens the command palette (active tab only).
   useEffect(() => {
     if (!isActive) return;
     const onKey = (e: KeyboardEvent) => {
@@ -330,7 +337,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       const k = e.key.toLowerCase();
       if (k === "f") {
         e.preventDefault();
-        setSearchOpen(true);
+        if (previewOpenRef.current) setFindOpen(true);
+        else setSearchOpen(true);
       } else if (k === "k") {
         e.preventDefault();
         setPaletteOpen(true);
@@ -1743,6 +1751,14 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // A selected conflicted file shows the resolver instead of the diff. Gated
   // independently of `diff` so it opens even before/without a fileDiff result.
   const showConflict = !!workSel && workFileStatus === "conflicted";
+  // A previewable pane is open when a diff is loaded or the conflict resolver is
+  // showing. Feed that to the Cmd/Ctrl+F ref, and close the find bar once the
+  // preview fully closes (a stale, invisible find would otherwise linger).
+  const previewOpen = !!diff || showConflict;
+  useEffect(() => {
+    previewOpenRef.current = previewOpen;
+    if (!previewOpen) setFindOpen(false);
+  }, [previewOpen]);
 
   // While inspecting a commit's files: ↑/↓ move between files, Escape deselects.
   // Nav walks the flat commitFiles order; the diff preview always updates. In
@@ -1791,12 +1807,14 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       e.preventDefault();
       e.stopPropagation();
-      closeDiff();
+      // Escape peels one layer: close the find bar first (if open), then the preview.
+      if (findOpen) setFindOpen(false);
+      else closeDiff();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, diff, modalOpen]);
+  }, [isActive, diff, modalOpen, findOpen]);
 
   const repoActions = useMemo(
     () => ({ repoPath: path, busy, activeAction, run, refresh, notify }),
@@ -1971,9 +1989,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                   )}
               </div>
               {previewMode === "file" ? (
-                <FileView content={fileContent} />
+                <FileView content={fileContent} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
               ) : previewMode === "blame" ? (
-                <BlameView content={fileContent} hunks={blame} onPickCommit={selectCommit} />
+                <BlameView content={fileContent} hunks={blame} onPickCommit={selectCommit} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
               ) : previewMode === "diff" && workSel && workFileStatus === "conflicted" ? (
                 <ConflictViewer
                   path={workSel.path}
@@ -1981,12 +1999,16 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                     closeDiff();
                     void refresh({ history: false });
                   }}
+                  findOpen={findOpen}
+                  onFindClose={() => setFindOpen(false)}
                 />
               ) : (
                 <DiffViewer
                   diff={diff}
                   mode={previewMode === "split" ? "split" : "unified"}
                   onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined}
+                  findOpen={findOpen}
+                  onFindClose={() => setFindOpen(false)}
                 />
               )}
             </div>

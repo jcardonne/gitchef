@@ -4,6 +4,10 @@ import { useVirtual } from "../useVirtual";
 import { wordDiff } from "../wordDiff";
 import { langForPath, highlightTokens, composeSpans } from "../highlight";
 import EmptyState, { DocIcon, BinaryIcon, CheckIcon } from "./EmptyState";
+import { useFind, scrollRowIntoView } from "../useFind";
+import FindBar from "./FindBar";
+import { renderCode } from "./CodeLine";
+import type { Hit } from "../find";
 
 const ROW_H = 18; // must match .diff-line / .diff-hunk-header height in CSS
 
@@ -16,6 +20,8 @@ interface Props {
   /// "split" renders old|new side-by-side (read-only); "unified" (default) is the
   /// stacked view with line-level staging.
   mode?: "unified" | "split";
+  findOpen: boolean;
+  onFindClose: () => void;
 }
 
 type Row = { hunk: string; hi: number } | { line: DiffLine; hi: number; pair?: string };
@@ -36,7 +42,7 @@ function lineKey(line: DiffLine): string | null {
 /// the scroll height is faked with top/bottom padding spacers. When `onHunkMenu`
 /// is set (a working-file diff), changed lines are click-selectable for
 /// line-level staging.
-export default function DiffViewer({ diff, onHunkMenu, mode = "unified" }: Props) {
+export default function DiffViewer({ diff, onHunkMenu, mode = "unified", findOpen, onFindClose }: Props) {
   // Line selection for partial staging, scoped to a single hunk at a time.
   const [selHunk, setSelHunk] = useState<number | null>(null);
   const [selKeys, setSelKeys] = useState<Set<string>>(new Set());
@@ -109,7 +115,19 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified" }: Props
   // Split view is read-only: suppress the staging menu/selection there.
   const menu = mode === "split" ? undefined : onHunkMenu;
   const list: (Row | SplitRow)[] = mode === "split" ? splitRows : rows;
-  const { ref, start, end, padTop, padBottom } = useVirtual(list.length, ROW_H, diff);
+  // Search corpus: one row per virtual row. Hunk-header rows carry no cells so
+  // find skips them (metadata, not file content); split rows expose both sides.
+  const rowCells = useMemo<string[][]>(
+    () =>
+      findOpen
+        ? list.map((row) =>
+            "hunk" in row ? [] : "left" in row ? [row.left?.content ?? "", row.right?.content ?? ""] : [row.line.content]
+          )
+        : [],
+    [findOpen, list]
+  );
+  const { ref, el, start, end, padTop, padBottom } = useVirtual(list.length, ROW_H, diff);
+  const find = useFind(findOpen, rowCells, (row) => scrollRowIntoView(el, ROW_H, row));
 
   // Clear the line selection whenever the shown diff changes - including a
   // reload of the same file after staging (keys may no longer exist). The
@@ -160,6 +178,7 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified" }: Props
 
   return (
     <div className={`diff${mode === "split" ? " split" : ""}`}>
+      {findOpen && <FindBar api={find} onClose={onFindClose} />}
       <div className="diff-scroll" ref={ref}>
         <div className="diff-rows" style={{ paddingTop: padTop, paddingBottom: padBottom }}>
           {list.slice(start, end).map((row, i) => {
@@ -182,7 +201,7 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified" }: Props
               );
             }
             if ("left" in row) {
-              return <SplitRowView key={start + i} left={row.left} right={row.right} lang={lang} />;
+              return <SplitRowView key={start + i} left={row.left} right={row.right} lang={lang} hits={find.matchesByRow.get(start + i)} />;
             }
             const key = lineKey(row.line);
             const sel = selectable && key !== null && selHunk === row.hi && selKeys.has(key);
@@ -192,6 +211,7 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified" }: Props
                 line={row.line}
                 pair={row.pair}
                 lang={lang}
+                hits={find.matchesByRow.get(start + i)}
                 selected={sel}
                 onClick={
                   selectable && key !== null ? (e) => clickLine(row.hi, key, e.shiftKey) : undefined
@@ -217,6 +237,7 @@ function DiffRow({
   line,
   pair,
   lang,
+  hits,
   selected,
   onClick,
   onContextMenu,
@@ -224,6 +245,7 @@ function DiffRow({
   line: DiffLine;
   pair?: string;
   lang: string | null;
+  hits?: Hit[];
   selected?: boolean;
   onClick?: (e: React.MouseEvent) => void;
   onContextMenu?: (e: React.MouseEvent) => void;
@@ -239,7 +261,7 @@ function DiffRow({
       <span className="ln">{line.old_lineno ?? ""}</span>
       <span className="ln">{line.new_lineno ?? ""}</span>
       <span className="sign">{line.origin === " " ? "" : line.origin}</span>
-      <span className="code">{codeContent(line.content, spans)}</span>
+      <span className="code">{renderCode(line.content, spans, hits)}</span>
     </div>
   );
 }
@@ -252,38 +274,24 @@ function spansFor(line: DiffLine, mate: string | undefined, lang: string | null)
   return composeSpans(highlightTokens(line.content, lang), side && side.length ? side : null);
 }
 
-/// Render highlighted + word-diff spans for a line's content (shared by the
-/// unified and split rows). Empty content renders a space to keep row height.
-function codeContent(content: string, spans: ReturnType<typeof composeSpans>) {
-  if (content === "") return " ";
-  return spans.map((s, i) => {
-    const c = `${s.type ? `token ${s.type}` : ""}${s.changed ? " diff-seg" : ""}`.trim();
-    return c ? (
-      <span key={i} className={c}>
-        {s.text}
-      </span>
-    ) : (
-      s.text
-    );
-  });
-}
-
 /// One side-by-side row: old on the left, new on the right. A paired removal +
 /// addition word-diffs against each other; a context line shows on both sides.
 function SplitRowView({
   left,
   right,
   lang,
+  hits,
 }: {
   left: DiffLine | null;
   right: DiffLine | null;
   lang: string | null;
+  hits?: (Hit & { cell: number })[];
 }) {
   const paired = !!left && !!right && left.origin === "-" && right.origin === "+";
   return (
     <div className="split-line">
-      <SplitCell line={left} lineno={left?.old_lineno ?? null} mate={paired ? right!.content : undefined} lang={lang} />
-      <SplitCell line={right} lineno={right?.new_lineno ?? null} mate={paired ? left!.content : undefined} lang={lang} />
+      <SplitCell line={left} lineno={left?.old_lineno ?? null} mate={paired ? right!.content : undefined} lang={lang} hits={hits?.filter((h) => h.cell === 0)} />
+      <SplitCell line={right} lineno={right?.new_lineno ?? null} mate={paired ? left!.content : undefined} lang={lang} hits={hits?.filter((h) => h.cell === 1)} />
     </div>
   );
 }
@@ -293,11 +301,13 @@ function SplitCell({
   lineno,
   mate,
   lang,
+  hits,
 }: {
   line: DiffLine | null;
   lineno: number | null;
   mate?: string;
   lang: string | null;
+  hits?: Hit[];
 }) {
   const spans = useMemo(() => (line ? spansFor(line, mate, lang) : null), [line, mate, lang]);
   if (!line || !spans) return <div className="split-cell empty" />;
@@ -305,7 +315,7 @@ function SplitCell({
   return (
     <div className={`split-cell ${cls}`}>
       <span className="ln">{lineno ?? ""}</span>
-      <span className="code">{codeContent(line.content, spans)}</span>
+      <span className="code">{renderCode(line.content, spans, hits)}</span>
     </div>
   );
 }

@@ -809,6 +809,43 @@ button {
   background: var(--accent);
   color: var(--on-accent);
 }
+.search-nav.text {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+/* In-preview find bar: floated top-right over the file/blame/diff view. Reuses
+   the commit-graph search input/count/nav styling for a consistent feel. */
+.preview-find {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 6px;
+  box-shadow: var(--shadow-float);
+}
+.preview-find .graph-search-input {
+  width: 180px;
+}
+/* Find matches: every hit gets an accent tint; the active one is tinted harder
+   and ringed. Overrides the browser's default yellow <mark> and, by tinting
+   rather than recoloring the text, keeps the syntax token colors readable
+   underneath (they'd otherwise win over a <mark> color by source order). */
+.find-hit {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+.find-hit.current {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  outline: 1px solid var(--accent);
+}
 .load-more-row {
   display: flex;
   justify-content: center;
@@ -1495,6 +1532,7 @@ button {
 
 /* ---------- diff ---------- */
 .diff {
+  position: relative; /* containing block for the floated .preview-find bar */
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   display: flex;
