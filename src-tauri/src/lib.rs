@@ -155,6 +155,11 @@ fn list_prs(repo: String) -> AppResult<Vec<forge::PullRequest>> {
 }
 
 #[tauri::command(async)]
+fn list_forge_repos(provider: String) -> AppResult<Vec<forge::ForgeRepo>> {
+    forge::list_repos(&provider)
+}
+
+#[tauri::command(async)]
 fn open_url(url: String) -> AppResult<()> {
     // Only web URLs - never a file:// or an arbitrary scheme, since the URL comes
     // from CLI output; the OS opener must not be handed anything else.
@@ -583,6 +588,7 @@ pub fn run() {
             file_blame,
             create_pr,
             list_prs,
+            list_forge_repos,
             open_url,
             commit,
             commit_amend,

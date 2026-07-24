@@ -1976,6 +1976,85 @@ button {
   font-size: 12px;
   margin-top: 2px;
 }
+.clone-modal {
+  width: 520px;
+  max-width: 92vw;
+}
+.clone-tabs {
+  margin-bottom: 2px;
+}
+.clone-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.clone-repo-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.clone-repo-row {
+  padding: 6px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.clone-repo-row:last-child {
+  border-bottom: 0;
+}
+.clone-repo-row:hover {
+  background: var(--bg-elev2);
+}
+.clone-repo-row.selected {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.clone-repo-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.clone-repo-name {
+  font-size: 13px;
+}
+.clone-repo-desc {
+  display: block;
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clone-badge {
+  font-size: 10px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.clone-list-error {
+  padding: 10px;
+  font-size: 12px;
+  color: var(--del);
+}
+.clone-hint {
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.clone-hint code,
+.clone-target code {
+  background: var(--bg-elev2);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-family: var(--mono, ui-monospace, monospace);
+}
+.clone-target {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ---------- command palette ---------- */
 .command-palette {

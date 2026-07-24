@@ -257,9 +257,101 @@ fn list_gitlab(dir: &Path) -> AppResult<Vec<PullRequest>> {
         .collect())
 }
 
+/// A repository the signed-in user can clone, normalized across GitHub/GitLab.
+#[derive(Serialize)]
+pub struct ForgeRepo {
+    pub name: String, // owner/name (or group/.../name on GitLab)
+    pub url: String, // https clone URL
+    pub ssh_url: String,
+    pub description: String,
+    pub private: bool,
+    pub fork: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhRepo {
+    name_with_owner: String,
+    url: String,
+    ssh_url: String,
+    #[serde(default)]
+    description: String,
+    is_private: bool,
+    is_fork: bool,
+}
+
+#[derive(Deserialize)]
+struct GlRepo {
+    path_with_namespace: String,
+    http_url_to_repo: String,
+    ssh_url_to_repo: String,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    visibility: String,
+    #[serde(default)]
+    forked_from_project: Option<serde_json::Value>,
+}
+
+/// Repositories the signed-in user can clone from `provider` ("github"/"gitlab"),
+/// via their `gh`/`glab` CLI (the CLI owns auth). Runs without an open repo - these
+/// list the account globally - so it works from the clone dialog. GitLab uses
+/// `--member` so group projects show up, not just owned ones.
+pub fn list_repos(provider: &str) -> AppResult<Vec<ForgeRepo>> {
+    let dir = std::env::temp_dir();
+    match provider {
+        "github" => map_gh(&run_cli(
+            &dir,
+            &[
+                "gh", "repo", "list", "--limit", "200", "--json",
+                "nameWithOwner,url,sshUrl,description,isPrivate,isFork",
+            ],
+        )?),
+        "gitlab" => map_gl(&run_cli(
+            &dir,
+            &["glab", "repo", "list", "--member", "--per-page", "100", "--output", "json"],
+        )?),
+        other => Err(AppError::Msg(format!("unknown provider: {other}"))),
+    }
+}
+
+/// Parse `gh repo list --json …` output into normalized repos.
+fn map_gh(out: &str) -> AppResult<Vec<ForgeRepo>> {
+    let repos: Vec<GhRepo> = serde_json::from_str(out)
+        .map_err(|e| AppError::Msg(format!("could not parse `gh repo list` output: {e}")))?;
+    Ok(repos
+        .into_iter()
+        .map(|r| ForgeRepo {
+            name: r.name_with_owner,
+            url: r.url,
+            ssh_url: r.ssh_url,
+            description: r.description,
+            private: r.is_private,
+            fork: r.is_fork,
+        })
+        .collect())
+}
+
+/// Parse `glab repo list --output json` output into normalized repos.
+fn map_gl(out: &str) -> AppResult<Vec<ForgeRepo>> {
+    let repos: Vec<GlRepo> = serde_json::from_str(out)
+        .map_err(|e| AppError::Msg(format!("could not parse `glab repo list` output: {e}")))?;
+    Ok(repos
+        .into_iter()
+        .map(|r| ForgeRepo {
+            name: r.path_with_namespace,
+            url: r.http_url_to_repo,
+            ssh_url: r.ssh_url_to_repo,
+            description: r.description.unwrap_or_default(),
+            private: r.visibility != "public",
+            fork: r.forked_from_project.is_some(),
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{first_url, normalize_review, rollup_checks, GhCheck};
+    use super::{first_url, map_gh, map_gl, normalize_review, rollup_checks, GhCheck};
 
     fn check(status: Option<&str>, conclusion: Option<&str>, state: Option<&str>) -> GhCheck {
         GhCheck {
@@ -267,6 +359,31 @@ mod tests {
             conclusion: conclusion.map(String::from),
             state: state.map(String::from),
         }
+    }
+
+    #[test]
+    fn maps_gh_and_glab_repo_json_to_forge_repos() {
+        // Real shapes captured from `gh repo list --json …` and `glab repo list --output json`.
+        let gh = map_gh(
+            r#"[{"description":"a client","isFork":false,"isPrivate":true,"nameWithOwner":"me/app","sshUrl":"git@github.com:me/app.git","url":"https://github.com/me/app"}]"#,
+        )
+        .unwrap();
+        assert_eq!(gh.len(), 1);
+        assert_eq!(gh[0].name, "me/app");
+        assert_eq!(gh[0].url, "https://github.com/me/app");
+        assert_eq!(gh[0].ssh_url, "git@github.com:me/app.git");
+        assert!(gh[0].private && !gh[0].fork);
+
+        // GitLab: null description, nested group path, non-public visibility.
+        let gl = map_gl(
+            r#"[{"name":"orisha","path_with_namespace":"atyos/superscooper/orisha","http_url_to_repo":"https://gitlab.com/atyos/superscooper/orisha.git","ssh_url_to_repo":"git@gitlab.com:atyos/superscooper/orisha.git","description":null,"visibility":"private"}]"#,
+        )
+        .unwrap();
+        assert_eq!(gl.len(), 1);
+        assert_eq!(gl[0].name, "atyos/superscooper/orisha");
+        assert_eq!(gl[0].url, "https://gitlab.com/atyos/superscooper/orisha.git");
+        assert_eq!(gl[0].description, ""); // null -> empty
+        assert!(gl[0].private && !gl[0].fork);
     }
 
     #[test]

@@ -150,6 +150,16 @@ export function setFetchIntervalMinutes(minutes: number): void {
   notifyPrefs();
 }
 
+const CLONE_DIR_KEY = "gitchef.cloneDir";
+
+/// Last parent folder a repo was cloned into, so the clone dialog pre-fills it.
+export function getCloneDir(): string {
+  return localStorage.getItem(CLONE_DIR_KEY) ?? "";
+}
+export function setCloneDir(dir: string): void {
+  localStorage.setItem(CLONE_DIR_KEY, dir);
+}
+
 export interface RecentRepo {
   path: string;
   name: string;
