@@ -1947,6 +1947,35 @@ button {
   outline: none;
   border-color: var(--accent);
 }
+.home-actions {
+  display: flex;
+  gap: 10px;
+}
+.clone-parent-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.clone-parent-row input {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+.clone-parent-row button {
+  flex: 0 0 auto;
+  background: var(--bg-elev2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.clone-error {
+  color: var(--del);
+  font-size: 12px;
+  margin-top: 2px;
+}
 
 /* ---------- command palette ---------- */
 .command-palette {

@@ -13,6 +13,7 @@ import type {
   FileContent,
   FileDiff,
   PullRequest,
+  RemoteInfo,
   RepoInfo,
   SequencerState,
   StatusResult,
@@ -67,6 +68,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [hiddenStashes, setHiddenStashes] = useState<string[]>([]);
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
+  const [remotes, setRemotes] = useState<RemoteInfo[]>([]);
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([]);
   const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
   const [stashes, setStashes] = useState<StashInfo[]>([]);
@@ -438,6 +440,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         api.listWorktrees(path).then(setWorktrees).catch(() => {});
         api.listSubmodules(path).then(setSubmodules).catch(() => {});
         api.listStashes(path).then(setStashes).catch(() => {});
+        api.listRemotes(path).then(setRemotes).catch(() => {});
       }
       if (withStats) refreshStats();
       return s;
@@ -1627,25 +1630,157 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         text: "Copy commit SHA",
         action: () => run(async () => (await api.copyText(target), notify("SHA copied"))),
       }),
+      ...(remotes.length === 1
+        ? [
+            MenuItem.new({
+              text: `Push ${name} to ${remotes[0].name}`,
+              action: () =>
+                run(async () => {
+                  const out = await api.pushTag(path, remotes[0].name, name);
+                  await refresh();
+                  notify(out.trim() || `Pushed ${name}`);
+                }),
+            }),
+            MenuItem.new({
+              text: `Delete ${name} on ${remotes[0].name}`,
+              action: () =>
+                run(async () => {
+                  const ok = await confirm(`Delete tag ${name} on ${remotes[0].name}?`, {
+                    title: "Delete remote tag",
+                    kind: "warning",
+                  });
+                  if (!ok) return;
+                  const out = await api.deleteRemoteTag(path, remotes[0].name, name);
+                  await refresh();
+                  notify(out.trim() || `Deleted ${name} on ${remotes[0].name}`);
+                }),
+            }),
+          ]
+        : remotes.length > 1
+          ? [
+              Submenu.new({
+                text: "Push tag to…",
+                items: await Promise.all(
+                  remotes.map((r) =>
+                    MenuItem.new({
+                      text: r.name,
+                      action: () =>
+                        run(async () => {
+                          const out = await api.pushTag(path, r.name, name);
+                          await refresh();
+                          notify(out.trim() || `Pushed ${name}`);
+                        }),
+                    })
+                  )
+                ),
+              }),
+              Submenu.new({
+                text: "Delete tag on remote…",
+                items: await Promise.all(
+                  remotes.map((r) =>
+                    MenuItem.new({
+                      text: r.name,
+                      action: () =>
+                        run(async () => {
+                          const ok = await confirm(`Delete tag ${name} on ${r.name}?`, {
+                            title: "Delete remote tag",
+                            kind: "warning",
+                          });
+                          if (!ok) return;
+                          const out = await api.deleteRemoteTag(path, r.name, name);
+                          await refresh();
+                          notify(out.trim() || `Deleted ${name} on ${r.name}`);
+                        }),
+                    })
+                  )
+                ),
+              }),
+            ]
+          : []),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: `Delete tag ${name}`, action: () => deleteTag(name) }),
     ]);
     await (await Menu.new({ items })).popup();
   };
 
+  const showRemoteMenu = async (r: RemoteInfo) => {
+    const items = await Promise.all([
+      MenuItem.new({
+        text: `Rename ${r.name}…`,
+        action: () =>
+          askName(
+            "Rename remote",
+            "remote-name",
+            (name) =>
+              run(async () => {
+                await api.renameRemote(path, r.name, name);
+                await refresh();
+                notify(`Renamed remote to ${name}`);
+              }),
+            { initial: r.name, cta: "Rename" }
+          ),
+      }),
+      MenuItem.new({
+        text: "Set URL…",
+        action: () =>
+          askName(
+            "Remote URL",
+            "https://…",
+            (url) =>
+              run(async () => {
+                await api.setRemoteUrl(path, r.name, url);
+                await refresh();
+                notify(`Updated ${r.name} URL`);
+              }),
+            { initial: r.url, cta: "Save" }
+          ),
+      }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({
+        text: `Delete ${r.name}`,
+        action: () =>
+          run(async () => {
+            const ok = await confirm(`Delete remote ${r.name}?`, {
+              title: "Delete remote",
+              kind: "warning",
+            });
+            if (!ok) return;
+            await api.removeRemote(path, r.name);
+            await refresh();
+            notify(`Deleted remote ${r.name}`);
+          }),
+      }),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
+
   // Right-click a sidebar section header.
-  const showSectionMenu = async (section: "local" | "remote" | "tags") => {
+  const showSectionMenu = async (section: "local" | "remote" | "remotes" | "tags") => {
     const items = await Promise.all(
       section === "local"
         ? [MenuItem.new({ text: "New branch…", action: () => askName("New branch", "branch-name", onCreateBranch) })]
         : section === "remote"
           ? [MenuItem.new({ text: "Fetch all", action: () => onPullAction("fetch") })]
-          : [
-              MenuItem.new({
-                text: "New tag on current commit…",
-                action: () => askName("New tag at HEAD", "tag-name", (n) => tagAt(n, "HEAD", false)),
-              }),
-            ]
+          : section === "remotes"
+            ? [
+                MenuItem.new({
+                  text: "Add remote…",
+                  action: () =>
+                    askName("Remote name", "origin", (name) =>
+                      askName("Remote URL", "https://…", (url) =>
+                        run(async () => {
+                          await api.addRemote(path, name, url);
+                          await refresh();
+                          notify(`Added remote ${name}`);
+                        }), { cta: "Add" }), { cta: "Next" }),
+                }),
+              ]
+            : [
+                MenuItem.new({
+                  text: "New tag on current commit…",
+                  action: () => askName("New tag at HEAD", "tag-name", (n) => tagAt(n, "HEAD", false)),
+                }),
+              ]
     );
     await (await Menu.new({ items })).popup();
   };
@@ -1934,6 +2069,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         <Sidebar
           branches={branches}
           tags={tags}
+          remotes={remotes}
+          onRemoteMenu={showRemoteMenu}
           worktrees={worktrees}
           submodules={submodules}
           stashes={stashes}
