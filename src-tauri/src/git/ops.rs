@@ -33,43 +33,23 @@ pub fn commit(repo: &Repository, message: &str) -> AppResult<String> {
     if message.trim().is_empty() {
         return Err(AppError::Msg("commit message is empty".into()));
     }
-    let mut index = repo.index()?;
-    let tree = repo.find_tree(index.write_tree()?)?;
-    let sig = repo
-        .signature()
-        .map_err(|_| AppError::Msg("set git user.name and user.email before committing".into()))?;
-    let parents: Vec<git2::Commit> =
-        match repo.head().ok().and_then(|h| h.peel_to_commit().ok()) {
-            Some(c) => vec![c],
-            None => vec![],
-        };
-    let parent_refs: Vec<&git2::Commit> = parents.iter().collect();
-    let oid = repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parent_refs)?;
-    Ok(oid.to_string())
+    // Shell out so commit.gpgsign / user.signingkey / gpg.format (gpg or ssh)
+    // are honored and commit hooks run - libgit2 commits are always unsigned.
+    let dir = workdir(repo)?;
+    run_git(dir, &["commit", "-m", message])?;
+    Ok(run_git(dir, &["rev-parse", "HEAD"])?.trim().to_string())
 }
 
-/// Amend HEAD: rewrite the last commit with the current index tree and `message`.
-/// Keeps the original author (git's amend behavior) but refreshes the committer.
+/// Amend HEAD: rewrite the last commit with the staged index tree and `message`.
+/// Keeps the original author (git's amend behavior), refreshes the committer, and
+/// signs per config. Shelled out so signing/hooks apply (libgit2 never signs).
 pub fn amend(repo: &Repository, message: &str) -> AppResult<String> {
     if message.trim().is_empty() {
         return Err(AppError::Msg("commit message is empty".into()));
     }
-    let head = repo
-        .head()
-        .ok()
-        .and_then(|h| h.peel_to_commit().ok())
-        .ok_or_else(|| AppError::Msg("no commit to amend".into()))?;
-    let mut index = repo.index()?;
-    let tree = repo.find_tree(index.write_tree()?)?;
-    let sig = repo
-        .signature()
-        .map_err(|_| AppError::Msg("set git user.name and user.email before committing".into()))?;
-    // author=None keeps the original author; committer=sig updates it to now.
-    let oid = head.amend(Some("HEAD"), None, Some(&sig), None, Some(message), Some(&tree))?;
-    // libgit2's amend (unlike `git commit --amend`) doesn't set ORIG_HEAD; write
-    // it so `git reset ORIG_HEAD` still recovers the pre-amend commit.
-    repo.reference("ORIG_HEAD", head.id(), true, "amend")?;
-    Ok(oid.to_string())
+    let dir = workdir(repo)?;
+    run_git(dir, &["commit", "--amend", "-m", message])?;
+    Ok(run_git(dir, &["rev-parse", "HEAD"])?.trim().to_string())
 }
 
 // Network + merge operations go through the git CLI (credentials, hooks, refs).
@@ -172,8 +152,15 @@ pub fn rebase_onto(repo: &Repository, branch: &str) -> AppResult<String> {
 }
 
 /// Stash every change (tracked + untracked) off the working tree.
-pub fn stash_all(repo: &Repository) -> AppResult<String> {
-    run_git(workdir(repo)?, &["stash", "push", "--include-untracked"])
+pub fn stash_all(repo: &Repository, message: Option<&str>) -> AppResult<String> {
+    let mut args: Vec<&str> = vec!["stash", "push", "--include-untracked"];
+    if let Some(msg) = message {
+        if !msg.is_empty() {
+            args.push("-m");
+            args.push(msg);
+        }
+    }
+    run_git(workdir(repo)?, &args)
 }
 
 // --- commit-centric operations (via git CLI for conflict/working-tree safety) ---
@@ -286,8 +273,8 @@ pub fn stash_edit_message(repo: &mut Repository, sha: &str, message: &str) -> Ap
 #[cfg(test)]
 mod tests {
     use super::{
-        amend, cherry_pick, fast_forward_to, merge, push, push_force, rebase_onto, reset_to,
-        revert_commit, stash_all, stash_apply, stash_edit_message,
+        amend, cherry_pick, commit, fast_forward_to, merge, push, push_force, rebase_onto,
+        reset_to, revert_commit, stash_all, stash_apply, stash_edit_message,
     };
     use crate::git::run_git;
     use git2::Repository;
@@ -377,7 +364,7 @@ mod tests {
         std::fs::write(dir.join("f.txt"), "base\nchange\n").unwrap(); // tracked change
         std::fs::write(dir.join("untracked.txt"), "x\n").unwrap(); // untracked
 
-        stash_all(&Repository::open(&dir).unwrap()).unwrap();
+        stash_all(&Repository::open(&dir).unwrap(), None).unwrap();
 
         assert_eq!(std::fs::read_to_string(dir.join("f.txt")).unwrap(), "base\n", "tracked reverted");
         assert!(!dir.join("untracked.txt").exists(), "untracked stashed too");
@@ -438,11 +425,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("f.txt")).unwrap(), "base\namended\n", "index tree amended in");
         assert_ne!(head(&dir), before, "amend rewrote HEAD to a new sha");
         assert_eq!(run_git(&dir, &["rev-parse", "HEAD~1"]).unwrap().trim(), parent, "parent unchanged");
-        assert_eq!(
-            run_git(&dir, &["rev-parse", "ORIG_HEAD"]).unwrap().trim(),
-            before,
-            "ORIG_HEAD recovers the pre-amend commit"
-        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -562,6 +544,19 @@ mod tests {
         stash_apply(&mut Repository::open(&dir).unwrap(), &one_sha).unwrap();
         let f = std::fs::read_to_string(dir.join("f.txt")).unwrap();
         assert!(f.contains("ONE") && !f.contains("TWO"), "the sha-addressed stash applies: {f}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn commit_records_the_message_via_git() {
+        let dir = tmp("commitshell");
+        init(&dir);
+        std::fs::write(dir.join("g.txt"), "new\n").unwrap();
+        run_git(&dir, &["add", "g.txt"]).unwrap();
+        let oid = commit(&Repository::open(&dir).unwrap(), "hello").unwrap();
+        let summary = run_git(&dir, &["log", "-1", "--pretty=%s"]).unwrap();
+        assert_eq!(summary.trim(), "hello");
+        assert_eq!(head(&dir), oid, "returned oid is the new HEAD");
         std::fs::remove_dir_all(&dir).ok();
     }
 }

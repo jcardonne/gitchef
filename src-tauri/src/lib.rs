@@ -119,6 +119,11 @@ fn file_content(
     diff::file_content(&open(&repo)?, &path, rev.as_deref(), staged, full)
 }
 
+#[tauri::command(async)]
+fn file_bytes(repo: String, path: String, rev: Option<String>, staged: bool) -> AppResult<String> {
+    diff::file_bytes(&open(&repo)?, &path, rev.as_deref(), staged)
+}
+
 #[tauri::command]
 fn commit_diff(repo: String, id: String) -> AppResult<Vec<diff::FileDiff>> {
     diff::commit_diff(&open(&repo)?, &id)
@@ -513,8 +518,8 @@ fn open_terminal(path: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-fn stash_all(repo: String) -> AppResult<String> {
-    ops::stash_all(&open(&repo)?)
+fn stash_all(repo: String, message: Option<String>) -> AppResult<String> {
+    ops::stash_all(&open(&repo)?, message.as_deref())
 }
 
 #[tauri::command]
@@ -580,6 +585,7 @@ pub fn run() {
             list_tags,
             file_diff,
             file_content,
+            file_bytes,
             commit_diff,
             commit_stats,
             diff_commits,
