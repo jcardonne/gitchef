@@ -1947,10 +1947,6 @@ button {
   outline: none;
   border-color: var(--accent);
 }
-.home-actions {
-  display: flex;
-  gap: 10px;
-}
 .clone-modal {
   width: 480px;
   max-width: 92vw;
@@ -2600,36 +2596,103 @@ button {
   align-items: flex-start;
   justify-content: center;
   overflow: auto;
-  padding: 48px 20px;
+  padding: 8vh 24px 48px;
 }
 .home-inner {
   width: 100%;
-  max-width: 560px;
+  max-width: 520px;
+}
+.home-hero {
+  margin-bottom: 26px;
+}
+.home-logo-wrap {
+  position: relative;
+  display: inline-flex;
+  margin-bottom: 16px;
+}
+.home-logo-wrap::before {
+  content: "";
+  position: absolute;
+  inset: -34%;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 22%, transparent), transparent 68%);
+  z-index: 0;
 }
 .home-logo {
+  position: relative;
+  z-index: 1;
   display: block;
-  width: 84px;
-  height: 84px;
+  width: 72px;
+  height: 72px;
   object-fit: contain;
-  margin-bottom: 14px;
 }
 .home-inner h1 {
   margin: 0;
   font-size: 30px;
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
-.home-inner > p {
+.home-tagline {
   color: var(--text-dim);
-  margin: 4px 0 16px;
+  margin: 4px 0 0;
+  font-size: 14px;
 }
 .home-version {
-  display: block;
-  margin-top: 6px;
-  font-size: 12px;
-  color: color-mix(in srgb, var(--text-dim) 70%, transparent);
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 8px;
 }
-.home-open {
-  width: auto;
-  padding: 10px 18px;
+.home-cards {
+  display: flex;
+  gap: 12px;
+}
+.home-card {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 13px 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.12s var(--ease), border-color 0.12s var(--ease), background 0.12s var(--ease);
+}
+.home-card:hover {
+  border-color: var(--accent);
+  background: var(--bg-elev2);
+  transform: translateY(-1px);
+}
+.home-card-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+.home-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.home-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.home-card-sub {
+  font-size: 11.5px;
+  color: var(--text-dim);
 }
 .recents {
   margin-top: 30px;
@@ -2644,25 +2707,32 @@ button {
 .recent-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 6px;
+  gap: 11px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  margin-bottom: 3px;
   cursor: pointer;
 }
 .recent-row:hover {
-  border-color: var(--accent);
+  border-color: var(--border);
   background: var(--bg-elev);
+}
+.recent-glyph {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--text-dim);
 }
 .recent-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  gap: 1px;
 }
 .recent-name {
   font-weight: 600;
+  font-size: 13px;
 }
 .recent-path {
   font-size: 11px;
@@ -2675,6 +2745,29 @@ button {
   font-size: 11px;
   color: var(--text-dim);
   white-space: nowrap;
+  flex: 0 0 auto;
+}
+.recent-remove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease), background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.recent-row:hover .recent-remove {
+  opacity: 1;
+}
+.recent-remove:hover {
+  background: var(--bg-elev2);
+  color: var(--text);
 }
 
 /* ---------- changes: view toggle + tree ---------- */
@@ -3760,4 +3853,65 @@ button {
 }
 .rebase-bad {
   color: var(--accent);
+}
+
+/* ---------- image preview ---------- */
+.image-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 16px;
+}
+.image-checker {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  background-image:
+    linear-gradient(45deg, var(--bg-elev2) 25%, transparent 25%),
+    linear-gradient(-45deg, var(--bg-elev2) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, var(--bg-elev2) 75%),
+    linear-gradient(-45deg, transparent 75%, var(--bg-elev2) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.image-msg {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.image-diff {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+.image-side {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+.image-side + .image-side {
+  border-left: 1px solid var(--border);
+}
+.image-side figcaption {
+  flex: 0 0 auto;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--border);
+}
+.image-side .image-stage {
+  padding: 12px;
 }

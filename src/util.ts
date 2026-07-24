@@ -10,6 +10,17 @@ export const STATUS_GLYPH: Record<FileStatusKind, string> = {
   conflicted: "!",
 };
 
+// Image types we can preview inline as a data-URL <img>. Value = MIME; a path
+// whose extension isn't here is not previewable (null).
+const IMAGE_MIME: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+  webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp", ico: "image/x-icon", avif: "image/avif",
+};
+export function imageMime(path: string): string | null {
+  const ext = path.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  return (ext && IMAGE_MIME[ext]) || null;
+}
+
 // Lane colors for the commit graph - cycled by `color` index from the backend.
 export const LANE_COLORS = [
   "#22c5a4", // teal (brand)

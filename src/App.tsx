@@ -213,6 +213,9 @@ export default function App() {
         onCloseOthers={closeOthers}
         onCloseToRight={closeToRight}
         onOpen={pickAndOpen}
+        onClone={() => setCloneOpen(true)}
+        onOpenRecent={openTab}
+        recents={recents}
         onSetColor={setTabColor}
         onOpenSettings={() => setSettingsOpen(true)}
       />
