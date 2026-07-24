@@ -110,96 +110,111 @@ export default function CloneModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal clone-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Clone a repository</h3>
-        <div className="seg clone-tabs" role="tablist">
-          <button className={tab === "github" ? "active" : ""} onClick={() => { setTab("github"); setFilter(""); }}>GitHub</button>
-          <button className={tab === "gitlab" ? "active" : ""} onClick={() => { setTab("gitlab"); setFilter(""); }}>GitLab</button>
-          <button className={tab === "url" ? "active" : ""} onClick={() => setTab("url")}>Paste URL</button>
+        <div className="clone-head">
+          <h3>Clone a repository</h3>
+          <button className="clone-close" onClick={onClose} aria-label="Close">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+          </button>
+        </div>
+
+        <div className="clone-tabs" role="tablist">
+          <button className={`clone-tab${tab === "github" ? " active" : ""}`} onClick={() => { setTab("github"); setFilter(""); }}>GitHub</button>
+          <button className={`clone-tab${tab === "gitlab" ? " active" : ""}`} onClick={() => { setTab("gitlab"); setFilter(""); }}>GitLab</button>
+          <button className={`clone-tab${tab === "url" ? " active" : ""}`} onClick={() => setTab("url")}>Paste URL</button>
         </div>
 
         {tab === "url" ? (
-          <label className="pr-field">
-            <span>Repository URL</span>
+          <div className="clone-url-wrap">
+            <span className="clone-url-label">Repository URL</span>
             <input
               autoFocus
               value={url}
               onChange={(e) => setUrlAndFolder(e.target.value)}
               placeholder="https://github.com/owner/repo.git"
             />
-          </label>
+          </div>
         ) : (
-          <div className="clone-picker">
-            <input
-              className="clone-search"
-              autoFocus
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder={`Filter your ${tab === "github" ? "GitHub" : "GitLab"} repositories…`}
-            />
+          <>
+            <div className="clone-search">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5" /><path d="M11 11l3 3" strokeLinecap="round" /></svg>
+              <input
+                autoFocus
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder={`Filter your ${tab === "github" ? "GitHub" : "GitLab"} repositories…`}
+              />
+            </div>
             <div className="clone-repo-list">
-              {loading && <div className="empty-hint small">Loading repositories…</div>}
+              {loading && <div className="clone-empty">Loading repositories…</div>}
               {!loading && listError && (
-                <div className="clone-list-error">
+                <div className="clone-empty">
                   {listError}
-                  <div className="clone-hint">
+                  <div>
                     Sign in with <code>{tab === "github" ? "gh auth login" : "glab auth login"}</code>.
                   </div>
                 </div>
               )}
               {!loading && !listError && filtered.length === 0 && (
-                <div className="empty-hint small">{repos && repos.length ? "No match" : "No repositories"}</div>
+                <div className="clone-empty">{repos && repos.length ? "No matching repository." : "No repositories to show."}</div>
               )}
               {!loading &&
                 !listError &&
-                filtered.map((r) => (
-                  <div
-                    key={r.url}
-                    className={`clone-repo-row${url === r.url ? " selected" : ""}`}
-                    title={`${r.url}\nDouble-click to clone`}
-                    onClick={() => setUrlAndFolder(r.url)}
-                    onDoubleClick={() => quickClone(r)}
-                  >
-                    <div className="clone-repo-main">
-                      <span className="clone-repo-name">{r.name}</span>
-                      {r.private && <span className="clone-badge">private</span>}
-                      {r.fork && <span className="clone-badge">fork</span>}
-                    </div>
-                    {r.description && <span className="clone-repo-desc">{r.description}</span>}
-                  </div>
-                ))}
+                filtered.map((r) => {
+                  const cut = r.name.lastIndexOf("/");
+                  const owner = cut >= 0 ? r.name.slice(0, cut + 1) : "";
+                  const short = cut >= 0 ? r.name.slice(cut + 1) : r.name;
+                  return (
+                    <button
+                      key={r.url}
+                      className={`clone-repo-row${url === r.url ? " selected" : ""}`}
+                      title={`${r.url}\nDouble-click to clone`}
+                      onClick={() => setUrlAndFolder(r.url)}
+                      onDoubleClick={() => quickClone(r)}
+                    >
+                      <span className="clone-repo-info">
+                        <span className="clone-repo-name">
+                          {owner && <span className="owner">{owner}</span>}
+                          {short}
+                        </span>
+                        {r.description && <span className="clone-repo-desc">{r.description}</span>}
+                      </span>
+                      <span className="clone-repo-tags">
+                        {r.private && <span className="clone-tag">private</span>}
+                        {r.fork && <span className="clone-tag">fork</span>}
+                      </span>
+                    </button>
+                  );
+                })}
             </div>
-          </div>
+          </>
         )}
 
-        <label className="pr-field">
-          <span>Clone into</span>
-          <div className="clone-parent-row">
-            <input readOnly value={parent} placeholder="Choose a parent folder" />
-            <button onClick={() => void browse()}>Browse…</button>
+        <div className="clone-foot">
+          <div className="clone-dest">
+            <span className="clone-dest-label">Clone into</span>
+            <div className="clone-dest-field">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M1.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h5.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" strokeLinejoin="round" /></svg>
+              <button className="clone-dest-parent" title="Change folder" onClick={() => void browse()}>
+                {parent || "Choose a folder…"}
+              </button>
+              <span className="clone-dest-sep">/</span>
+              <input
+                value={folder}
+                onChange={(e) => {
+                  setFolderEdited(true);
+                  setFolder(e.target.value);
+                }}
+                placeholder="repo"
+              />
+            </div>
           </div>
-        </label>
-        <label className="pr-field">
-          <span>Folder name</span>
-          <input
-            value={folder}
-            onChange={(e) => {
-              setFolderEdited(true);
-              setFolder(e.target.value);
-            }}
-            placeholder="repo"
-          />
-        </label>
-        {url && (
-          <div className="clone-target">
-            Clone <code>{url}</code>
+          {error && <div className="clone-error">{error}</div>}
+          <div className="modal-actions">
+            <button onClick={onClose}>Cancel</button>
+            <button className="primary-btn" disabled={!valid || busy} onClick={submit}>
+              {busy ? "Cloning…" : "Clone"}
+            </button>
           </div>
-        )}
-        {error && <div className="clone-error">{error}</div>}
-        <div className="modal-actions">
-          <button onClick={onClose}>Cancel</button>
-          <button className="primary-btn" disabled={!valid || busy} onClick={submit}>
-            {busy ? "Cloning…" : "Clone"}
-          </button>
         </div>
       </div>
     </div>
