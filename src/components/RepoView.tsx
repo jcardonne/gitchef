@@ -96,9 +96,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // same id). Set when picking a branch/tag/stash in the sidebar.
   const [reveal, setReveal] = useState<{ id: string; seq: number } | null>(null);
   const [commitFiles, setCommitFiles] = useState<FileDiff[]>([]);
-  // Two-commit compare: `compareBase` is the commit picked "for compare" via the
-  // context menu; `compareView` is the active a..b comparison shown in the panel.
-  const [compareBase, setCompareBase] = useState<string | null>(null);
+  // Two-commit / two-branch compare: `compareBase` is the ref picked "for
+  // compare" (a commit sha or a branch tip, with a display label); `compareView`
+  // is the active a..b comparison shown in the panel.
+  const [compareBase, setCompareBase] = useState<{ sha: string; label: string } | null>(null);
   const [compareView, setCompareView] = useState<{ a: string; b: string } | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [diff, setDiff] = useState<FileDiff | null>(null);
@@ -1249,6 +1250,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     const target = opts.includeCommitActions ? branch.target : null;
     const isCurrent = !branch.is_remote && branch.is_head;
     const targetShort = target?.slice(0, 7) ?? "";
+    const tip = branch.target; // branch tip commit, for branch-vs-branch compare
     const upstream = !branch.is_remote ? branch.upstream ?? remoteForLocal(branch.name)?.name : null;
     const pl = providerLabel();
     // Remote branches carry the "origin/" prefix; the web tree URL wants the bare name.
@@ -1307,6 +1309,18 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                   branch.is_remote ? branch.name.split("/").slice(1).join("/") : branch.name
                 ),
             }),
+            PredefinedMenuItem.new({ item: "Separator" }),
+          ]
+        : []),
+      ...(tip
+        ? [
+            MenuItem.new({ text: "Select branch for compare", action: () => setCompareBase({ sha: tip, label: branch.name }) }),
+            ...(compareBase && compareBase.sha !== tip
+              ? [MenuItem.new({ text: `Compare ${compareBase.label} .. ${branch.name}`, action: () => runCompare(compareBase.sha, tip) })]
+              : []),
+            ...(compareBase
+              ? [MenuItem.new({ text: "Clear compare selection", action: () => setCompareBase(null) })]
+              : []),
             PredefinedMenuItem.new({ item: "Separator" }),
           ]
         : []),
@@ -1536,9 +1550,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       }),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: "Compare against working directory", action: () => compareWorkdir(sha) }),
-      MenuItem.new({ text: "Select for compare", action: () => setCompareBase(sha) }),
-      ...(compareBase && compareBase !== sha
-        ? [MenuItem.new({ text: `Compare ${compareBase.slice(0, 7)} .. ${short}`, action: () => runCompare(compareBase, sha) })]
+      MenuItem.new({ text: "Select for compare", action: () => setCompareBase({ sha, label: short }) }),
+      ...(compareBase && compareBase.sha !== sha
+        ? [MenuItem.new({ text: `Compare ${compareBase.label} .. ${short}`, action: () => runCompare(compareBase.sha, sha) })]
         : []),
       ...(compareBase
         ? [MenuItem.new({ text: "Clear compare selection", action: () => setCompareBase(null) })]
