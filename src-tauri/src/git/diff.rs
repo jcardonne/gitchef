@@ -286,6 +286,49 @@ fn read_file_bytes(
     Ok(std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default())
 }
 
+/// Minimal standard base64 (with padding), no external dep - for embedding a
+/// small binary blob (an image) into a data URL on the frontend.
+fn b64(bytes: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    for c in bytes.chunks(3) {
+        let n = ((c[0] as u32) << 16)
+            | ((*c.get(1).unwrap_or(&0) as u32) << 8)
+            | (*c.get(2).unwrap_or(&0) as u32);
+        out.push(T[(n >> 18 & 63) as usize] as char);
+        out.push(T[(n >> 12 & 63) as usize] as char);
+        out.push(if c.len() > 1 { T[(n >> 6 & 63) as usize] as char } else { '=' });
+        out.push(if c.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
+/// A file's raw bytes as base64, for an <img> preview. `rev` is a revspec (a full
+/// oid, or `<sha>^` for the "before" side of an image diff); `staged` reads the
+/// index; otherwise the working tree. A path absent at `rev` yields "" - e.g. a
+/// file added in that commit has no "before" image.
+pub fn file_bytes(repo: &Repository, path: &str, rev: Option<&str>, staged: bool) -> AppResult<String> {
+    let bytes = if let Some(rev) = rev {
+        let tree = repo
+            .revparse_single(rev)
+            .and_then(|o| o.peel_to_commit())
+            .map_err(|e| AppError::Msg(format!("invalid revision: {e}")))?
+            .tree()?;
+        match tree.get_path(Path::new(path)) {
+            Ok(entry) => repo.find_blob(entry.id())?.content().to_vec(),
+            Err(_) => Vec::new(),
+        }
+    } else if staged {
+        match repo.index()?.get_path(Path::new(path), 0) {
+            Some(entry) => repo.find_blob(entry.id)?.content().to_vec(),
+            None => std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default(),
+        }
+    } else {
+        std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default()
+    };
+    Ok(b64(&bytes))
+}
+
 /// Rename detection for the commit + compare file lists. Without it libgit2
 /// reports a rename as a delete+add pair; `find_similar` collapses that pair
 /// into one `Renamed` delta. `for_untracked` lets a move into a not-yet-staged
