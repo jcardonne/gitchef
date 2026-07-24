@@ -117,6 +117,16 @@ export interface RemoteInfo {
   url: string;
 }
 
+/// A repository the signed-in user can clone, from a forge account (GitHub/GitLab).
+export interface ForgeRepo {
+  name: string; // owner/name (or group/.../name on GitLab)
+  url: string; // https clone URL
+  ssh_url: string;
+  description: string;
+  private: boolean;
+  fork: boolean;
+}
+
 export interface WorktreeInfo {
   name: string;
   path: string;

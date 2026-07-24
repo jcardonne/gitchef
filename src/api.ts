@@ -12,6 +12,7 @@ import type {
   ReflogNode,
   RepoInfo,
   RemoteInfo,
+  ForgeRepo,
   SequencerState,
   StatusResult,
   SubmoduleInfo,
@@ -228,6 +229,8 @@ export const setRemoteUrl = (repo: string, name: string, url: string) =>
 // --- clone (network, App-level: no repo yet) ---
 export const cloneRepo = (url: string, dest: string) =>
   invoke<string>("clone_repo", { url, dest });
+export const listForgeRepos = (provider: "github" | "gitlab") =>
+  invoke<ForgeRepo[]>("list_forge_repos", { provider });
 
 // --- tags on the remote (network) ---
 export const pushTags = (repo: string, remote: string) =>
