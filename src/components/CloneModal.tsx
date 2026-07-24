@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import * as api from "../api";
 import type { ForgeRepo } from "../types";
-import { getCloneDir, setCloneDir } from "../storage";
+import { getCloneDir, setCloneDir, getCachedRepos, setCachedRepos } from "../storage";
+import { GithubIcon, GitlabIcon, LinkIcon } from "../icons";
 
 type Tab = "github" | "gitlab" | "url";
 
@@ -34,8 +35,8 @@ export default function CloneModal({
   const [filter, setFilter] = useState("");
 
   // Per-provider repo cache; null = not fetched yet (fetched on first tab view).
-  const [gh, setGh] = useState<ForgeRepo[] | null>(null);
-  const [gl, setGl] = useState<ForgeRepo[] | null>(null);
+  const [gh, setGh] = useState<ForgeRepo[] | null>(() => getCachedRepos("github"));
+  const [gl, setGl] = useState<ForgeRepo[] | null>(() => getCachedRepos("gitlab"));
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState("");
 
@@ -45,17 +46,28 @@ export default function CloneModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  // Lazily fetch a provider's repos the first time its tab is shown.
+  // Show the cached list instantly, then revalidate in the background each time a
+  // provider tab is shown (stale-while-revalidate). The spinner appears only on the
+  // very first fetch (nothing cached yet); a failed refresh stays silent when we
+  // still have a cached list, and surfaces as an error only when there is none.
   useEffect(() => {
     if (tab === "url") return;
-    if ((tab === "github" ? gh : gl) !== null) return;
+    const provider = tab;
+    const cached = provider === "github" ? gh : gl;
     let cancelled = false;
-    setLoading(true);
+    if (cached === null) setLoading(true);
     setListError("");
     api
-      .listForgeRepos(tab)
-      .then((repos) => !cancelled && (tab === "github" ? setGh(repos) : setGl(repos)))
-      .catch((e) => !cancelled && setListError(String(e)))
+      .listForgeRepos(provider)
+      .then((repos) => {
+        if (cancelled) return;
+        if (provider === "github") setGh(repos);
+        else setGl(repos);
+        setCachedRepos(provider, repos);
+      })
+      .catch((e) => {
+        if (!cancelled && cached === null) setListError(String(e));
+      })
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -118,9 +130,9 @@ export default function CloneModal({
         </div>
 
         <div className="clone-tabs" role="tablist">
-          <button className={`clone-tab${tab === "github" ? " active" : ""}`} onClick={() => { setTab("github"); setFilter(""); }}>GitHub</button>
-          <button className={`clone-tab${tab === "gitlab" ? " active" : ""}`} onClick={() => { setTab("gitlab"); setFilter(""); }}>GitLab</button>
-          <button className={`clone-tab${tab === "url" ? " active" : ""}`} onClick={() => setTab("url")}>Paste URL</button>
+          <button className={`clone-tab${tab === "github" ? " active" : ""}`} onClick={() => { setTab("github"); setFilter(""); }}><GithubIcon />GitHub</button>
+          <button className={`clone-tab${tab === "gitlab" ? " active" : ""}`} onClick={() => { setTab("gitlab"); setFilter(""); }}><GitlabIcon />GitLab</button>
+          <button className={`clone-tab${tab === "url" ? " active" : ""}`} onClick={() => { setTab("url"); setFilter(""); }}><LinkIcon />Paste URL</button>
         </div>
 
         {tab === "url" ? (
