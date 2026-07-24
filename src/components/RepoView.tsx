@@ -39,6 +39,7 @@ import { ImageView, ImageDiff } from "./ImageView";
 import RepoSkeleton from "./RepoSkeleton";
 import CommitFiles from "./CommitFiles";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
+import SearchPanel from "./SearchPanel";
 import ReflogModal from "./ReflogModal";
 import BlameView from "./BlameView";
 import FileHistoryModal from "./FileHistoryModal";
@@ -133,6 +134,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [activeAction, setActiveAction] = useState<string | null>(null);
   const [graphLimit, setGraphLimit] = useState(500);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  // A file opened from global search at a specific line: opens the preview panel
+  // even with no diff, and scrolls FileView to the hit.
+  const [openFile, setOpenFile] = useState<{ path: string; line: number } | null>(null);
   // Ctrl/Cmd+F opens the in-preview find when a file preview is open (else the
   // commit-graph search). Owned here; the active preview view renders the bar.
   const [findOpen, setFindOpen] = useState(false);
@@ -169,7 +174,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // below must not act on keystrokes meant for it. Declared up here so every
   // handler's dependency array can see it.
   const modalOpen =
-    paletteOpen || reflogOpen || prOpen || !!historyPath || !!rebasePlanBase || !!namePrompt;
+    paletteOpen || reflogOpen || prOpen || !!historyPath || !!rebasePlanBase || !!namePrompt || globalSearchOpen;
 
   const loadedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -335,7 +340,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // Cmd/Ctrl+F: opens the in-preview find when a file preview is open, else the
   // commit search. Cmd/Ctrl+K opens the command palette (active tab only).
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || modalOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
       const k = e.key.toLowerCase();
@@ -350,7 +355,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isActive]);
+  }, [isActive, modalOpen]);
 
   const run = useCallback(
     async (fn: () => Promise<void>, action?: string) => {
@@ -675,6 +680,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     setSelectedPath(null);
     setWorkSel(null);
     setFileContent(null);
+    setOpenFile(null);
   };
 
   // Focus the uncommitted-changes view (clicking the WIP node atop the graph).
@@ -704,6 +710,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
 
   const selectCommit = (id: string) => {
     setCompareMode(false);
+    setOpenFile(null);
     setCompareView(null);
     // Re-clicking the selected commit deselects it and closes its file list.
     if (selectedCommit === id) {
@@ -769,6 +776,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       closeDiff();
       return;
     }
+    setOpenFile(null);
     setSelectedPath(p);
     setWorkSel({ path: p, staged });
     const req = ++fileReq.current;
@@ -783,10 +791,25 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       closeDiff();
       return;
     }
+    setOpenFile(null);
     fileReq.current++; // this sets `diff` synchronously; drop any in-flight fetch
     setSelectedPath(file.path);
     setWorkSel(null);
     setDiff(file);
+  };
+
+  // Open an arbitrary tracked file at a line (from global search). Clears the
+  // commit/working selection so fileContentSource reads the working tree, forces
+  // File mode, and opens the preview panel via `openFile` even with no diff.
+  const openFileAt = (p: string, line: number) => {
+    setCompareMode(false);
+    setCompareView(null);
+    setWorkSel(null);
+    setSelectedCommit(null);
+    setDiff(null);
+    setSelectedPath(p);
+    setPreviewMode("file");
+    setOpenFile({ path: p, line });
   };
 
   const loadFullDiff = () =>
@@ -845,14 +868,14 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       previewMode === "blame" ? { rev: blameRev(), staged: false } : fileContentSource();
     let cancelled = false;
     load(async () => {
-      const c = await api.fileContent(path, selectedPath, rev, staged);
+      const c = await api.fileContent(path, selectedPath, rev, staged, !!openFile);
       if (!cancelled) setFileContent(c);
     });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewMode, selectedPath, workSel, selectedCommit, compareMode, blameAt]);
+  }, [previewMode, selectedPath, workSel, selectedCommit, compareMode, blameAt, openFile]);
 
   // Load blame hunks when the Blame view is active (same rev as its content).
   useEffect(() => {
@@ -1021,6 +1044,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       } else if (k === "l") {
         e.preventDefault();
         onPullAction(getPullDefault());
+      } else if (k === "f") {
+        e.preventDefault();
+        setGlobalSearchOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1956,7 +1982,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // A previewable pane is open when a diff is loaded or the conflict resolver is
   // showing. Feed that to the Cmd/Ctrl+F ref, and close the find bar once the
   // preview fully closes (a stale, invisible find would otherwise linger).
-  const previewOpen = !!diff || showConflict;
+  const previewOpen = !!diff || showConflict || !!openFile;
   useEffect(() => {
     previewOpenRef.current = previewOpen;
     if (!previewOpen) setFindOpen(false);
@@ -2037,6 +2063,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   ).sort();
   const prBaseDefault = ["main", "master"].find((n) => baseCandidates.includes(n)) ?? baseCandidates[0] ?? "main";
   const paletteCommands: PaletteCommand[] = [
+    { title: "Search in files…", run: () => setGlobalSearchOpen(true) },
     { title: "Push", run: onPush },
     { title: "Force push (with lease)", run: onForcePush },
     { title: "Pull (fast-forward)", run: () => onPullAction("ff") },
@@ -2123,8 +2150,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           onStashMenu={showSidebarStashMenu}
         />
 
-        <div className={`center${diff || showConflict ? " has-diff" : ""}`}>
-          {(diff || showConflict) && (
+        <div className={`center${diff || showConflict || openFile ? " has-diff" : ""}`}>
+          {(diff || showConflict || openFile) && (
             <div className="center-diff">
               <button
                 className="center-diff-close"
@@ -2206,7 +2233,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                 imgPath ? (
                   <ImageView repoPath={path} path={imgPath} rev={fileContentSource().rev} staged={fileContentSource().staged} />
                 ) : (
-                  <FileView content={fileContent} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
+                  <FileView content={fileContent} findOpen={findOpen} onFindClose={() => setFindOpen(false)} scrollToLine={openFile && openFile.path === selectedPath ? openFile.line : undefined} />
                 )
               ) : previewMode === "blame" ? (
                 imgPath ? (
@@ -2381,6 +2408,14 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
 
       {paletteOpen && (
         <CommandPalette commands={paletteCommands} onClose={() => setPaletteOpen(false)} />
+      )}
+      {globalSearchOpen && (
+        <SearchPanel
+          repoPath={path}
+          onOpenFile={openFileAt}
+          onPickCommit={goToCommit}
+          onClose={() => setGlobalSearchOpen(false)}
+        />
       )}
 
       {reflogOpen && (

@@ -5,6 +5,7 @@ import * as store from "./storage";
 import TabBar from "./components/TabBar";
 import Home from "./components/Home";
 import CloneModal from "./components/CloneModal";
+import CreateModal from "./components/CreateModal";
 import RepoView from "./components/RepoView";
 import UpdateToast from "./components/UpdateToast";
 import { runSilentUpdate, type UpdateStatus } from "./updater";
@@ -29,6 +30,7 @@ export default function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [theme, setThemeState] = useState<Theme>(getTheme());
   const [palette, setPaletteState] = useState<Palette>(getPalette());
   const changeTheme = (t: Theme) => {
@@ -214,6 +216,7 @@ export default function App() {
         onCloseToRight={closeToRight}
         onOpen={pickAndOpen}
         onClone={() => setCloneOpen(true)}
+        onCreate={() => setCreateOpen(true)}
         onOpenRecent={openTab}
         recents={recents}
         onSetColor={setTabColor}
@@ -226,6 +229,7 @@ export default function App() {
             recents={recents}
             onOpen={pickAndOpen}
             onClone={() => setCloneOpen(true)}
+            onCreate={() => setCreateOpen(true)}
             onOpenRecent={openTab}
             onRemoveRecent={onRemoveRecent}
           />
@@ -262,6 +266,18 @@ export default function App() {
             // success we close and open the cloned repo as a tab.
             const dir = await api.cloneRepo(url, dest);
             setCloneOpen(false);
+            openTab(dir);
+          }}
+        />
+      )}
+      {createOpen && (
+        <CreateModal
+          onClose={() => setCreateOpen(false)}
+          onSubmit={async (dest, branch, initialCommit) => {
+            // Errors propagate so the modal shows them + stays open; on success
+            // we close and open the new repo as a tab.
+            const dir = await api.initRepo(dest, branch, initialCommit);
+            setCreateOpen(false);
             openTab(dir);
           }}
         />
