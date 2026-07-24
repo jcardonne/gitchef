@@ -7,6 +7,7 @@ pub mod forge;
 pub mod graph;
 pub mod history;
 pub mod ops;
+pub mod remotes;
 pub mod rebase;
 pub mod repo;
 pub mod sequencer;

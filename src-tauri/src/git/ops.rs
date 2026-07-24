@@ -127,6 +127,33 @@ pub fn pull(repo: &Repository, mode: &str) -> AppResult<String> {
 pub fn fetch(repo: &Repository) -> AppResult<String> {
     run_git(workdir(repo)?, &["fetch", "--all", "--prune"])
 }
+
+/// Clone `url` into `dest` via the git CLI (network transport is stripped from
+/// our git2 build). The parent dir must already exist; `git clone` creates
+/// `dest`. Returns `dest` so the frontend can open it as a tab.
+pub fn clone(url: &str, dest: &str) -> AppResult<String> {
+    let parent = std::path::Path::new(dest)
+        .parent()
+        .ok_or_else(|| AppError::Msg("invalid destination".into()))?;
+    run_git(parent, &["clone", url, dest])?;
+    Ok(dest.to_string())
+}
+
+/// Push all local tags to `remote`.
+pub fn push_tags(repo: &Repository, remote: &str) -> AppResult<String> {
+    run_git(workdir(repo)?, &["push", remote, "--tags"])
+}
+
+/// Push a single tag to `remote`.
+pub fn push_tag(repo: &Repository, remote: &str, name: &str) -> AppResult<String> {
+    run_git(workdir(repo)?, &["push", remote, "tag", name])
+}
+
+/// Delete a tag on `remote`.
+pub fn delete_remote_tag(repo: &Repository, remote: &str, name: &str) -> AppResult<String> {
+    let refspec = format!("refs/tags/{name}");
+    run_git(workdir(repo)?, &["push", remote, "--delete", &refspec])
+}
 pub fn merge(repo: &Repository, branch: &str) -> AppResult<String> {
     // --autostash so a dirty tree doesn't block the merge; GIT_EDITOR=true keeps
     // the merge-commit message non-interactive. A conflict pauses (state=Merge)

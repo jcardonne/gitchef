@@ -4,8 +4,8 @@ mod watch;
 
 use error::AppResult;
 use git::{
-    avatars, branch, conflict, diff, files, forge, graph, history, ops, rebase, repo, sequencer,
-    submodule, worktree,
+    avatars, branch, conflict, diff, files, forge, graph, history, ops, rebase, remotes, repo,
+    sequencer, submodule, worktree,
 };
 use git2::Repository;
 
@@ -206,6 +206,26 @@ fn fetch(repo: String) -> AppResult<String> {
     ops::fetch(&open(&repo)?)
 }
 
+#[tauri::command(async)]
+fn clone_repo(url: String, dest: String) -> AppResult<String> {
+    ops::clone(&url, &dest)
+}
+
+#[tauri::command(async)]
+fn push_tags(repo: String, remote: String) -> AppResult<String> {
+    ops::push_tags(&open(&repo)?, &remote)
+}
+
+#[tauri::command(async)]
+fn push_tag(repo: String, remote: String, name: String) -> AppResult<String> {
+    ops::push_tag(&open(&repo)?, &remote, &name)
+}
+
+#[tauri::command(async)]
+fn delete_remote_tag(repo: String, remote: String, name: String) -> AppResult<String> {
+    ops::delete_remote_tag(&open(&repo)?, &remote, &name)
+}
+
 /// Start watching a repo's git dir so external changes push a `repo-changed`
 /// event to the UI. Idempotent per path.
 #[tauri::command]
@@ -311,6 +331,33 @@ fn create_tag_at(
 #[tauri::command]
 fn delete_tag(repo: String, name: String) -> AppResult<String> {
     branch::delete_tag(&open(&repo)?, &name)
+}
+
+// Remote management is offline config editing (no transport), so these use
+// git2 directly and stay non-async.
+#[tauri::command]
+fn list_remotes(repo: String) -> AppResult<Vec<remotes::RemoteInfo>> {
+    remotes::list(&open(&repo)?)
+}
+
+#[tauri::command]
+fn add_remote(repo: String, name: String, url: String) -> AppResult<()> {
+    remotes::add(&open(&repo)?, &name, &url)
+}
+
+#[tauri::command]
+fn remove_remote(repo: String, name: String) -> AppResult<()> {
+    remotes::remove(&open(&repo)?, &name)
+}
+
+#[tauri::command]
+fn rename_remote(repo: String, old_name: String, new_name: String) -> AppResult<()> {
+    remotes::rename(&open(&repo)?, &old_name, &new_name)
+}
+
+#[tauri::command]
+fn set_remote_url(repo: String, name: String, url: String) -> AppResult<()> {
+    remotes::set_url(&open(&repo)?, &name, &url)
 }
 
 #[tauri::command]
@@ -545,6 +592,10 @@ pub fn run() {
             push_force,
             pull,
             fetch,
+            clone_repo,
+            push_tags,
+            push_tag,
+            delete_remote_tag,
             watch_repo,
             unwatch_repo,
             merge,
@@ -563,6 +614,11 @@ pub fn run() {
             create_branch_at,
             create_tag_at,
             delete_tag,
+            list_remotes,
+            add_remote,
+            remove_remote,
+            rename_remote,
+            set_remote_url,
             cherry_pick,
             revert_commit,
             reset_to,
