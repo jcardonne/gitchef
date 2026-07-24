@@ -42,7 +42,10 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
   },
   {
     title: "Commit graph (when focused)",
-    items: [{ label: "Move between commits", combo: ["ArrowUp", "ArrowDown"] }],
+    items: [
+      { label: "Move between commits", combo: ["ArrowUp", "ArrowDown"] },
+      { label: "Move between commits (Vim keys)", combo: ["j", "k"] },
+    ],
   },
   {
     title: "Sync",
@@ -53,7 +56,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
   },
   {
     title: "Find",
-    items: [{ label: "Search commits", combo: ["mod", "F"] }],
+    items: [{ label: "Find in file / search commits", combo: ["mod", "F"] }],
   },
   {
     title: "Tabs",
