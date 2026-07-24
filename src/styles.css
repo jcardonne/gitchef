@@ -1951,109 +1951,257 @@ button {
   display: flex;
   gap: 10px;
 }
-.clone-parent-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.clone-parent-row input {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 0;
-}
-.clone-parent-row button {
-  flex: 0 0 auto;
-  background: var(--bg-elev2);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 12px;
-  cursor: pointer;
-}
-.clone-error {
-  color: var(--del);
-  font-size: 12px;
-  margin-top: 2px;
-}
 .clone-modal {
-  width: 520px;
+  width: 480px;
   max-width: 92vw;
-}
-.clone-tabs {
-  margin-bottom: 2px;
-}
-.clone-picker {
+  max-height: 80vh;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  overflow: hidden;
 }
-.clone-repo-list {
-  max-height: 240px;
-  overflow-y: auto;
-  border: 1px solid var(--border);
+.clone-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 18px 11px;
+}
+.clone-head h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+}
+.clone-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
   border-radius: 6px;
-  background: var(--bg);
-}
-.clone-repo-row {
-  padding: 6px 10px;
+  background: none;
+  border: 0;
+  color: var(--text-dim);
   cursor: pointer;
+}
+.clone-close:hover {
+  background: var(--bg-elev2);
+  color: var(--text);
+}
+.clone-tabs {
+  display: flex;
+  gap: 18px;
+  padding: 0 18px;
   border-bottom: 1px solid var(--border);
 }
-.clone-repo-row:last-child {
-  border-bottom: 0;
+.clone-tab {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 8px 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.clone-tab:hover {
+  color: var(--text);
+}
+.clone-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.clone-search {
+  position: relative;
+  padding: 12px 18px 6px;
+}
+.clone-search > svg {
+  position: absolute;
+  left: 28px;
+  top: 52%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  pointer-events: none;
+}
+.clone-search input {
+  padding-left: 30px;
+}
+.clone-repo-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 232px;
+  max-height: 320px;
+  padding: 4px 10px 6px;
+}
+.clone-repo-row {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 7px;
+  text-align: left;
 }
 .clone-repo-row:hover {
   background: var(--bg-elev2);
 }
 .clone-repo-row.selected {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
-.clone-repo-main {
+.clone-repo-row.selected::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.clone-repo-info {
+  min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 1px;
 }
 .clone-repo-name {
   font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clone-repo-name .owner {
+  color: var(--text-dim);
+  font-weight: 400;
 }
 .clone-repo-desc {
-  display: block;
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.clone-badge {
+.clone-repo-tags {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.clone-tag {
   font-size: 10px;
   color: var(--text-dim);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0 4px;
+  border-radius: 999px;
+  padding: 1px 7px;
 }
-.clone-list-error {
-  padding: 10px;
+.clone-empty {
+  padding: 34px 16px;
+  text-align: center;
+  color: var(--text-dim);
   font-size: 12px;
-  color: var(--del);
+  line-height: 1.5;
 }
-.clone-hint {
-  color: var(--text-dim);
-  margin-top: 4px;
-}
-.clone-hint code,
-.clone-target code {
-  background: var(--bg-elev2);
-  border-radius: 3px;
-  padding: 0 4px;
+.clone-empty code {
   font-family: var(--mono, ui-monospace, monospace);
+  background: var(--bg-elev2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--text);
 }
-.clone-target {
-  font-size: 11px;
+.clone-url-wrap {
+  padding: 14px 18px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.clone-url-label {
+  font-size: 12px;
   color: var(--text-dim);
+}
+.clone-foot {
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elev2);
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.clone-dest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.clone-dest-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+.clone-dest-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 9px;
+}
+.clone-dest-field:focus-within {
+  border-color: var(--accent);
+}
+.clone-dest-field > svg {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+  margin-right: 2px;
+}
+.clone-dest-parent {
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  padding: 0;
+  font-size: 12px;
+  flex: 0 1 auto;
+}
+.clone-dest-parent:hover {
+  color: var(--text);
+}
+.clone-dest-sep {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+.clone-dest-field input {
+  flex: 1 1 auto;
+  min-width: 60px;
+  width: auto;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+.clone-dest-field input:focus {
+  outline: none;
+}
+.clone-foot .modal-actions {
+  margin-top: 0;
+}
+.clone-error {
+  color: var(--del);
+  font-size: 12px;
 }
 
 /* ---------- command palette ---------- */
