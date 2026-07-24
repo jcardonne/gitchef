@@ -396,10 +396,21 @@ pub fn diff_commits(repo: &Repository, a: &str, b: &str) -> AppResult<Vec<FileDi
 
 #[cfg(test)]
 mod tests {
-    use super::{file_content, file_diff, MAX_DIFF_LINES};
+    use super::{b64, file_content, file_diff, MAX_DIFF_LINES};
     use crate::git::run_git;
     use git2::Repository;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn base64_matches_the_standard_with_padding() {
+        // The classic RFC 4648 vectors, incl. both padding lengths.
+        assert_eq!(b64(b"Man"), "TWFu");
+        assert_eq!(b64(b"Ma"), "TWE=");
+        assert_eq!(b64(b"M"), "TQ==");
+        assert_eq!(b64(b""), "");
+        assert_eq!(b64(b"any carnal pleasure."), "YW55IGNhcm5hbCBwbGVhc3VyZS4=");
+        assert_eq!(b64(&[0xff, 0x00, 0xff]), "/wD/");
+    }
 
     fn tmp(tag: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
