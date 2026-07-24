@@ -290,7 +290,7 @@ fn read_file_bytes(
 /// small binary blob (an image) into a data URL on the frontend.
 fn b64(bytes: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for c in bytes.chunks(3) {
         let n = ((c[0] as u32) << 16)
             | ((*c.get(1).unwrap_or(&0) as u32) << 8)
