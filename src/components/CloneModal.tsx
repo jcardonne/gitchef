@@ -224,6 +224,12 @@ export default function CloneModal({
           <div className="modal-actions">
             <button onClick={onClose}>Cancel</button>
             <button className="primary-btn" disabled={!valid || busy} onClick={submit}>
+              {busy && (
+                <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
+                  <path d="M8 2a6 6 0 0 1 6 6" />
+                </svg>
+              )}
               {busy ? "Cloning…" : "Clone"}
             </button>
           </div>

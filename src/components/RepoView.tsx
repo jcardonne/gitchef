@@ -23,7 +23,7 @@ import type {
   SubmoduleInfo,
   StashInfo,
 } from "../types";
-import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, isRateLimited, rateLimitBackoffMs, relativeTime } from "../util";
+import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, imageMime, isRateLimited, rateLimitBackoffMs, relativeTime } from "../util";
 import { shouldBackgroundFetch, shouldHandleRepoChange, shouldRefreshPrs, extendBackoff } from "../refreshPolicy";
 import Toolbar from "./Toolbar";
 import Sidebar from "./Sidebar";
@@ -35,6 +35,7 @@ import SequencerBanner from "./SequencerBanner";
 import UndoBar from "./UndoBar";
 import RebasePlan from "./RebasePlan";
 import FileView from "./FileView";
+import { ImageView, ImageDiff } from "./ImageView";
 import RepoSkeleton from "./RepoSkeleton";
 import CommitFiles from "./CommitFiles";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
@@ -821,6 +822,20 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       null
     );
   }, [blameAt, workSel, selectedCommit, nodes, branches]);
+
+  // Image files preview as an <img> (checkerboard) instead of text/diff. The
+  // diff's "before" side is the working file's HEAD, a compare's left side, or a
+  // commit's parent.
+  const imgPath = selectedPath && imageMime(selectedPath) ? selectedPath : null;
+  const imgOldRev = workSel
+    ? blameRev()
+    : compareView
+      ? compareView.a
+      : compareMode
+        ? selectedCommit
+        : selectedCommit
+          ? `${selectedCommit}^`
+          : null;
 
   // Load whole-file content lazily for the File and Blame views. Cancellation
   // guards against a slow load landing after the user has moved on.
@@ -1798,6 +1813,14 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       await reload();
       notify(out.trim() || "Stashed all changes");
     });
+  const stashAllWithMessage = () =>
+    askName("Stash message", "message", (m) =>
+      run(async () => {
+        const out = await api.stashAll(path, m);
+        await reload();
+        notify(out.trim() || "Stashed all changes");
+      })
+    );
   const discardAllChanges = () =>
     run(async () => {
       const ok = await confirm(
@@ -1816,6 +1839,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     const items = await Promise.all([
       MenuItem.new({ text: "Stage all changes", action: stageAllChanges }),
       MenuItem.new({ text: "Stash all changes", action: stashAllChanges }),
+      MenuItem.new({ text: "Stash all with message…", action: stashAllWithMessage }),
       MenuItem.new({ text: "Discard all changes", action: discardAllChanges }),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: "View changes", action: selectWork }),
@@ -2020,6 +2044,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     { title: "Fetch", run: () => onPullAction("fetch") },
     { title: "Stage all changes", run: stageAllChanges },
     { title: "Stash all changes", run: stashAllChanges },
+    { title: "Stash all with message…", run: stashAllWithMessage },
     { title: "Discard all changes", run: discardAllChanges },
     { title: "New branch…", run: () => askName("New branch", "branch-name", onCreateBranch) },
     { title: "Show reflog", run: () => setReflogOpen(true) },
@@ -2178,9 +2203,19 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                   )}
               </div>
               {previewMode === "file" ? (
-                <FileView content={fileContent} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
+                imgPath ? (
+                  <ImageView repoPath={path} path={imgPath} rev={fileContentSource().rev} staged={fileContentSource().staged} />
+                ) : (
+                  <FileView content={fileContent} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
+                )
               ) : previewMode === "blame" ? (
-                <BlameView content={fileContent} hunks={blame} onPickCommit={selectCommit} onLineMenu={showBlameMenu} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
+                imgPath ? (
+                  <ImageView repoPath={path} path={imgPath} rev={blameRev()} staged={false} />
+                ) : (
+                  <BlameView content={fileContent} hunks={blame} onPickCommit={selectCommit} onLineMenu={showBlameMenu} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
+                )
+              ) : imgPath ? (
+                <ImageDiff repoPath={path} path={imgPath} oldRev={imgOldRev} newRev={fileContentSource().rev} newStaged={fileContentSource().staged} />
               ) : previewMode === "diff" && workSel && workFileStatus === "conflicted" ? (
                 <ConflictViewer
                   path={workSel.path}

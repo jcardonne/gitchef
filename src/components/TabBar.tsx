@@ -5,6 +5,7 @@ import { Image } from "@tauri-apps/api/image";
 import { TAB_COLORS, type Tab, type TabColor } from "../types";
 import * as api from "../api";
 import { resolvedTheme } from "../theme";
+import type { RecentRepo } from "../storage";
 
 const appWindow = getCurrentWindow();
 const isMac = navigator.platform.toLowerCase().includes("mac");
@@ -96,6 +97,9 @@ interface Props {
   onCloseOthers: (path: string) => void;
   onCloseToRight: (path: string) => void;
   onOpen: () => void;
+  onClone: () => void;
+  onOpenRecent: (path: string) => void;
+  recents: RecentRepo[];
   onSetColor: (path: string, color: TabColor | null) => void;
   onOpenSettings: () => void;
 }
@@ -111,9 +115,28 @@ export default function TabBar({
   onCloseOthers,
   onCloseToRight,
   onOpen,
+  onClone,
+  onOpenRecent,
+  recents,
   onSetColor,
   onOpenSettings,
 }: Props) {
+
+  // The + opens a small menu: recent repos, clone, or open a local folder.
+  const showAddMenu = async () => {
+    const recentItems = recents.length
+      ? await Promise.all(
+          recents.slice(0, 8).map((r) => MenuItem.new({ text: r.name, action: () => onOpenRecent(r.path) }))
+        )
+      : [await MenuItem.new({ text: "No recent repositories", enabled: false })];
+    const items = await Promise.all([
+      Submenu.new({ text: "Open recent", items: recentItems }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({ text: "Clone a repository…", action: onClone }),
+      MenuItem.new({ text: "Open local repository…", action: onOpen }),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
   // Reorder state. `dragging` = index of the tab being dragged (lifts/styles
   // the source); `dropIdx` = the slot it would land in, an insertion index in
   // 0..tabs.length so the gaps and the bar's end count as targets, not just
@@ -359,7 +382,7 @@ export default function TabBar({
         </div>
       ))}
 
-      <div className="tab-add" onClick={onOpen} title="Open a repository">
+      <div className="tab-add" onClick={() => void showAddMenu()} title="Open or clone a repository">
         +
       </div>
 

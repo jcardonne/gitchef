@@ -67,6 +67,10 @@ export const fileContent = (
   staged: boolean,
   full = false
 ) => invoke<FileContent>("file_content", { repo, path, rev, staged, full });
+/// Raw bytes of a file (base64) for an image preview. `rev` accepts `<sha>^` for
+/// the "before" side of an image diff; null reads the index (staged) or workdir.
+export const fileBytes = (repo: string, path: string, rev: string | null, staged: boolean) =>
+  invoke<string>("file_bytes", { repo, path, rev, staged });
 export const commitDiff = (repo: string, id: string) =>
   invoke<FileDiff[]>("commit_diff", { repo, id });
 export const commitStats = (repo: string, id: string) =>
@@ -167,7 +171,8 @@ export const ignorePath = (repo: string, pattern: string) =>
   invoke<void>("ignore_path", { repo, pattern });
 export const stashFile = (repo: string, path: string) =>
   invoke<string>("stash_file", { repo, path });
-export const stashAll = (repo: string) => invoke<string>("stash_all", { repo });
+export const stashAll = (repo: string, message?: string) =>
+  invoke<string>("stash_all", { repo, message: message ?? null });
 export const applyHunk = (
   repo: string,
   path: string,
