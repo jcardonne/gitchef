@@ -74,7 +74,13 @@ pub struct BlameHunkInfo {
 pub fn file_blame(repo: &Repository, path: &str, rev: Option<&str>) -> AppResult<Vec<BlameHunkInfo>> {
     let mut opts = BlameOptions::new();
     if let Some(r) = rev {
-        let oid = Oid::from_str(r).map_err(|e| AppError::Msg(format!("invalid commit id: {e}")))?;
+        // Resolve a revspec, not just a literal oid, so blame-at-parent (`<sha>^`)
+        // - and branch/tag names - work. Peel to the commit the ref names.
+        let oid = repo
+            .revparse_single(r)
+            .and_then(|o| o.peel_to_commit())
+            .map_err(|e| AppError::Msg(format!("invalid revision: {e}")))?
+            .id();
         opts.newest_commit(oid);
     }
     let blame = repo.blame_file(Path::new(path), Some(&mut opts))?;
@@ -164,6 +170,32 @@ mod tests {
         assert_eq!(blame.len(), 1); // both lines from one commit -> one hunk
         assert_eq!(blame[0].start_line, 1);
         assert_eq!(blame[0].lines, 2);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn blame_at_parent_revspec_walks_history_back() {
+        let dir = tmp("blame-parent");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        // c1 writes the line; c2 rewrites it. Blame at HEAD -> c2; at HEAD^ -> c1.
+        std::fs::write(dir.join("f.txt"), "original\n").unwrap();
+        commit_all(&dir, "c1");
+        let c1 = run_git(&dir, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        std::fs::write(dir.join("f.txt"), "rewritten\n").unwrap();
+        commit_all(&dir, "c2");
+        let c2 = run_git(&dir, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+
+        // A literal oid still resolves (backward compatible).
+        let head = super::file_blame(&fresh(&dir), "f.txt", Some(&c2)).unwrap();
+        assert_eq!(head[0].commit_id, c2);
+
+        // The parent revspec `<c2>^` walks back to c1 - what the "Blame parent"
+        // action relies on. `Oid::from_str` would have rejected the trailing `^`.
+        let parent = super::file_blame(&fresh(&dir), "f.txt", Some(&format!("{c2}^"))).unwrap();
+        assert_eq!(parent[0].commit_id, c1);
 
         std::fs::remove_dir_all(&dir).ok();
     }

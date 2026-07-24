@@ -11,19 +11,21 @@ import { renderCode } from "./CodeLine";
 const ROW_H = 18; // must match .diff-line height in CSS
 
 /// Whole-file view with a per-line blame gutter (short sha + author), shown once
-/// per hunk run like git blame. Clicking a line's gutter jumps to that commit.
-/// Virtualized like FileView so a large file still scrolls smoothly, syntax-
-/// colored per its path, with the same Ctrl/Cmd+F find over the whole file.
+/// per hunk run like git blame. Left-click a gutter jumps to its commit; right-
+/// click a line for blame-at-parent, jump, or copy sha. Virtualized like FileView
+/// so a large file scrolls smoothly, syntax-colored per path, with Ctrl/Cmd+F find.
 export default function BlameView({
   content,
   hunks,
   onPickCommit,
+  onLineMenu,
   findOpen,
   onFindClose,
 }: {
   content: FileContent | null;
   hunks: BlameHunkInfo[];
   onPickCommit: (sha: string) => void;
+  onLineMenu: (h: BlameHunkInfo) => void;
   findOpen: boolean;
   onFindClose: () => void;
 }) {
@@ -60,7 +62,11 @@ export default function BlameView({
             // Label only at the first line of each hunk run (grouped like git blame).
             const isStart = !!h && (idx === 0 || perLine[idx - 1] !== h);
             return (
-              <div className="diff-line ctx blame-line" key={idx}>
+              <div
+                className="diff-line ctx blame-line"
+                key={idx}
+                onContextMenu={h ? (e) => { e.preventDefault(); onLineMenu(h); } : undefined}
+              >
                 <span
                   className={"blame-gutter" + (h ? " clickable" : "")}
                   title={h ? `${h.short_id} · ${h.author} · ${relativeTime(h.time)}` : ""}
