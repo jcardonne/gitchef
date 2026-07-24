@@ -1994,6 +1994,9 @@ button {
   border-bottom: 1px solid var(--border);
 }
 .clone-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: none;
   border: 0;
   cursor: pointer;
@@ -2002,6 +2005,9 @@ button {
   padding: 8px 0;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+}
+.clone-tab svg {
+  opacity: 0.85;
 }
 .clone-tab:hover {
   color: var(--text);

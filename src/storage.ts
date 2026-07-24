@@ -1,7 +1,7 @@
 // Lightweight persistence for recents + the open-tab session, backed by the
 // webview's localStorage. Pure frontend - no backend round-trips.
 
-import type { TabColor } from "./types";
+import type { TabColor, ForgeRepo } from "./types";
 
 const RECENTS_KEY = "gitchef.recents";
 const SESSION_KEY = "gitchef.session";
@@ -158,6 +158,23 @@ export function getCloneDir(): string {
 }
 export function setCloneDir(dir: string): void {
   localStorage.setItem(CLONE_DIR_KEY, dir);
+}
+
+/// Cached forge repo lists per provider, so the clone dialog shows them instantly
+/// and revalidates in the background (stale-while-revalidate). Survives relaunch.
+/// `null` = never fetched (dialog should show a spinner); `[]` = fetched, empty.
+export function getCachedRepos(provider: "github" | "gitlab"): ForgeRepo[] | null {
+  const raw = localStorage.getItem(`gitchef.repoCache.${provider}`);
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? (v as ForgeRepo[]) : null;
+  } catch {
+    return null;
+  }
+}
+export function setCachedRepos(provider: "github" | "gitlab", repos: ForgeRepo[]): void {
+  localStorage.setItem(`gitchef.repoCache.${provider}`, JSON.stringify(repos));
 }
 
 export interface RecentRepo {
