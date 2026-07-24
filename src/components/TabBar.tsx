@@ -98,6 +98,7 @@ interface Props {
   onCloseToRight: (path: string) => void;
   onOpen: () => void;
   onClone: () => void;
+  onCreate: () => void;
   onOpenRecent: (path: string) => void;
   recents: RecentRepo[];
   onSetColor: (path: string, color: TabColor | null) => void;
@@ -116,6 +117,7 @@ export default function TabBar({
   onCloseToRight,
   onOpen,
   onClone,
+  onCreate,
   onOpenRecent,
   recents,
   onSetColor,
@@ -133,6 +135,7 @@ export default function TabBar({
       Submenu.new({ text: "Open recent", items: recentItems }),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: "Clone a repository…", action: onClone }),
+      MenuItem.new({ text: "Create a repository…", action: onCreate }),
       MenuItem.new({ text: "Open local repository…", action: onOpen }),
     ]);
     await (await Menu.new({ items })).popup();

@@ -4,6 +4,7 @@ import type {
   BranchInfo,
   BlameHunkInfo,
   CommitNode,
+  ContentSearch,
   ConflictFile,
   FileContent,
   FileDiff,
@@ -83,6 +84,13 @@ export const fileHistory = (repo: string, path: string, limit?: number) =>
   invoke<FileHistoryEntry[]>("file_history", { repo, path, limit: limit ?? null });
 export const fileBlame = (repo: string, path: string, rev: string | null) =>
   invoke<BlameHunkInfo[]>("file_blame", { repo, path, rev });
+/// Repo-wide content search (git grep) over tracked files in the working tree.
+export const searchContent = (repo: string, query: string, regex: boolean, caseSensitive: boolean) =>
+  invoke<ContentSearch>("search_content", { repo, query, regex, caseSensitive });
+/// Pickaxe: commits that changed occurrences of `query` (git log -S), or whose
+/// diff matches it when `regex` (git log -G). Reuses the file-history row shape.
+export const searchPickaxe = (repo: string, query: string, regex: boolean) =>
+  invoke<FileHistoryEntry[]>("search_pickaxe", { repo, query, regex });
 /// Create a PR (GitHub) / MR (GitLab) via the gh/glab CLI; resolves to its URL.
 export const createPr = (repo: string, title: string, body: string, base: string) =>
   invoke<string>("create_pr", { repo, title, body, base });
@@ -234,6 +242,9 @@ export const setRemoteUrl = (repo: string, name: string, url: string) =>
 // --- clone (network, App-level: no repo yet) ---
 export const cloneRepo = (url: string, dest: string) =>
   invoke<string>("clone_repo", { url, dest });
+/// Initialize a new repository at `dest` (git init); resolves to the created dir.
+export const initRepo = (dest: string, branch: string, initialCommit: boolean) =>
+  invoke<string>("init_repo", { dest, branch, initialCommit });
 export const listForgeRepos = (provider: "github" | "gitlab") =>
   invoke<ForgeRepo[]>("list_forge_repos", { provider });
 

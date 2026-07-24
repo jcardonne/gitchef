@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useVirtual } from "../useVirtual";
 import type { FileContent } from "../types";
 import EmptyState, { DocIcon, BinaryIcon } from "./EmptyState";
@@ -13,6 +13,7 @@ interface Props {
   content: FileContent | null;
   findOpen: boolean;
   onFindClose: () => void;
+  scrollToLine?: number;
 }
 
 /// Virtualized whole-file view - the counterpart to DiffViewer for the "File"
@@ -20,13 +21,19 @@ interface Props {
 /// viewport are mounted), so a huge file still scrolls smoothly. Syntax-colored
 /// per its path; no +/- signs, selection, or hunk menus. Ctrl/Cmd+F opens a
 /// find bar that searches the whole file (not just mounted rows).
-export default function FileView({ content, findOpen, onFindClose }: Props) {
+export default function FileView({ content, findOpen, onFindClose, scrollToLine }: Props) {
   const lines = content?.lines ?? [];
   const lang = useMemo(() => (content ? langForPath(content.path) : null), [content]);
   // Only build the search corpus while the bar is open - one cell per line.
   const rowCells = useMemo(() => (findOpen ? lines.map((l) => [l]) : []), [findOpen, lines]);
   const { ref, el, start, end, padTop, padBottom } = useVirtual(lines.length, ROW_H, content);
   const find = useFind(findOpen, rowCells, (row) => scrollRowIntoView(el, ROW_H, row));
+
+  // Jump to a line opened from global search (1-based). Re-runs when the content
+  // finishes loading, since the scroll container isn't mounted until then.
+  useEffect(() => {
+    if (scrollToLine && scrollToLine >= 1) scrollRowIntoView(el, ROW_H, scrollToLine - 1);
+  }, [scrollToLine, content, el]);
 
   if (!content) return <EmptyState icon={<DocIcon />} title="No file selected" hint="Pick a file from the list to view it." />;
   if (content.binary) return <EmptyState icon={<BinaryIcon />} title="Binary file" hint="No preview available." />;
@@ -40,7 +47,7 @@ export default function FileView({ content, findOpen, onFindClose }: Props) {
           {lines.slice(start, end).map((l, i) => {
             const idx = start + i;
             return (
-              <div className="diff-line ctx" key={idx}>
+              <div className={"diff-line ctx" + (scrollToLine === idx + 1 ? " line-hit" : "")} key={idx}>
                 <span className="ln">{idx + 1}</span>
                 <span className="code">{renderCode(l || "", composeSpans(highlightTokens(l, lang), null), find.matchesByRow.get(idx))}</span>
               </div>

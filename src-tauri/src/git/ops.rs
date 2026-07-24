@@ -119,6 +119,26 @@ pub fn clone(url: &str, dest: &str) -> AppResult<String> {
     Ok(dest.to_string())
 }
 
+/// Initialize a new repository at `dest` (creating the directory if needed).
+/// `branch` sets the initial branch name (git >= 2.28). When `initial_commit`
+/// is set, an empty root commit is created so the repo has a valid HEAD right
+/// away (honoring signing/hooks like `commit`); otherwise HEAD is unborn until
+/// the first commit. Returns `dest` so the frontend can open it as a tab.
+pub fn init(dest: &str, branch: &str, initial_commit: bool) -> AppResult<String> {
+    let path = std::path::Path::new(dest);
+    std::fs::create_dir_all(path)?;
+    let mut args = vec!["init"];
+    if !branch.is_empty() {
+        args.push("-b");
+        args.push(branch);
+    }
+    run_git(path, &args)?;
+    if initial_commit {
+        run_git(path, &["commit", "--allow-empty", "-m", "Initial commit"])?;
+    }
+    Ok(dest.to_string())
+}
+
 /// Push all local tags to `remote`.
 pub fn push_tags(repo: &Repository, remote: &str) -> AppResult<String> {
     run_git(workdir(repo)?, &["push", remote, "--tags"])

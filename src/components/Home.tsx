@@ -7,6 +7,7 @@ interface Props {
   recents: RecentRepo[];
   onOpen: () => void;
   onClone: () => void;
+  onCreate: () => void;
   onOpenRecent: (path: string) => void;
   onRemoveRecent: (path: string) => void;
 }
@@ -23,6 +24,12 @@ const CloneGlyph = () => (
     <path d="M2.5 11v1.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V11" />
   </svg>
 );
+const CreateGlyph = () => (
+  <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" />
+    <path d="M8 5.5v5M5.5 8h5" />
+  </svg>
+);
 const RepoGlyph = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
     <path d="M1.5 4.2a1 1 0 0 1 1-1h3.2l1.5 1.6h6.3a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" />
@@ -30,7 +37,7 @@ const RepoGlyph = () => (
 );
 
 /// The Home tab: launch a repo (open local / clone) or jump back into a recent one.
-export default function Home({ recents, onOpen, onClone, onOpenRecent, onRemoveRecent }: Props) {
+export default function Home({ recents, onOpen, onClone, onCreate, onOpenRecent, onRemoveRecent }: Props) {
   const showRecentMenu = async (r: RecentRepo) => {
     const items = await Promise.all([
       MenuItem.new({ text: "Open", action: () => onOpenRecent(r.path) }),
@@ -67,6 +74,13 @@ export default function Home({ recents, onOpen, onClone, onOpenRecent, onRemoveR
             <span className="home-card-text">
               <span className="home-card-title">Clone a repository</span>
               <span className="home-card-sub">From GitHub, GitLab, or a URL</span>
+            </span>
+          </button>
+          <button className="home-card" onClick={onCreate}>
+            <span className="home-card-icon"><CreateGlyph /></span>
+            <span className="home-card-text">
+              <span className="home-card-title">Create a repository</span>
+              <span className="home-card-sub">Start a new repo in a folder</span>
             </span>
           </button>
         </div>

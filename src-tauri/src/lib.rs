@@ -5,7 +5,7 @@ mod watch;
 use error::AppResult;
 use git::{
     avatars, branch, conflict, diff, files, forge, graph, history, ops, rebase, remotes, repo,
-    sequencer, submodule, worktree,
+    search, sequencer, submodule, worktree,
 };
 use git2::Repository;
 
@@ -219,6 +219,30 @@ fn fetch(repo: String) -> AppResult<String> {
 #[tauri::command(async)]
 fn clone_repo(url: String, dest: String) -> AppResult<String> {
     ops::clone(&url, &dest)
+}
+
+#[tauri::command(async)]
+fn init_repo(dest: String, branch: String, initial_commit: bool) -> AppResult<String> {
+    ops::init(&dest, &branch, initial_commit)
+}
+
+#[tauri::command(async)]
+fn search_content(
+    repo: String,
+    query: String,
+    regex: bool,
+    case_sensitive: bool,
+) -> AppResult<search::ContentSearch> {
+    search::content(&open(&repo)?, &query, regex, case_sensitive)
+}
+
+#[tauri::command(async)]
+fn search_pickaxe(
+    repo: String,
+    query: String,
+    regex: bool,
+) -> AppResult<Vec<history::FileHistoryEntry>> {
+    search::pickaxe(&open(&repo)?, &query, regex)
 }
 
 #[tauri::command(async)]
@@ -605,6 +629,9 @@ pub fn run() {
             pull,
             fetch,
             clone_repo,
+            init_repo,
+            search_content,
+            search_pickaxe,
             push_tags,
             push_tag,
             delete_remote_tag,

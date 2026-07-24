@@ -219,6 +219,24 @@ export interface FileContent {
   truncated: boolean;
 }
 
+/// One matching line within a file (global content search).
+export interface SearchHit {
+  line: number;
+  text: string;
+}
+
+/// A file with its consecutive matching lines.
+export interface SearchFile {
+  path: string;
+  hits: SearchHit[];
+}
+
+/// Repo-wide content-search result. `truncated` = hits were capped.
+export interface ContentSearch {
+  files: SearchFile[];
+  truncated: boolean;
+}
+
 /// An in-progress git operation paused mid-flight (conflicts or an `edit` stop).
 /// `kind` is null when the working tree is clean (nothing paused).
 export type SequencerKind = "rebase" | "merge" | "cherry_pick" | "revert";

@@ -10,6 +10,7 @@ pub mod ops;
 pub mod remotes;
 pub mod rebase;
 pub mod repo;
+pub mod search;
 pub mod sequencer;
 pub mod submodule;
 pub mod worktree;
@@ -41,8 +42,9 @@ pub fn short_oid(oid: git2::Oid) -> String {
 /// Run the system `git` binary inside `dir`. Used for operations where shelling
 /// out is more robust than libgit2: network + auth (push/pull/fetch), merge,
 /// and checkout (which mutates the working tree with all of git's safety rails).
-/// Errs on a non-zero exit. The sequencer (`sequencer::run_step`) builds its own
-/// Command instead because it needs env vars AND pause-tolerant exit handling.
+/// Errs on a non-zero exit. Two sites build their own Command instead: the
+/// sequencer (`sequencer::run_step`) needs env vars AND pause-tolerant exit
+/// handling, and `search::content` reads `git grep`'s exit-1 (no matches).
 pub fn run_git(dir: &Path, args: &[&str]) -> AppResult<String> {
     let out = std::process::Command::new("git")
         .current_dir(dir)
