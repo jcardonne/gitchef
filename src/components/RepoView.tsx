@@ -799,10 +799,15 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     return { rev: compareMode ? null : selectedCommit, staged: false };
   }, [workSel, compareMode, selectedCommit]);
 
+  // An explicit rev to blame at, set by the blame "Blame parent" action to walk
+  // history back; null = the default (shown commit / HEAD). Reset when the file
+  // or base commit changes so it never leaks across files.
+  const [blameAt, setBlameAt] = useState<{ rev: string; label: string } | null>(null);
   // Blame shows a committed file version, so its content AND hunks use the same
   // rev: the shown commit, or HEAD for a working file (never the dirty workdir,
   // which would misalign the gutter).
   const blameRev = useCallback((): string | null => {
+    if (blameAt) return blameAt.rev; // a reblame (e.g. blame-at-parent) overrides
     if (!workSel) return selectedCommit;
     // The current HEAD commit - resolved from the graph's HEAD ref label so it
     // works whether HEAD is on a branch or detached; falls back to the branch
@@ -812,7 +817,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       branches.find((b) => b.is_head)?.target ??
       null
     );
-  }, [workSel, selectedCommit, nodes, branches]);
+  }, [blameAt, workSel, selectedCommit, nodes, branches]);
 
   // Load whole-file content lazily for the File and Blame views. Cancellation
   // guards against a slow load landing after the user has moved on.
@@ -829,7 +834,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewMode, selectedPath, workSel, selectedCommit, compareMode]);
+  }, [previewMode, selectedPath, workSel, selectedCommit, compareMode, blameAt]);
 
   // Load blame hunks when the Blame view is active (same rev as its content).
   useEffect(() => {
@@ -845,7 +850,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewMode, selectedPath, workSel, selectedCommit]);
+  }, [previewMode, selectedPath, workSel, selectedCommit, blameAt]);
 
   const loadFullFile = () =>
     run(async () => {
@@ -854,6 +859,30 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         previewMode === "blame" ? { rev: blameRev(), staged: false } : fileContentSource();
       setFileContent(await api.fileContent(path, selectedPath, rev, staged, true));
     });
+
+  // Drop a blame-rev override when the file or base commit changes, so a reblame
+  // never carries over to the next file/commit.
+  useEffect(() => {
+    setBlameAt(null);
+  }, [selectedPath, selectedCommit]);
+
+  // Blame line context menu: reblame at the line's parent (peel one commit back),
+  // jump to the line's commit, or copy its sha.
+  const showBlameMenu = async (h: BlameHunkInfo) => {
+    const items = await Promise.all([
+      MenuItem.new({
+        text: `Blame parent of ${h.short_id}`,
+        action: () => setBlameAt({ rev: `${h.commit_id}^`, label: `parent of ${h.short_id}` }),
+      }),
+      MenuItem.new({ text: `Jump to commit ${h.short_id}`, action: () => selectCommit(h.commit_id) }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({
+        text: "Copy commit SHA",
+        action: () => run(async () => (await api.copyText(h.commit_id), notify("SHA copied"))),
+      }),
+    ]);
+    await (await Menu.new({ items })).popup();
+  };
 
   const onCommit = (message: string, amend: boolean) =>
     run(async () => {
@@ -1981,6 +2010,15 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
                     History
                   </button>
                 )}
+                {previewMode === "blame" && blameAt && (
+                  <button
+                    className="mini-btn"
+                    onClick={() => setBlameAt(null)}
+                    title="Return to the latest blame"
+                  >
+                    Blaming: {blameAt.label} · reset
+                  </button>
+                )}
                 {(((previewMode === "diff" || previewMode === "split") && diff?.truncated && workSel) ||
                   ((previewMode === "file" || previewMode === "blame") && fileContent?.truncated)) && (
                   <button
@@ -2005,7 +2043,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
               {previewMode === "file" ? (
                 <FileView content={fileContent} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
               ) : previewMode === "blame" ? (
-                <BlameView content={fileContent} hunks={blame} onPickCommit={selectCommit} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
+                <BlameView content={fileContent} hunks={blame} onPickCommit={selectCommit} onLineMenu={showBlameMenu} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
               ) : previewMode === "diff" && workSel && workFileStatus === "conflicted" ? (
                 <ConflictViewer
                   path={workSel.path}
