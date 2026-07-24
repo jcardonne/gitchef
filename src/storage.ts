@@ -24,6 +24,7 @@ const SIDEBAR_KEY = "gitchef.sidebarGroups";
 export interface SidebarGroups {
   local: boolean;
   remote: boolean;
+  remotes: boolean;
   pullRequests: boolean;
   tags: boolean;
   worktrees: boolean;
@@ -37,6 +38,7 @@ export function getSidebarGroups(): SidebarGroups {
   return {
     local: true,
     remote: true,
+    remotes: true,
     pullRequests: true,
     tags: true,
     worktrees: true,

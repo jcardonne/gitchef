@@ -4,6 +4,7 @@ import type { RepoInfo, Tab, TabColor } from "./types";
 import * as store from "./storage";
 import TabBar from "./components/TabBar";
 import Home from "./components/Home";
+import CloneModal from "./components/CloneModal";
 import RepoView from "./components/RepoView";
 import UpdateToast from "./components/UpdateToast";
 import { runSilentUpdate, type UpdateStatus } from "./updater";
@@ -27,6 +28,7 @@ export default function App() {
   const closedTabs = useRef<string[]>([]); // stack of recently closed tab paths
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
   const [theme, setThemeState] = useState<Theme>(getTheme());
   const [palette, setPaletteState] = useState<Palette>(getPalette());
   const changeTheme = (t: Theme) => {
@@ -206,6 +208,7 @@ export default function App() {
           <Home
             recents={recents}
             onOpen={pickAndOpen}
+            onClone={() => setCloneOpen(true)}
             onOpenRecent={openTab}
             onRemoveRecent={onRemoveRecent}
           />
@@ -234,6 +237,18 @@ export default function App() {
 
       <UpdateToast status={updateStatus} />
       {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+      {cloneOpen && (
+        <CloneModal
+          onClose={() => setCloneOpen(false)}
+          onSubmit={async (url, dest) => {
+            // Let errors propagate so the modal shows them + stays open; on
+            // success we close and open the cloned repo as a tab.
+            const dir = await api.cloneRepo(url, dest);
+            setCloneOpen(false);
+            openTab(dir);
+          }}
+        />
+      )}
     </div>
   );
 }

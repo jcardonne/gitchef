@@ -6,12 +6,13 @@ import { relativeTime } from "../util";
 interface Props {
   recents: RecentRepo[];
   onOpen: () => void;
+  onClone: () => void;
   onOpenRecent: (path: string) => void;
   onRemoveRecent: (path: string) => void;
 }
 
 /// The Home tab: open a new repo, or jump back into a recently opened one.
-export default function Home({ recents, onOpen, onOpenRecent, onRemoveRecent }: Props) {
+export default function Home({ recents, onOpen, onClone, onOpenRecent, onRemoveRecent }: Props) {
   const showRecentMenu = async (r: RecentRepo) => {
     const items = await Promise.all([
       MenuItem.new({ text: "Open", action: () => onOpenRecent(r.path) }),
@@ -32,9 +33,14 @@ export default function Home({ recents, onOpen, onOpenRecent, onRemoveRecent }: 
           Open-source visual Git client.
           <span className="home-version">v{__APP_VERSION__}</span>
         </p>
-        <button className="primary-btn home-open" onClick={onOpen}>
-          Open a repository
-        </button>
+        <div className="home-actions">
+          <button className="primary-btn home-open" onClick={onOpen}>
+            Open a repository
+          </button>
+          <button className="primary-btn home-open" onClick={onClone}>
+            Clone a repository
+          </button>
+        </div>
 
         {recents.length > 0 && (
         <div className="recents">

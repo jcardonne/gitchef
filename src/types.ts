@@ -112,6 +112,11 @@ export interface TagInfo {
   target: string; // commit SHA the tag points at
 }
 
+export interface RemoteInfo {
+  name: string;
+  url: string;
+}
+
 export interface WorktreeInfo {
   name: string;
   path: string;

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import type { BranchInfo, PullRequest, StashInfo, SubmoduleInfo, TagInfo, WorktreeInfo } from "../types";
+import type { BranchInfo, PullRequest, RemoteInfo, StashInfo, SubmoduleInfo, TagInfo, WorktreeInfo } from "../types";
 import { relativeTime } from "../util";
 import { getSidebarGroups, setSidebarGroups } from "../storage";
 import { CheckIcon, CloseIcon, LocalIcon, LockIcon, PullRequestIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
@@ -38,6 +38,7 @@ const DownloadIcon = () => (
 interface Props {
   branches: BranchInfo[];
   tags: TagInfo[];
+  remotes: RemoteInfo[];
   worktrees: WorktreeInfo[];
   submodules: SubmoduleInfo[];
   stashes: StashInfo[];
@@ -56,7 +57,8 @@ interface Props {
   onSelectTag: (target: string) => void;
   onCheckoutTag: (name: string) => void;
   onTagMenu: (name: string, target: string) => void;
-  onSectionMenu: (section: "local" | "remote" | "tags") => void;
+  onRemoteMenu: (r: RemoteInfo) => void;
+  onSectionMenu: (section: "local" | "remote" | "remotes" | "tags") => void;
   onOpenWorktree: (path: string) => void;
   onRefreshWips: () => void;
   onAddWorktree: () => void;
@@ -76,6 +78,7 @@ interface Props {
 export default function Sidebar({
   branches,
   tags,
+  remotes,
   worktrees,
   submodules,
   stashes,
@@ -92,6 +95,7 @@ export default function Sidebar({
   onSelectTag,
   onCheckoutTag,
   onTagMenu,
+  onRemoteMenu,
   onSectionMenu,
   onOpenWorktree,
   onRefreshWips,
@@ -289,6 +293,23 @@ export default function Sidebar({
           >
             <span className="tag-glyph"><TagIcon size={11} /></span>
             <span className="branch-name">{t.name}</span>
+          </div>
+        ))}
+      </Group>
+
+      <Group title="Remotes" icon={<RemoteIcon />} count={remotes.length} open={open.remotes} onToggle={() => toggle("remotes")} onMenu={() => onSectionMenu("remotes")}>
+        {remotes.length === 0 && <div className="empty-hint small">No remotes</div>}
+        {remotes.map((r) => (
+          <div
+            key={r.name}
+            className="branch-row"
+            title={r.url}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              onRemoteMenu(r);
+            }}
+          >
+            <span className="branch-name">{r.name}</span>
           </div>
         ))}
       </Group>

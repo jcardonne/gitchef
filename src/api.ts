@@ -11,6 +11,7 @@ import type {
   PullRequest,
   ReflogNode,
   RepoInfo,
+  RemoteInfo,
   SequencerState,
   StatusResult,
   SubmoduleInfo,
@@ -212,3 +213,26 @@ export const openCommitFileInEditor = (repo: string, sha: string, path: string) 
   invoke<void>("open_commit_file_in_editor", { repo, sha, path });
 export const openDifftool = (repo: string, path: string) =>
   invoke<void>("open_difftool", { repo, path });
+
+// --- remotes (offline config) ---
+export const listRemotes = (repo: string) => invoke<RemoteInfo[]>("list_remotes", { repo });
+export const addRemote = (repo: string, name: string, url: string) =>
+  invoke<void>("add_remote", { repo, name, url });
+export const removeRemote = (repo: string, name: string) =>
+  invoke<void>("remove_remote", { repo, name });
+export const renameRemote = (repo: string, oldName: string, newName: string) =>
+  invoke<void>("rename_remote", { repo, oldName, newName });
+export const setRemoteUrl = (repo: string, name: string, url: string) =>
+  invoke<void>("set_remote_url", { repo, name, url });
+
+// --- clone (network, App-level: no repo yet) ---
+export const cloneRepo = (url: string, dest: string) =>
+  invoke<string>("clone_repo", { url, dest });
+
+// --- tags on the remote (network) ---
+export const pushTags = (repo: string, remote: string) =>
+  invoke<string>("push_tags", { repo, remote });
+export const pushTag = (repo: string, remote: string, name: string) =>
+  invoke<string>("push_tag", { repo, remote, name });
+export const deleteRemoteTag = (repo: string, remote: string, name: string) =>
+  invoke<string>("delete_remote_tag", { repo, remote, name });
