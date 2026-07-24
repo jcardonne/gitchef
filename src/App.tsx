@@ -47,6 +47,20 @@ export default function App() {
     void runSilentUpdate(setUpdateStatus);
   }, []);
 
+  // Keep the clone dialog's repo lists warm so it never has to show a loading
+  // spinner: fetch both forges into the cache at startup and hourly while the app
+  // runs. Best-effort - a missing CLI or a signed-out provider fails silently.
+  useEffect(() => {
+    const warm = () => {
+      for (const p of ["github", "gitlab"] as const) {
+        api.listForgeRepos(p).then((r) => store.setCachedRepos(p, r)).catch(() => {});
+      }
+    };
+    warm();
+    const id = setInterval(warm, 60 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
   // App-wide custom tooltips, driven off native title attributes.
   useTooltips();
 
