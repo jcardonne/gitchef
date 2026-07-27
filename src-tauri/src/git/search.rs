@@ -43,6 +43,7 @@ pub fn content(
     query: &str,
     regex: bool,
     case_sensitive: bool,
+    path: Option<&str>,
 ) -> AppResult<ContentSearch> {
     let empty = ContentSearch { files: Vec::new(), truncated: false };
     if query.is_empty() {
@@ -56,6 +57,10 @@ pub fn content(
     args.push(if regex { "--extended-regexp" } else { "--fixed-strings" });
     args.push("-e");
     args.push(query);
+    if let Some(p) = path.filter(|p| !p.is_empty()) {
+        args.push("--");
+        args.push(p);
+    }
     let out = Command::new("git").current_dir(dir).args(&args).output()?;
     match out.status.code() {
         Some(0) => {}
@@ -96,7 +101,7 @@ pub fn content(
 /// Pickaxe search: commits that change the number of occurrences of `query`
 /// (`git log -S`), or - with `regex` - whose diff matches it (`git log -G`).
 /// Newest-first, capped, reusing the file-history row shape for the frontend.
-pub fn pickaxe(repo: &Repository, query: &str, regex: bool) -> AppResult<Vec<FileHistoryEntry>> {
+pub fn pickaxe(repo: &Repository, query: &str, regex: bool, path: Option<&str>) -> AppResult<Vec<FileHistoryEntry>> {
     if query.is_empty() {
         return Ok(Vec::new());
     }
@@ -109,17 +114,19 @@ pub fn pickaxe(repo: &Repository, query: &str, regex: bool) -> AppResult<Vec<Fil
     let needle = format!("{}{}", if regex { "-G" } else { "-S" }, query);
     // `-z` terminates each commit with a NUL and the format joins its 6 fields
     // with NUL too, so the whole stream splits cleanly into 6-field chunks.
-    let raw = run_git(
-        dir,
-        &[
-            "log",
-            &needle,
-            "--max-count",
-            MAX_PICKAXE,
-            "-z",
-            "--format=%H%x00%h%x00%an%x00%ae%x00%at%x00%s",
-        ],
-    )?;
+    let mut args: Vec<&str> = vec![
+        "log",
+        &needle,
+        "--max-count",
+        MAX_PICKAXE,
+        "-z",
+        "--format=%H%x00%h%x00%an%x00%ae%x00%at%x00%s",
+    ];
+    if let Some(p) = path.filter(|p| !p.is_empty()) {
+        args.push("--");
+        args.push(p);
+    }
+    let raw = run_git(dir, &args)?;
     let fields: Vec<&str> = raw.split('\0').collect();
     let mut out = Vec::new();
     for chunk in fields.chunks(6) {
@@ -173,7 +180,7 @@ mod tests {
     fn content_groups_hits_by_file_and_respects_case() {
         let repo = Repository::open(setup("content")).unwrap();
         // Case-insensitive: "needle" and "NEEDLE" both match, grouped per file.
-        let r = content(&repo, "needle", false, false).unwrap();
+        let r = content(&repo, "needle", false, false, None).unwrap();
         assert!(!r.truncated);
         assert_eq!(r.files.len(), 2);
         assert_eq!(r.files[0].path, "a.txt");
@@ -181,21 +188,25 @@ mod tests {
         assert_eq!(r.files[1].path, "b.txt");
         assert_eq!(r.files[1].hits[0].line, 2);
         // Case-sensitive: only the uppercase line matches.
-        let cs = content(&repo, "NEEDLE", false, true).unwrap();
+        let cs = content(&repo, "NEEDLE", false, true, None).unwrap();
         assert_eq!(cs.files.len(), 1);
         assert_eq!(cs.files[0].hits.len(), 1);
         assert_eq!(cs.files[0].hits[0].line, 3);
         // No match is an empty result, not an error (git grep exits 1).
-        assert!(content(&repo, "zzz-absent", false, false).unwrap().files.is_empty());
+        assert!(content(&repo, "zzz-absent", false, false, None).unwrap().files.is_empty());
+        // Path filter scopes to a pathspec.
+        let scoped = content(&repo, "needle", false, false, Some("b.txt")).unwrap();
+        assert_eq!(scoped.files.len(), 1);
+        assert_eq!(scoped.files[0].path, "b.txt");
     }
 
     #[test]
     fn pickaxe_finds_the_commit_that_introduced_a_string() {
         let repo = Repository::open(setup("pickaxe")).unwrap();
-        let hits = pickaxe(&repo, "needle", false).unwrap();
+        let hits = pickaxe(&repo, "needle", false, None).unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].summary, "add needle");
-        assert!(pickaxe(&repo, "zzz-absent", false).unwrap().is_empty());
+        assert!(pickaxe(&repo, "zzz-absent", false, None).unwrap().is_empty());
     }
 
     #[test]
@@ -205,6 +216,6 @@ mod tests {
         let dir = tmp("unborn");
         Repository::init(&dir).unwrap();
         let repo = Repository::open(&dir).unwrap();
-        assert!(pickaxe(&repo, "anything", false).unwrap().is_empty());
+        assert!(pickaxe(&repo, "anything", false, None).unwrap().is_empty());
     }
 }

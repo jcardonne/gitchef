@@ -32,7 +32,7 @@ const TYPE_COLORS: Record<string, string> = {
 interface Props {
   status: StatusResult;
   onSelectFile: (path: string, staged: boolean) => void;
-  onCommit: (message: string, amend: boolean) => void;
+  onCommit: (message: string, amend: boolean, resetAuthor: boolean, author: string | null) => void;
   /// Message of the current HEAD commit, to prefill when amending. null when
   /// there's no commit to amend (unborn / detached HEAD) - hides the toggle.
   lastCommitMessage: string | null;
@@ -61,6 +61,11 @@ export default function StagingPanel({
   // composed at commit time, so it never fights the amend prefill.
   const [type, setType] = useState("");
   const [scope, setScope] = useState("");
+  // Amend author overrides (only used when amending) + co-authors (any commit).
+  const [resetAuthor, setResetAuthor] = useState(false);
+  const [authorOverride, setAuthorOverride] = useState("");
+  const [coAuthors, setCoAuthors] = useState<string[]>([]);
+  const [coAuthorInput, setCoAuthorInput] = useState("");
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const canAmend = lastCommitMessage !== null;
   // Turning amend on prefills the last message (unless the user already typed);
@@ -279,15 +284,32 @@ export default function StagingPanel({
     await (await Menu.new({ items })).popup();
   };
 
+  const addCoAuthor = () => {
+    const v = coAuthorInput.trim();
+    if (v) {
+      setCoAuthors((xs) => [...xs, v]);
+      setCoAuthorInput("");
+    }
+  };
+
   const handleCommit = () => {
     const doAmend = amend && canAmend;
     // Amend can commit a message-only change (no staged files); a normal commit
     // needs something staged.
     if (!message.trim() || (!doAmend && status.staged.length === 0)) return;
     const prefix = type ? `${type}${scope.trim() ? `(${scope.trim()})` : ""}: ` : "";
-    onCommit(prefix + message, doAmend);
+    // Co-authors become git trailers at the end of the message.
+    const trailers = coAuthors.map((c) => `Co-authored-by: ${c}`).join("\n");
+    const full = prefix + message + (trailers ? `\n\n${trailers}` : "");
+    // Author options apply only to an amend; an explicit author wins over reset.
+    const author = doAmend && !resetAuthor && authorOverride.trim() ? authorOverride.trim() : null;
+    onCommit(full, doAmend, doAmend && resetAuthor, author);
     setMessage("");
     setAmend(false);
+    setResetAuthor(false);
+    setAuthorOverride("");
+    setCoAuthors([]);
+    setCoAuthorInput("");
     // Clear the prefix too, or it silently rides onto the next commit (and would
     // double-prefix an amend, whose message is already prefixed).
     setType("");
@@ -513,6 +535,36 @@ export default function StagingPanel({
             Amend last commit
           </label>
         )}
+        {amend && canAmend && (
+          <div className="amend-author">
+            <label className="amend-author-reset" title="Set the author to your own git identity">
+              <input type="checkbox" checked={resetAuthor} onChange={(e) => setResetAuthor(e.target.checked)} />
+              Reset author to me
+            </label>
+            <input
+              className="amend-author-input"
+              value={authorOverride}
+              disabled={resetAuthor}
+              placeholder="Author: Name <email>"
+              onChange={(e) => setAuthorOverride(e.target.value)}
+            />
+          </div>
+        )}
+        <div className="co-authors">
+          {coAuthors.map((c, i) => (
+            <span className="co-author-chip" key={c + i}>
+              {c}
+              <button className="co-author-remove" title="Remove co-author" onClick={() => setCoAuthors((xs) => xs.filter((_, j) => j !== i))}>×</button>
+            </span>
+          ))}
+          <input
+            className="co-author-input"
+            value={coAuthorInput}
+            placeholder="+ Co-author: Name <email> (Enter)"
+            onChange={(e) => setCoAuthorInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addCoAuthor(); } }}
+          />
+        </div>
         <button
           className="primary-btn"
           disabled={busy || !message.trim() || (!(amend && canAmend) && status.staged.length === 0)}

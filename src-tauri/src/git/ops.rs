@@ -43,12 +43,23 @@ pub fn commit(repo: &Repository, message: &str) -> AppResult<String> {
 /// Amend HEAD: rewrite the last commit with the staged index tree and `message`.
 /// Keeps the original author (git's amend behavior), refreshes the committer, and
 /// signs per config. Shelled out so signing/hooks apply (libgit2 never signs).
-pub fn amend(repo: &Repository, message: &str) -> AppResult<String> {
+pub fn amend(repo: &Repository, message: &str, reset_author: bool, author: Option<&str>) -> AppResult<String> {
     if message.trim().is_empty() {
         return Err(AppError::Msg("commit message is empty".into()));
     }
     let dir = workdir(repo)?;
-    run_git(dir, &["commit", "--amend", "-m", message])?;
+    // `author_arg` must outlive `args` (which borrows it), so declare it first.
+    let author_arg;
+    let mut args = vec!["commit", "--amend", "-m", message];
+    // An explicit author wins over --reset-author (they conflict); --reset-author
+    // rewrites the author to the committer's own identity.
+    if let Some(a) = author.filter(|a| !a.is_empty()) {
+        author_arg = format!("--author={a}");
+        args.push(&author_arg);
+    } else if reset_author {
+        args.push("--reset-author");
+    }
+    run_git(dir, &args)?;
     Ok(run_git(dir, &["rev-parse", "HEAD"])?.trim().to_string())
 }
 
@@ -439,12 +450,15 @@ mod tests {
 
         std::fs::write(dir.join("f.txt"), "base\namended\n").unwrap();
         run_git(&dir, &["add", "."]).unwrap();
-        amend(&Repository::open(&dir).unwrap(), "reworded second").unwrap();
+        amend(&Repository::open(&dir).unwrap(), "reworded second", false, None).unwrap();
 
         assert_eq!(run_git(&dir, &["show", "-s", "--format=%s", "HEAD"]).unwrap().trim(), "reworded second");
         assert_eq!(std::fs::read_to_string(dir.join("f.txt")).unwrap(), "base\namended\n", "index tree amended in");
         assert_ne!(head(&dir), before, "amend rewrote HEAD to a new sha");
         assert_eq!(run_git(&dir, &["rev-parse", "HEAD~1"]).unwrap().trim(), parent, "parent unchanged");
+        // A custom author is applied to the amended commit.
+        amend(&Repository::open(&dir).unwrap(), "reworded second", false, Some("Ada <ada@x.io>")).unwrap();
+        assert_eq!(run_git(&dir, &["show", "-s", "--format=%an <%ae>", "HEAD"]).unwrap().trim(), "Ada <ada@x.io>");
         std::fs::remove_dir_all(&dir).ok();
     }
 
