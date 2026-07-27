@@ -180,8 +180,13 @@ fn commit(repo: String, message: String) -> AppResult<String> {
 }
 
 #[tauri::command]
-fn commit_amend(repo: String, message: String) -> AppResult<String> {
-    ops::amend(&open(&repo)?, &message)
+fn commit_amend(
+    repo: String,
+    message: String,
+    reset_author: bool,
+    author: Option<String>,
+) -> AppResult<String> {
+    ops::amend(&open(&repo)?, &message, reset_author, author.as_deref())
 }
 
 #[tauri::command]
@@ -232,8 +237,9 @@ fn search_content(
     query: String,
     regex: bool,
     case_sensitive: bool,
+    path: Option<String>,
 ) -> AppResult<search::ContentSearch> {
-    search::content(&open(&repo)?, &query, regex, case_sensitive)
+    search::content(&open(&repo)?, &query, regex, case_sensitive, path.as_deref())
 }
 
 #[tauri::command(async)]
@@ -241,8 +247,9 @@ fn search_pickaxe(
     repo: String,
     query: String,
     regex: bool,
+    path: Option<String>,
 ) -> AppResult<Vec<history::FileHistoryEntry>> {
-    search::pickaxe(&open(&repo)?, &query, regex)
+    search::pickaxe(&open(&repo)?, &query, regex, path.as_deref())
 }
 
 #[tauri::command(async)]

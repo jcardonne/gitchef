@@ -925,12 +925,12 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     await (await Menu.new({ items })).popup();
   };
 
-  const onCommit = (message: string, amend: boolean) =>
+  const onCommit = (message: string, amend: boolean, resetAuthor: boolean, author: string | null) =>
     run(async () => {
       // Remember which working file (if any) the diff preview is showing, so we
       // can drop it when this commit absorbs that file.
       const previewedPath = workSel?.path ?? null;
-      const sha = amend ? await api.commitAmend(path, message) : await api.commit(path, message);
+      const sha = amend ? await api.commitAmend(path, message, resetAuthor, author) : await api.commit(path, message);
       // A commit/amend moves HEAD, so the previous op's Undo (a reset back to
       // before it) would now silently discard this commit - retire it.
       setUndoState(null);

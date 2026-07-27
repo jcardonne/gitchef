@@ -1411,6 +1411,74 @@ button {
   cursor: pointer;
   user-select: none;
 }
+.amend-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 2px 6px;
+  flex-wrap: wrap;
+}
+.amend-author-reset {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.amend-author-input,
+.co-author-input {
+  flex: 1 1 auto;
+  min-width: 120px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.co-author-input {
+  min-width: 160px;
+}
+.amend-author-input:focus,
+.co-author-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.amend-author-input:disabled {
+  opacity: 0.5;
+}
+.co-authors {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 2px 6px;
+}
+.co-author-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 4px 2px 8px;
+  font-size: 11px;
+  color: var(--text);
+}
+.co-author-remove {
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.co-author-remove:hover {
+  color: var(--text);
+}
 .commit-box textarea {
   width: 100%;
   height: 64px;
@@ -2349,6 +2417,22 @@ button {
 }
 .line-hit {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.search-subhead {
+  display: flex;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.search-subhead .graph-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+}
+.search-match {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: inherit;
+  border-radius: 2px;
 }
 
 /* ---------- command palette ---------- */

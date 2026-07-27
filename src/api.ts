@@ -85,12 +85,12 @@ export const fileHistory = (repo: string, path: string, limit?: number) =>
 export const fileBlame = (repo: string, path: string, rev: string | null) =>
   invoke<BlameHunkInfo[]>("file_blame", { repo, path, rev });
 /// Repo-wide content search (git grep) over tracked files in the working tree.
-export const searchContent = (repo: string, query: string, regex: boolean, caseSensitive: boolean) =>
-  invoke<ContentSearch>("search_content", { repo, query, regex, caseSensitive });
+export const searchContent = (repo: string, query: string, regex: boolean, caseSensitive: boolean, path: string | null) =>
+  invoke<ContentSearch>("search_content", { repo, query, regex, caseSensitive, path });
 /// Pickaxe: commits that changed occurrences of `query` (git log -S), or whose
 /// diff matches it when `regex` (git log -G). Reuses the file-history row shape.
-export const searchPickaxe = (repo: string, query: string, regex: boolean) =>
-  invoke<FileHistoryEntry[]>("search_pickaxe", { repo, query, regex });
+export const searchPickaxe = (repo: string, query: string, regex: boolean, path: string | null) =>
+  invoke<FileHistoryEntry[]>("search_pickaxe", { repo, query, regex, path });
 /// Create a PR (GitHub) / MR (GitLab) via the gh/glab CLI; resolves to its URL.
 export const createPr = (repo: string, title: string, body: string, base: string) =>
   invoke<string>("create_pr", { repo, title, body, base });
@@ -101,8 +101,8 @@ export const openUrl = (url: string) => invoke<void>("open_url", { url });
 
 export const commit = (repo: string, message: string) =>
   invoke<string>("commit", { repo, message });
-export const commitAmend = (repo: string, message: string) =>
-  invoke<string>("commit_amend", { repo, message });
+export const commitAmend = (repo: string, message: string, resetAuthor: boolean, author: string | null) =>
+  invoke<string>("commit_amend", { repo, message, resetAuthor, author });
 export const checkout = (repo: string, name: string) => invoke<void>("checkout", { repo, name });
 export const createBranch = (repo: string, name: string, checkout: boolean) =>
   invoke<void>("create_branch", { repo, name, checkout });
