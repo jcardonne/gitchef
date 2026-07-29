@@ -348,6 +348,14 @@ pub fn stash_file(repo: &Repository, path: &str) -> AppResult<String> {
     run_git(workdir(repo)?, &["stash", "push", "--include-untracked", "--", &literal(path)])
 }
 
+/// Every tracked file in the working tree (repo-relative paths), for quick-open.
+/// `-z` gives NUL-separated, verbatim paths (no core.quotePath escaping and safe
+/// for names containing newlines).
+pub fn list_tracked(repo: &Repository) -> AppResult<Vec<String>> {
+    let raw = run_git(workdir(repo)?, &["ls-files", "-z"])?;
+    Ok(raw.split('\0').filter(|s| !s.is_empty()).map(str::to_string).collect())
+}
+
 /// Write a unified diff for one file (staged + unstaged vs HEAD) to `dest`.
 pub fn save_patch(repo: &Repository, path: &str, dest: &str) -> AppResult<()> {
     let patch = run_git(workdir(repo)?, &["diff", "HEAD", "--", &literal(path)])?;
@@ -568,7 +576,7 @@ pub fn open_difftool(repo: &Repository, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_hunk, apply_lines, discard_paths, stage_paths, stash_file, unstage_paths};
+    use super::{apply_hunk, apply_lines, discard_paths, list_tracked, stage_paths, stash_file, unstage_paths};
     use crate::git::{diff, run_git};
     use git2::Repository;
     use std::path::{Path, PathBuf};
@@ -962,5 +970,23 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "b1\n", "b reverted to HEAD");
         assert!(!dir.join("u.txt").exists(), "untracked file deleted");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn list_tracked_lists_committed_files_not_untracked() {
+        let dir = tmp("lsfiles");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("a.txt"), "x").unwrap();
+        std::fs::write(dir.join("sub/b.txt"), "y").unwrap();
+        run_git(&dir, &["add", "."]).unwrap();
+        run_git(&dir, &["commit", "-m", "init"]).unwrap();
+        std::fs::write(dir.join("c.txt"), "z").unwrap(); // untracked, must be excluded
+        let files = list_tracked(&Repository::open(&dir).unwrap()).unwrap();
+        assert!(files.contains(&"a.txt".to_string()));
+        assert!(files.contains(&"sub/b.txt".to_string()));
+        assert!(!files.iter().any(|f| f == "c.txt"));
     }
 }

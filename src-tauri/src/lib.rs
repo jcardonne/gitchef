@@ -120,6 +120,11 @@ fn file_content(
 }
 
 #[tauri::command(async)]
+fn list_files(repo: String) -> AppResult<Vec<String>> {
+    files::list_tracked(&open(&repo)?)
+}
+
+#[tauri::command(async)]
 fn file_bytes(repo: String, path: String, rev: Option<String>, staged: bool) -> AppResult<String> {
     diff::file_bytes(&open(&repo)?, &path, rev.as_deref(), staged)
 }
@@ -616,6 +621,7 @@ pub fn run() {
             list_tags,
             file_diff,
             file_content,
+            list_files,
             file_bytes,
             commit_diff,
             commit_stats,

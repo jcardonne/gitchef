@@ -68,6 +68,8 @@ export const fileContent = (
   staged: boolean,
   full = false
 ) => invoke<FileContent>("file_content", { repo, path, rev, staged, full });
+/// Tracked files in the repo (git ls-files), for the Cmd+P quick-open picker.
+export const listFiles = (repo: string) => invoke<string[]>("list_files", { repo });
 /// Raw bytes of a file (base64) for an image preview. `rev` accepts `<sha>^` for
 /// the "before" side of an image diff; null reads the index (staged) or workdir.
 export const fileBytes = (repo: string, path: string, rev: string | null, staged: boolean) =>

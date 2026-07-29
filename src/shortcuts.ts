@@ -59,6 +59,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     items: [
       { label: "Find in file / search commits", combo: ["mod", "F"] },
       { label: "Search files & history", combo: ["mod", "shift", "F"] },
+      { label: "Go to file", combo: ["mod", "P"] },
     ],
   },
   {
