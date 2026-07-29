@@ -40,6 +40,7 @@ import RepoSkeleton from "./RepoSkeleton";
 import CommitFiles from "./CommitFiles";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
 import SearchPanel from "./SearchPanel";
+import QuickOpen from "./QuickOpen";
 import ReflogModal from "./ReflogModal";
 import BlameView from "./BlameView";
 import FileHistoryModal from "./FileHistoryModal";
@@ -135,9 +136,10 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   const [graphLimit, setGraphLimit] = useState(500);
   const [searchOpen, setSearchOpen] = useState(false);
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false);
   // A file opened from global search at a specific line: opens the preview panel
   // even with no diff, and scrolls FileView to the hit.
-  const [openFile, setOpenFile] = useState<{ path: string; line: number } | null>(null);
+  const [openFile, setOpenFile] = useState<{ path: string; line: number | null } | null>(null);
   // Ctrl/Cmd+F opens the in-preview find when a file preview is open (else the
   // commit-graph search). Owned here; the active preview view renders the bar.
   const [findOpen, setFindOpen] = useState(false);
@@ -174,7 +176,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // below must not act on keystrokes meant for it. Declared up here so every
   // handler's dependency array can see it.
   const modalOpen =
-    paletteOpen || reflogOpen || prOpen || !!historyPath || !!rebasePlanBase || !!namePrompt || globalSearchOpen;
+    paletteOpen || reflogOpen || prOpen || !!historyPath || !!rebasePlanBase || !!namePrompt || globalSearchOpen || quickOpenOpen;
 
   const loadedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -351,6 +353,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       } else if (k === "k") {
         e.preventDefault();
         setPaletteOpen(true);
+      } else if (k === "p") {
+        e.preventDefault();
+        setQuickOpenOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -801,7 +806,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // Open an arbitrary tracked file at a line (from global search). Clears the
   // commit/working selection so fileContentSource reads the working tree, forces
   // File mode, and opens the preview panel via `openFile` even with no diff.
-  const openFileAt = (p: string, line: number) => {
+  const openFileAt = (p: string, line: number | null) => {
     setCompareMode(false);
     setCompareView(null);
     setWorkSel(null);
@@ -2028,7 +2033,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // Bails while any modal/overlay is open so it doesn't swallow the Escape that
   // should close the modal on top (it, not the diff behind it, must win).
   useEffect(() => {
-    if (!isActive || !diff || modalOpen) return;
+    if (!isActive || !previewOpen || modalOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const tag = (e.target as HTMLElement | null)?.tagName;
@@ -2042,7 +2047,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, diff, modalOpen, findOpen]);
+  }, [isActive, previewOpen, modalOpen, findOpen]);
 
   const repoActions = useMemo(
     () => ({ repoPath: path, busy, activeAction, run, refresh, notify }),
@@ -2063,6 +2068,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   ).sort();
   const prBaseDefault = ["main", "master"].find((n) => baseCandidates.includes(n)) ?? baseCandidates[0] ?? "main";
   const paletteCommands: PaletteCommand[] = [
+    { title: "Go to file…", run: () => setQuickOpenOpen(true) },
     { title: "Search in files…", run: () => setGlobalSearchOpen(true) },
     { title: "Push", run: onPush },
     { title: "Force push (with lease)", run: onForcePush },
@@ -2081,6 +2087,120 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       .filter((b) => !b.is_remote && !b.is_head)
       .map((b) => ({ title: `Checkout ${b.name}`, run: () => onCheckout(b.name) })),
   ];
+
+  const previewInner = previewOpen ? (
+    <>
+      <div className="preview-header">
+        <span className="preview-path" title={selectedPath ?? undefined}>
+          {selectedPath}
+        </span>
+        <div className="seg" role="tablist">
+          <button
+            className={previewMode === "diff" ? "active" : ""}
+            onClick={() => setPreviewMode("diff")}
+          >
+            Diff
+          </button>
+          <button
+            className={previewMode === "split" ? "active" : ""}
+            onClick={() => setPreviewMode("split")}
+          >
+            Split
+          </button>
+          <button
+            className={previewMode === "file" ? "active" : ""}
+            onClick={() => setPreviewMode("file")}
+          >
+            File
+          </button>
+          <button
+            className={previewMode === "blame" ? "active" : ""}
+            onClick={() => setPreviewMode("blame")}
+          >
+            Blame
+          </button>
+        </div>
+        {selectedPath && (
+          <button
+            className="mini-btn"
+            onClick={() => setHistoryPath(selectedPath)}
+            title="Commits that changed this file"
+          >
+            History
+          </button>
+        )}
+        {previewMode === "blame" && blameAt && (
+          <button
+            className="mini-btn"
+            onClick={() => setBlameAt(null)}
+            title="Return to the latest blame"
+          >
+            Blaming: {blameAt.label} · reset
+          </button>
+        )}
+        {(((previewMode === "diff" || previewMode === "split") && diff?.truncated && workSel) ||
+          ((previewMode === "file" || previewMode === "blame") && fileContent?.truncated)) && (
+          <button
+            className="mini-btn"
+            onClick={previewMode === "file" || previewMode === "blame" ? loadFullFile : loadFullDiff}
+            title="Load the entire file"
+          >
+            Load full file
+          </button>
+        )}
+        {/* A commit's diff has no "load the rest" path (that reads the
+            working tree), but the user still has to be told the diff
+            stops early - otherwise it just ends mid-file silently. */}
+        {(previewMode === "diff" || previewMode === "split") &&
+          diff?.truncated &&
+          !workSel && (
+            <span className="preview-note" title="This diff was capped; the rest is not shown.">
+              Truncated
+            </span>
+          )}
+        <button
+          className="center-diff-close"
+          onClick={closeDiff}
+          title="Close preview"
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+        </button>
+      </div>
+        {previewMode === "file" ? (
+          imgPath ? (
+            <ImageView repoPath={path} path={imgPath} rev={fileContentSource().rev} staged={fileContentSource().staged} />
+          ) : (
+            <FileView content={fileContent} findOpen={findOpen} onFindClose={() => setFindOpen(false)} scrollToLine={openFile && openFile.path === selectedPath ? openFile.line ?? undefined : undefined} />
+          )
+        ) : previewMode === "blame" ? (
+          imgPath ? (
+            <ImageView repoPath={path} path={imgPath} rev={blameRev()} staged={false} />
+          ) : (
+            <BlameView content={fileContent} hunks={blame} onPickCommit={selectCommit} onLineMenu={showBlameMenu} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
+          )
+        ) : imgPath ? (
+          <ImageDiff repoPath={path} path={imgPath} oldRev={imgOldRev} newRev={fileContentSource().rev} newStaged={fileContentSource().staged} />
+        ) : previewMode === "diff" && workSel && workFileStatus === "conflicted" ? (
+          <ConflictViewer
+            path={workSel.path}
+            onResolved={() => {
+              closeDiff();
+              void refresh({ history: false });
+            }}
+            findOpen={findOpen}
+            onFindClose={() => setFindOpen(false)}
+          />
+        ) : (
+          <DiffViewer
+            diff={diff}
+            mode={previewMode === "split" ? "split" : "unified"}
+            onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined}
+            findOpen={findOpen}
+            onFindClose={() => setFindOpen(false)}
+          />
+        )}
+    </>
+  ) : null;
 
   return (
     <RepoContext.Provider value={repoActions}>
@@ -2150,119 +2270,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           onStashMenu={showSidebarStashMenu}
         />
 
-        <div className={`center${diff || showConflict || openFile ? " has-diff" : ""}`}>
-          {(diff || showConflict || openFile) && (
-            <div className="center-diff">
-              <button
-                className="center-diff-close"
-                onClick={closeDiff}
-                title="Close preview"
-              >
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
-              </button>
-              <div className="preview-header">
-                <span className="preview-path" title={selectedPath ?? undefined}>
-                  {selectedPath}
-                </span>
-                <div className="seg" role="tablist">
-                  <button
-                    className={previewMode === "diff" ? "active" : ""}
-                    onClick={() => setPreviewMode("diff")}
-                  >
-                    Diff
-                  </button>
-                  <button
-                    className={previewMode === "split" ? "active" : ""}
-                    onClick={() => setPreviewMode("split")}
-                  >
-                    Split
-                  </button>
-                  <button
-                    className={previewMode === "file" ? "active" : ""}
-                    onClick={() => setPreviewMode("file")}
-                  >
-                    File
-                  </button>
-                  <button
-                    className={previewMode === "blame" ? "active" : ""}
-                    onClick={() => setPreviewMode("blame")}
-                  >
-                    Blame
-                  </button>
-                </div>
-                {selectedPath && (
-                  <button
-                    className="mini-btn"
-                    onClick={() => setHistoryPath(selectedPath)}
-                    title="Commits that changed this file"
-                  >
-                    History
-                  </button>
-                )}
-                {previewMode === "blame" && blameAt && (
-                  <button
-                    className="mini-btn"
-                    onClick={() => setBlameAt(null)}
-                    title="Return to the latest blame"
-                  >
-                    Blaming: {blameAt.label} · reset
-                  </button>
-                )}
-                {(((previewMode === "diff" || previewMode === "split") && diff?.truncated && workSel) ||
-                  ((previewMode === "file" || previewMode === "blame") && fileContent?.truncated)) && (
-                  <button
-                    className="mini-btn"
-                    onClick={previewMode === "file" || previewMode === "blame" ? loadFullFile : loadFullDiff}
-                    title="Load the entire file"
-                  >
-                    Load full file
-                  </button>
-                )}
-                {/* A commit's diff has no "load the rest" path (that reads the
-                    working tree), but the user still has to be told the diff
-                    stops early - otherwise it just ends mid-file silently. */}
-                {(previewMode === "diff" || previewMode === "split") &&
-                  diff?.truncated &&
-                  !workSel && (
-                    <span className="preview-note" title="This diff was capped; the rest is not shown.">
-                      Truncated
-                    </span>
-                  )}
-              </div>
-              {previewMode === "file" ? (
-                imgPath ? (
-                  <ImageView repoPath={path} path={imgPath} rev={fileContentSource().rev} staged={fileContentSource().staged} />
-                ) : (
-                  <FileView content={fileContent} findOpen={findOpen} onFindClose={() => setFindOpen(false)} scrollToLine={openFile && openFile.path === selectedPath ? openFile.line : undefined} />
-                )
-              ) : previewMode === "blame" ? (
-                imgPath ? (
-                  <ImageView repoPath={path} path={imgPath} rev={blameRev()} staged={false} />
-                ) : (
-                  <BlameView content={fileContent} hunks={blame} onPickCommit={selectCommit} onLineMenu={showBlameMenu} findOpen={findOpen} onFindClose={() => setFindOpen(false)} />
-                )
-              ) : imgPath ? (
-                <ImageDiff repoPath={path} path={imgPath} oldRev={imgOldRev} newRev={fileContentSource().rev} newStaged={fileContentSource().staged} />
-              ) : previewMode === "diff" && workSel && workFileStatus === "conflicted" ? (
-                <ConflictViewer
-                  path={workSel.path}
-                  onResolved={() => {
-                    closeDiff();
-                    void refresh({ history: false });
-                  }}
-                  findOpen={findOpen}
-                  onFindClose={() => setFindOpen(false)}
-                />
-              ) : (
-                <DiffViewer
-                  diff={diff}
-                  mode={previewMode === "split" ? "split" : "unified"}
-                  onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined}
-                  findOpen={findOpen}
-                  onFindClose={() => setFindOpen(false)}
-                />
-              )}
-            </div>
+        <div className={`center${previewOpen ? " has-diff" : ""}`}>
+          {previewOpen && (
+            <div className="center-diff">{previewInner}</div>
           )}
           <div className="center-graph">
             <GraphView
@@ -2416,6 +2426,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           onPickCommit={goToCommit}
           onClose={() => setGlobalSearchOpen(false)}
         />
+      )}
+      {quickOpenOpen && (
+        <QuickOpen repoPath={path} onOpen={(p) => openFileAt(p, null)} onClose={() => setQuickOpenOpen(false)} />
       )}
 
       {reflogOpen && (

@@ -452,15 +452,13 @@ button {
   display: none;
 }
 .center-diff-close {
-  position: absolute;
-  top: 6px;
-  right: 10px;
-  z-index: 2;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
+  margin-right: -4px;
   border-radius: 6px;
   color: var(--text-dim);
 }
@@ -1614,7 +1612,6 @@ button {
   align-items: center;
   gap: 10px;
   padding: 5px 12px;
-  padding-right: 38px; /* clear the absolute close ✕ in the top-right */
   color: var(--text-dim);
   border-bottom: 1px solid var(--border);
   background: var(--bg-elev);
@@ -2484,6 +2481,51 @@ button {
   font-size: 13px;
 }
 
+/* ---------- quick open (Cmd+P go to file) ---------- */
+/* Own panel (not .command-palette): starts centered by .modal-overlay, then the
+   results block expands and the centering slides the box up to make room below. */
+.quick-open {
+  width: 520px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-float);
+  overflow: hidden;
+}
+/* No divider line under the field: the white input on the elevated panel already
+   reads as separate, and a border here fused with the accent selection below. */
+.quick-open .palette-input {
+  border-bottom: none;
+}
+.quick-open .palette-item {
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+.quick-open-results {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.26s var(--ease), opacity 0.2s var(--ease);
+}
+.quick-open-results.open {
+  max-height: 240px;
+  opacity: 1;
+}
+/* Roomy inset so the selected (accent) row is a clear pill, not a bar under the field. */
+.quick-open-list {
+  padding: 8px;
+}
+.qo-hl {
+  color: var(--accent);
+  font-weight: 700;
+}
+.palette-item.active .qo-hl {
+  color: var(--on-accent);
+  text-decoration: underline;
+}
+
 /* ---------- reflog ---------- */
 .reflog-modal {
   align-self: flex-start;
@@ -2829,7 +2871,7 @@ button {
 }
 .home-inner {
   width: 100%;
-  max-width: 520px;
+  max-width: 780px;
 }
 .home-hero {
   margin-bottom: 26px;
@@ -3632,6 +3674,7 @@ button {
 .modal,
 .shortcuts-modal,
 .command-palette,
+.quick-open,
 .reflog-modal { animation: pop-in 0.18s var(--ease) both; }
 .settings-page { animation: view-in 0.18s var(--ease) both; }
 
