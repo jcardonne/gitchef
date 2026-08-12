@@ -242,7 +242,7 @@ export default function App() {
             data-tab-color={t.color}
             style={{ display: t.path === activePath ? "flex" : "none" }}
           >
-            <RepoView path={t.path} isActive={t.path === activePath} onLoaded={onRepoLoaded} onOpenPath={openTab} />
+            <RepoView path={t.path} isActive={t.path === activePath} onLoaded={onRepoLoaded} onOpenPath={openTab} onClose={closeTab} />
           </div>
         ))}
         {settingsOpen && (

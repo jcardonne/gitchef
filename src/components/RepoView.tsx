@@ -59,14 +59,21 @@ interface Props {
   onLoaded: (path: string, info: RepoInfo) => void;
   /// Open another repo path as a tab (App-level). Used to open a worktree.
   onOpenPath: (path: string) => void;
+  /// Close this tab (App-level). Used when the user declines to init a bare folder.
+  onClose: (path: string) => void;
 }
 
 /// All the per-repository state and UI for one tab. Instances stay mounted while
 /// their tab exists, so switching tabs preserves scroll + selection. Each
 /// instance only talks to the backend while it is the active tab; on activation
 /// it re-points the shared backend at its own path before issuing commands.
-export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props) {
+export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose }: Props) {
   const [repo, setRepo] = useState<RepoInfo | null>(null);
+  // Set when `path` isn't a Git repo yet (open_repo's sentinel error), so the
+  // tab offers to init it or close instead of sitting on the skeleton forever.
+  const [notARepo, setNotARepo] = useState(false);
+  // Bumped after `git init`-ing in place, to retry the load effect below.
+  const [retrySeq, setRetrySeq] = useState(0);
   const [nodes, setNodes] = useState<CommitNode[]>([]);
   const [hiddenStashes, setHiddenStashes] = useState<string[]>([]);
   const [branches, setBranches] = useState<BranchInfo[]>([]);
@@ -571,7 +578,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
   // Load repo data on first activation (lazy: background tabs never hit the
   // backend until focused). `path`/`refresh`/`onLoaded` are intentionally NOT in
   // the deps - they're stable for a given tab and `loadedRef` guards re-loads, so
-  // we only want this to fire when the tab becomes active.
+  // we only want this to fire when the tab becomes active, or `retrySeq` bumps
+  // after `initHere` runs `git init` in place.
   useEffect(() => {
     if (!isActive) return;
     let alive = true;
@@ -579,6 +587,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
       try {
         const info = await api.openRepo(path);
         if (!alive) return;
+        setNotARepo(false);
         setRepo(info);
         onLoaded(path, info);
         if (!loadedRef.current) {
@@ -592,14 +601,25 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
           loadedRef.current = true;
         }
       } catch (e) {
-        notify(String(e), true);
+        if (!alive) return;
+        // Sentinel from the backend's open() helper (see lib.rs): the folder has
+        // no .git yet. Offer to init it instead of leaving the skeleton stuck.
+        if (String(e) === "not_a_git_repository") setNotARepo(true);
+        else notify(String(e), true);
       }
     })();
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive]);
+  }, [isActive, retrySeq]);
+
+  // `git init` in place, then retry the load above via retrySeq.
+  const initHere = () =>
+    run(async () => {
+      await api.initRepo(path, "", false);
+      setRetrySeq((n) => n + 1);
+    });
 
   // Edits often happen in an external editor while GitChef is in the background.
   // Refresh a loaded active tab when it becomes visible/focused again.
@@ -2054,8 +2074,67 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
     [path, busy, activeAction, run, refresh, notify]
   );
 
+  // Defined once and reused below the `!repo` early returns too - initHere()'s
+  // failure (or a load error before we know it's just a missing repo) can toast
+  // while repo is still null, and that toast must render somewhere.
+  const toastEl = toast && (
+    <div
+      key={toast.seq}
+      className={`toast${toast.error ? " toast-error" : ""}${toast.closing ? " closing" : ""}`}
+    >
+      {toast.error && (
+        <div className="toast-error-head">
+          <span className="toast-error-title">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 1.8 15 14H1z" />
+              <path d="M8 6.3v3.4M8 11.7h.01" />
+            </svg>
+            Error
+          </span>
+          <span className="toast-countdown-wrap">
+            <span className="toast-countdown-label">This error will disappear</span>
+            <CountdownRing ms={toast.duration} />
+          </span>
+        </div>
+      )}
+      <span className="toast-msg">{toast.msg}</span>
+      {toast.error ? (
+        <div className="toast-actions">
+          <button onClick={() => run(async () => (await api.copyText(toast.msg), notify("Copied")))}>
+            Copy
+          </button>
+          <button onClick={dismissToast}>Close</button>
+        </div>
+      ) : (
+        <CountdownRing ms={toast.duration} />
+      )}
+    </div>
+  );
+
   if (!repo) {
-    return <RepoSkeleton />;
+    if (notARepo) {
+      return (
+        <>
+          <div className="empty-state">
+            <div className="empty-state-title">Not a Git repository</div>
+            <div className="empty-state-hint">{path} isn't tracked by Git yet.</div>
+            <div className="modal-actions">
+              <button onClick={() => onClose(path)}>Close tab</button>
+              <button className="primary-btn" disabled={busy} onClick={initHere}>
+                Initialize repository
+              </button>
+            </div>
+          </div>
+          {toastEl}
+        </>
+      );
+    }
+    return (
+      <>
+        <RepoSkeleton />
+        {toastEl}
+      </>
+    );
   }
 
   // Actions surfaced in the Cmd+K palette. Built fresh each render so every
@@ -2382,39 +2461,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath }: Props
         </div>
       </div>
 
-      {toast && (
-        <div
-          key={toast.seq}
-          className={`toast${toast.error ? " toast-error" : ""}${toast.closing ? " closing" : ""}`}
-        >
-          {toast.error && (
-            <div className="toast-error-head">
-              <span className="toast-error-title">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M8 1.8 15 14H1z" />
-                  <path d="M8 6.3v3.4M8 11.7h.01" />
-                </svg>
-                Error
-              </span>
-              <span className="toast-countdown-wrap">
-                <span className="toast-countdown-label">This error will disappear</span>
-                <CountdownRing ms={toast.duration} />
-              </span>
-            </div>
-          )}
-          <span className="toast-msg">{toast.msg}</span>
-          {toast.error ? (
-            <div className="toast-actions">
-              <button onClick={() => run(async () => (await api.copyText(toast.msg), notify("Copied")))}>
-                Copy
-              </button>
-              <button onClick={dismissToast}>Close</button>
-            </div>
-          ) : (
-            <CountdownRing ms={toast.duration} />
-          )}
-        </div>
-      )}
+      {toastEl}
 
       {paletteOpen && (
         <CommandPalette commands={paletteCommands} onClose={() => setPaletteOpen(false)} />

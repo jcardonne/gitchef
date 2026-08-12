@@ -2,7 +2,7 @@ mod error;
 mod git;
 mod watch;
 
-use error::AppResult;
+use error::{AppError, AppResult};
 use git::{
     avatars, branch, conflict, diff, files, forge, graph, history, ops, rebase, remotes, repo,
     search, sequencer, submodule, worktree,
@@ -12,8 +12,18 @@ use git2::Repository;
 /// Open a repository by path. The backend holds NO active-repo state: every
 /// command receives the repo path it operates on, so multiple tabs can never
 /// race over a shared "current repo" (libgit2 open is cheap).
+///
+/// A missing `.git` (path exists but isn't a repo) is remapped to a sentinel
+/// message so the frontend can offer to `git init` it instead of showing a raw
+/// libgit2 error - see RepoView's load effect.
 fn open(path: &str) -> AppResult<Repository> {
-    Ok(Repository::open(path)?)
+    Repository::open(path).map_err(|e| {
+        if e.code() == git2::ErrorCode::NotFound {
+            AppError::Msg("not_a_git_repository".into())
+        } else {
+            AppError::from(e)
+        }
+    })
 }
 
 #[tauri::command(async)]
