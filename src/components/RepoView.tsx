@@ -185,6 +185,8 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   const [selectedCommitStats, setSelectedCommitStats] = useState<WorkStats | null>(null);
   const [accountAvatars, setAccountAvatars] = useState<ReadonlyMap<string, string>>(new Map());
   const [toast, setToast] = useState<{ msg: string; error: boolean; duration: number; seq: number; closing?: boolean } | null>(null);
+  const [gitOutput, setGitOutput] = useState<{ stream: string; text: string }[]>([]);
+  const [showGitOutput, setShowGitOutput] = useState(false);
   const [namePrompt, setNamePrompt] = useState<{
     title: string;
     placeholder: string;
@@ -256,6 +258,20 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
     [dismissToast]
   );
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    listen<{ repo: string; stream: string; text: string }>("git-output", (event) => {
+      if (event.payload.repo !== path) return;
+      setGitOutput((lines) => [...lines, { stream: event.payload.stream, text: event.payload.text }].slice(-500));
+      setShowGitOutput(true);
+    }).then((fn) => (disposed ? fn() : (unlisten = fn))).catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [isActive, path]);
 
   // A background network error that looks like a provider rate-limit pauses the
   // auto-fetch loop until the window passes, instead of retrying on schedule
@@ -408,6 +424,8 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
       busyRef.current = true;
       setBusy(true);
       setActiveAction(action ?? null);
+      setGitOutput([]);
+      setShowGitOutput(false);
       try {
         await fn();
       } catch (e) {
@@ -743,7 +761,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
         hidden: document.visibilityState === "hidden",
       });
       if (ok) refresh({ stats: false }).catch(() => {});
-    }).then((fn) => (disposed ? fn() : (unlisten = fn)));
+    }).then((fn) => (disposed ? fn() : (unlisten = fn))).catch(() => {});
     return () => {
       disposed = true;
       unlisten?.();
@@ -2299,6 +2317,16 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
     </div>
   );
 
+  const gitOutputEl = showGitOutput && (
+    <section className="git-output-panel" aria-live="polite">
+      <header>
+        <strong>{busy ? `Running ${activeAction ?? "Git operation"}…` : "Git output"}</strong>
+        <button onClick={() => setShowGitOutput(false)}>Close</button>
+      </header>
+      <pre>{gitOutput.map((line, i) => <span key={i} className={line.stream === "stderr" ? "git-output-stderr" : undefined}>{line.text}</span>)}</pre>
+    </section>
+  );
+
   if (!repo) {
     if (notARepo) {
       return (
@@ -2314,6 +2342,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
             </div>
           </div>
           {toastEl}
+          {isActive && gitOutputEl}
         </>
       );
     }
@@ -2321,6 +2350,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
       <>
         <RepoSkeleton />
         {toastEl}
+          {isActive && gitOutputEl}
       </>
     );
   }
@@ -2686,6 +2716,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   </div>
 
       {toastEl}
+          {isActive && gitOutputEl}
 
       {paletteOpen && (
         <CommandPalette commands={paletteCommands} onClose={() => setPaletteOpen(false)} />
