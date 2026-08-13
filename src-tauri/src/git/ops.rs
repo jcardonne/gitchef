@@ -1,4 +1,4 @@
-use super::{literal, run_git, sequencer, workdir};
+use super::{literal, run_git, run_git_stream, sequencer, workdir};
 use crate::error::{AppError, AppResult};
 use crate::git::repo;
 use git2::Repository;
@@ -30,13 +30,21 @@ pub fn list_stashes(repo: &mut Repository) -> AppResult<Vec<StashInfo>> {
 }
 
 pub fn commit(repo: &Repository, message: &str) -> AppResult<String> {
+    commit_inner(None, repo, message)
+}
+
+pub fn commit_stream(app: &tauri::AppHandle, repo: &Repository, message: &str) -> AppResult<String> {
+    commit_inner(Some(app), repo, message)
+}
+
+fn commit_inner(app: Option<&tauri::AppHandle>, repo: &Repository, message: &str) -> AppResult<String> {
     if message.trim().is_empty() {
         return Err(AppError::Msg("commit message is empty".into()));
     }
     // Shell out so commit.gpgsign / user.signingkey / gpg.format (gpg or ssh)
     // are honored and commit hooks run - libgit2 commits are always unsigned.
     let dir = workdir(repo)?;
-    run_git(dir, &["commit", "-m", message])?;
+    match app { Some(app) => run_git_stream(app, dir, &["commit", "-m", message])?, None => run_git(dir, &["commit", "-m", message])? };
     Ok(run_git(dir, &["rev-parse", "HEAD"])?.trim().to_string())
 }
 
@@ -44,6 +52,14 @@ pub fn commit(repo: &Repository, message: &str) -> AppResult<String> {
 /// Keeps the original author (git's amend behavior), refreshes the committer, and
 /// signs per config. Shelled out so signing/hooks apply (libgit2 never signs).
 pub fn amend(repo: &Repository, message: &str, reset_author: bool, author: Option<&str>) -> AppResult<String> {
+    amend_inner(None, repo, message, reset_author, author)
+}
+
+pub fn amend_stream(app: &tauri::AppHandle, repo: &Repository, message: &str, reset_author: bool, author: Option<&str>) -> AppResult<String> {
+    amend_inner(Some(app), repo, message, reset_author, author)
+}
+
+fn amend_inner(app: Option<&tauri::AppHandle>, repo: &Repository, message: &str, reset_author: bool, author: Option<&str>) -> AppResult<String> {
     if message.trim().is_empty() {
         return Err(AppError::Msg("commit message is empty".into()));
     }
@@ -59,7 +75,7 @@ pub fn amend(repo: &Repository, message: &str, reset_author: bool, author: Optio
     } else if reset_author {
         args.push("--reset-author");
     }
-    run_git(dir, &args)?;
+    match app { Some(app) => run_git_stream(app, dir, &args)?, None => run_git(dir, &args)? };
     Ok(run_git(dir, &["rev-parse", "HEAD"])?.trim().to_string())
 }
 
@@ -67,7 +83,10 @@ pub fn amend(repo: &Repository, message: &str, reset_author: bool, author: Optio
 
 /// Push the current branch.
 pub fn push(repo: &Repository) -> AppResult<String> {
-    push_inner(repo, false)
+    push_inner(None, repo, false)
+}
+pub fn push_stream(app: &tauri::AppHandle, repo: &Repository) -> AppResult<String> {
+    push_inner(Some(app), repo, false)
 }
 
 /// Like `push`, but with `--force-with-lease` - needed after rewriting a branch
@@ -75,17 +94,20 @@ pub fn push(repo: &Repository) -> AppResult<String> {
 /// non-fast-forward. The lease refuses to clobber the remote if it advanced
 /// since our last fetch, so it can't silently blow away a colleague's push.
 pub fn push_force(repo: &Repository) -> AppResult<String> {
-    push_inner(repo, true)
+    push_inner(None, repo, true)
+}
+pub fn push_force_stream(app: &tauri::AppHandle, repo: &Repository) -> AppResult<String> {
+    push_inner(Some(app), repo, true)
 }
 
-fn push_inner(repo: &Repository, force: bool) -> AppResult<String> {
+fn push_inner(app: Option<&tauri::AppHandle>, repo: &Repository, force: bool) -> AppResult<String> {
     let dir = workdir(repo)?;
     let mut args = vec!["push"];
     if force {
         args.push("--force-with-lease");
     }
     if !repo.head()?.is_branch() {
-        return run_git(dir, &args); // detached HEAD: let git decide
+        return match app { Some(app) => run_git_stream(app, dir, &args), None => run_git(dir, &args) }; // detached HEAD: let git decide
     }
     // Push to the existing upstream only when it has the SAME name. Otherwise
     // (no upstream, or one pointing at a differently-named branch) publish the
@@ -94,7 +116,7 @@ fn push_inner(repo: &Repository, force: bool) -> AppResult<String> {
     if !repo::same_name_upstream(repo) {
         args.extend(["-u", "origin", "HEAD"]);
     }
-    run_git(dir, &args)
+    match app { Some(app) => run_git_stream(app, dir, &args), None => run_git(dir, &args) }
 }
 pub fn pull(repo: &Repository, mode: &str) -> AppResult<String> {
     let dir = workdir(repo)?;
