@@ -250,6 +250,46 @@ jobs:
             echo "::warning::no installers found for $PLATFORM"
           fi
 
+  # Bumps the personal Homebrew tap (jcardonne/homebrew-gitchef) to the new
+  # version + macOS dmg sha256. Independent of R2/updater publishing, so it
+  # runs off `build` alone and doesn't block/get blocked by it. Requires a
+  # HOMEBREW_TAP_TOKEN secret (a fine-grained PAT scoped to Contents:
+  # read/write on jcardonne/homebrew-gitchef only) - see docs/RELEASING.md.
+  homebrew:
+    needs: [version, build]
+    if: needs.version.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # only reads this repo's release asset, via gh
+    steps:
+      - name: Bump the personal Homebrew Cask
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN not set - skipping the jcardonne/homebrew-gitchef bump. See docs/RELEASING.md."
+            exit 0
+          fi
+          gh release download "v${VERSION}" --repo "$GITHUB_REPOSITORY" \
+            --pattern "*_macOS.dmg" --output GitChef.dmg
+          SHA256=$(sha256sum GitChef.dmg | cut -d' ' -f1)
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/jcardonne/homebrew-gitchef.git" tap
+          cd tap
+          sed -i \
+            -e "s/version \".*\"/version \"${VERSION}\"/" \
+            -e "s/sha256 \".*\"/sha256 \"${SHA256}\"/" \
+            Casks/gitchef.rb
+          if git diff --quiet; then
+            echo "Tap already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "gitchef ${VERSION}"
+          git push
+
   publish:
     needs: [version, build]
     if: needs.version.outputs.published == 'true'
