@@ -66,6 +66,7 @@ Settings -> Secrets and variables -> Actions.
 | `TAURI_SIGNING_PRIVATE_KEY` | full contents of `~/.tauri/gitchef.key` |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the key's passphrase (empty if you kept it password-less) |
 | `CLOUDFLARE_API_TOKEN` | a Cloudflare token with **R2 read/write** on the bucket |
+| `HOMEBREW_TAP_TOKEN` | a GitHub fine-grained PAT scoped to `jcardonne/homebrew-gitchef` only, **Contents: Read and write** - optional, the `homebrew` job skips with a warning if unset |
 
 **Variables:**
 
@@ -88,6 +89,23 @@ gh variable set R2_PUBLIC_URL --body "https://pub-<hash>.r2.dev"
 > workflow **injects** `R2_PUBLIC_URL` into the binary at build time (so the URL
 > has a single source of truth and you can never forget to replace it). Nothing
 > to edit by hand.
+
+### 4. Homebrew tap token (optional)
+
+The `homebrew` job pushes the new version + sha256 straight to
+[`jcardonne/homebrew-gitchef`](https://github.com/jcardonne/homebrew-gitchef)
+after each release. The default `GITHUB_TOKEN` can't write to a different
+repo, and GitHub has no API to mint a PAT - this one step has to be done by
+hand, once:
+
+1. GitHub -> Settings -> Developer settings -> Personal access tokens ->
+   Fine-grained tokens -> Generate new token.
+2. Repository access: **Only select repositories** -> `homebrew-gitchef`.
+3. Permissions: **Contents: Read and write**. Nothing else.
+4. `gh secret set HOMEBREW_TAP_TOKEN --body "<token>"`
+
+Without it, releases still complete normally - the job logs a warning and
+skips, and the tap just lags until the token is added.
 
 ---
 
