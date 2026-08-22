@@ -1210,6 +1210,10 @@ button {
   display: flex;
   flex-direction: column;
 }
+.staging-section.collapsed {
+  flex: 0 0 auto;
+  min-height: 0;
+}
 /* The list owns the scroll (was .staging-section) so ChangeList can virtualize
    against a clean scroller while the section header stays pinned above it. */
 .change-list {
@@ -1219,8 +1223,8 @@ button {
 }
 .section-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 2px;
   padding: 6px 12px;
   font-size: 11px;
   text-transform: uppercase;
@@ -1228,6 +1232,14 @@ button {
   color: var(--text-dim);
   flex: 0 0 auto;
   background: var(--bg-elev);
+  cursor: pointer;
+  user-select: none;
+}
+.section-head > span {
+  flex: 1 1 auto;
+}
+.section-head > .chevron {
+  margin-right: 2px;
 }
 .file-list {
   padding-bottom: 4px;
@@ -1325,6 +1337,7 @@ button {
 }
 .commit-box {
   flex: 0 0 auto;
+  margin-top: auto;
   padding: 8px;
   border-top: 1px solid var(--border);
 }

@@ -3,7 +3,7 @@ import { confirm, save } from "@tauri-apps/plugin-dialog";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import * as api from "../api";
 import type { FileStatus, StatusResult } from "../types";
-import { getChangesView, setChangesView, type ChangesView } from "../storage";
+import { getChangesView, setChangesView, getStagingCollapsed, setStagingCollapsed, type ChangesView } from "../storage";
 import { useRepo, type RefreshOpts } from "../repoContext";
 import ChangeList from "./ChangeList";
 import { comboHint } from "../shortcuts";
@@ -50,6 +50,13 @@ export default function StagingPanel({
 }: Props) {
   const { repoPath, busy, activeAction, run, refresh, notify } = useRepo();
   const [view, setView] = useState<ChangesView>(getChangesView());
+  const [collapsed, setCollapsed] = useState(getStagingCollapsed);
+  const toggleCollapsed = (section: "unstaged" | "staged") =>
+    setCollapsed((c) => {
+      const next = { ...c, [section]: !c[section] };
+      setStagingCollapsed(next);
+      return next;
+    });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   // Filter off a deferred copy of the query so each keystroke stays responsive
@@ -417,13 +424,27 @@ export default function StagingPanel({
         </div>
       ) : (
         <>
-          <div className="staging-section">
-            <div className="section-head">
+          <div className={`staging-section${collapsed.unstaged ? " collapsed" : ""}`}>
+            <div className="section-head" onClick={() => toggleCollapsed("unstaged")}>
+              <svg
+                className={`chevron${collapsed.unstaged ? "" : " open"}`}
+                width="15"
+                height="15"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M6 3.5 10.5 8 6 12.5" />
+              </svg>
               <span>Unstaged ({sectionCount(unstagedFiles.length, status.unstaged.length)})</span>
               <button
                 className="mini-btn"
                 disabled={!unstagedFiles.length}
-                onClick={() => stageFiles(selUnstaged.length > 1 ? selUnstaged : unstagedFiles)}
+                onClick={(e) => { e.stopPropagation(); stageFiles(selUnstaged.length > 1 ? selUnstaged : unstagedFiles); }}
                 title={`Stage all or selection (${comboHint(["mod", "shift", "S"])})`}
               >
                 {selUnstaged.length > 1
@@ -433,28 +454,44 @@ export default function StagingPanel({
                     : "Stage all"}
               </button>
             </div>
-            <ChangeList
-              files={unstagedFiles}
-              staged={false}
-              view={view}
-              selected={selected}
-              keyOf={keyOf}
-              onSelectionChange={setSelected}
-              onShowDiff={(f) => onSelectFile(f.path, false)}
-              onContext={showFileMenu}
-              onFolderContext={showFolderMenu}
-              onQuickToggle={quickToggle}
-              recentlyMoved={movedPaths}
-            />
+            {!collapsed.unstaged && (
+              <ChangeList
+                files={unstagedFiles}
+                staged={false}
+                view={view}
+                selected={selected}
+                keyOf={keyOf}
+                onSelectionChange={setSelected}
+                onShowDiff={(f) => onSelectFile(f.path, false)}
+                onContext={showFileMenu}
+                onFolderContext={showFolderMenu}
+                onQuickToggle={quickToggle}
+                recentlyMoved={movedPaths}
+              />
+            )}
           </div>
 
-          <div className="staging-section">
-            <div className="section-head">
+          <div className={`staging-section${collapsed.staged ? " collapsed" : ""}`}>
+            <div className="section-head" onClick={() => toggleCollapsed("staged")}>
+              <svg
+                className={`chevron${collapsed.staged ? "" : " open"}`}
+                width="15"
+                height="15"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M6 3.5 10.5 8 6 12.5" />
+              </svg>
               <span>Staged ({sectionCount(stagedFiles.length, status.staged.length)})</span>
               <button
                 className="mini-btn"
                 disabled={!stagedFiles.length}
-                onClick={() => unstageFiles(selStaged.length > 1 ? selStaged : stagedFiles)}
+                onClick={(e) => { e.stopPropagation(); unstageFiles(selStaged.length > 1 ? selStaged : stagedFiles); }}
                 title={`Unstage all or selection (${comboHint(["mod", "shift", "U"])})`}
               >
                 {selStaged.length > 1
@@ -464,19 +501,21 @@ export default function StagingPanel({
                     : "Unstage all"}
               </button>
             </div>
-            <ChangeList
-              files={stagedFiles}
-              staged
-              view={view}
-              selected={selected}
-              keyOf={keyOf}
-              onSelectionChange={setSelected}
-              onShowDiff={(f) => onSelectFile(f.path, true)}
-              onContext={showFileMenu}
-              onFolderContext={showFolderMenu}
-              onQuickToggle={quickToggle}
-              recentlyMoved={movedPaths}
-            />
+            {!collapsed.staged && (
+              <ChangeList
+                files={stagedFiles}
+                staged
+                view={view}
+                selected={selected}
+                keyOf={keyOf}
+                onSelectionChange={setSelected}
+                onShowDiff={(f) => onSelectFile(f.path, true)}
+                onContext={showFileMenu}
+                onFolderContext={showFolderMenu}
+                onQuickToggle={quickToggle}
+                recentlyMoved={movedPaths}
+              />
+            )}
           </div>
         </>
       )}
