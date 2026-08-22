@@ -243,49 +243,21 @@ Done:
   Known limitation: a self-hosted GitLab serves avatars from its own host, which
   can't be enumerated up front, so those images are dropped (Gravatar still
   renders).
-
-In progress - signing key rotation:
-
-- **The signing key had no passphrase.** This was the one remaining
-  high-severity item: updates install silently and relaunch, so anyone who
-  could read the `TAURI_SIGNING_PRIVATE_KEY` secret could sign an update
-  every client executes without a prompt. With a passphrase, a secret-store
-  leak yields only an encrypted blob. Rotating it is a deliberate, ordered
-  operation - **never `-f` onto the existing key path**, that destroys the
-  only copy old clients still trust before the rotation is verified:
-
-  1. ✅ Done. New keypair generated at `~/.tauri/gitchef-new.key` (passphrase-
-     protected, passphrase generated with `openssl rand`, never typed or
-     printed anywhere). Both key and passphrase are also stored in 1Password:
-     `GitChef - TAURI_SIGNING_PRIVATE_KEY (new, pending rotation)` and
-     `GitChef - TAURI signing public key (new, pending rotation)`. The old
-     key is untouched at `~/.tauri/gitchef.key`, plus a timestamped backup
-     under `~/.tauri/backup/`.
-  2. ✅ Done (v0.38.2). `~/.tauri/gitchef-new.key.pub` shipped as
-     `plugins.updater.pubkey`, still **signed with the OLD key**
-     (`TAURI_SIGNING_PRIVATE_KEY` secret untouched at that point). Verified:
-     reinstalling locally landed on v0.38.2 without error, so the new pubkey
-     is now trusted by at least one real installed client.
-  3. ✅ Done. Given the project's actual install base (4 GitHub stars, no
-     telemetry to observe adoption at large) the only realistically
-     verifiable "installed client" is the maintainer's own machine, already
-     confirmed on v0.38.2 in step 2. No multi-day wait added on top of that.
-  4. ✅ Done. `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
-     GitHub secrets swapped to the new key/passphrase (pulled from
-     1Password, not disk).
-  5. ⏳ Cryptographically confirmed, live click-through still pending. v0.38.3's
-     `latest.json` signature was decoded and its embedded minisign key ID
-     (`83e4dd199f673ce9`) matches the new pubkey exactly and the old pubkey's
-     key ID (`2acc8f00136c617b`) not at all - proof the new key produces a
-     signature any client trusting the new pubkey (i.e. any v0.38.2+ client)
-     will accept. What's **not yet done**: actually watching a running
-     GitChef relaunch itself into v0.38.3 - launching the app via `open -a`
-     from an agent shell twice left `/Applications/GitChef.app` deleted
-     entirely (Gatekeeper/translocation on an unnotarized app misbehaves
-     outside a real interactive session). Double-click GitChef once from
-     Finder to complete this by hand; once it relaunches on v0.38.3, delete
-     the old key (`~/.tauri/gitchef.key` and its backups) and the matching
-     1Password item.
+- **The updater signing key is passphrase-protected.** Rotated 2026-08-22
+  from a passphrase-less key to a new one, in the ordered sequence this
+  requires (never overwrite the key path a client still trusts before the
+  rotation is verified - ship the new pubkey first, signed by the old key,
+  then swap which key signs): new keypair generated (passphrase from
+  `openssl rand`, never printed to a terminal or log); new pubkey shipped in
+  v0.38.2, still signed with the old key so already-installed clients could
+  verify and pick it up; `TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)` then swapped
+  to the new key; v0.38.3's signature decoded and its minisign key ID
+  checked byte-for-byte against both pubkeys - matches the new one only;
+  and a real installed client confirmed relaunching into v0.38.3. Old key
+  destroyed (local file + backups shredded, matching 1Password item
+  archived) once that was confirmed live. Key and passphrase live in
+  1Password as `GitChef - TAURI_SIGNING_PRIVATE_KEY` / `GitChef - TAURI
+  signing public key`.
 
 Still open:
 
