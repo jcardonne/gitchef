@@ -190,18 +190,19 @@ fn open_url(url: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-fn commit(repo: String, message: String) -> AppResult<String> {
-    ops::commit(&open(&repo)?, &message)
+fn commit(app: tauri::AppHandle, repo: String, message: String) -> AppResult<String> {
+    ops::commit_stream(&app, &open(&repo)?, &message)
 }
 
 #[tauri::command]
 fn commit_amend(
+    app: tauri::AppHandle,
     repo: String,
     message: String,
     reset_author: bool,
     author: Option<String>,
 ) -> AppResult<String> {
-    ops::amend(&open(&repo)?, &message, reset_author, author.as_deref())
+    ops::amend_stream(&app, &open(&repo)?, &message, reset_author, author.as_deref())
 }
 
 #[tauri::command]
@@ -217,13 +218,13 @@ fn create_branch(repo: String, name: String, checkout: bool) -> AppResult<()> {
 // Network ops block for seconds (remote IO). `(async)` runs them on a worker
 // thread so they don't freeze the UI/IPC - same rationale as the reads above.
 #[tauri::command(async)]
-fn push(repo: String) -> AppResult<String> {
-    ops::push(&open(&repo)?)
+fn push(app: tauri::AppHandle, repo: String) -> AppResult<String> {
+    ops::push_stream(&app, &open(&repo)?)
 }
 
 #[tauri::command(async)]
-fn push_force(repo: String) -> AppResult<String> {
-    ops::push_force(&open(&repo)?)
+fn push_force(app: tauri::AppHandle, repo: String) -> AppResult<String> {
+    ops::push_force_stream(&app, &open(&repo)?)
 }
 
 #[tauri::command(async)]

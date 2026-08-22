@@ -3240,6 +3240,45 @@ button {
   -webkit-user-select: text;
   user-select: text;
 }
+.git-output-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 20;
+  width: min(680px, calc(100vw - 48px));
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .28);
+}
+
+.git-output-panel header {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-output-panel header button {
+  color: var(--text-dim);
+}
+
+.git-output-panel pre {
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.git-output-stderr {
+  color: var(--mod);
+}
+
 .toast-error {
   display: flex;
   flex-direction: column;
