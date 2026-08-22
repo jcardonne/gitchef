@@ -244,28 +244,44 @@ Done:
   can't be enumerated up front, so those images are dropped (Gravatar still
   renders).
 
+In progress - signing key rotation:
+
+- **The signing key had no passphrase.** This was the one remaining
+  high-severity item: updates install silently and relaunch, so anyone who
+  could read the `TAURI_SIGNING_PRIVATE_KEY` secret could sign an update
+  every client executes without a prompt. With a passphrase, a secret-store
+  leak yields only an encrypted blob. Rotating it is a deliberate, ordered
+  operation - **never `-f` onto the existing key path**, that destroys the
+  only copy old clients still trust before the rotation is verified:
+
+  1. ✅ Done. New keypair generated at `~/.tauri/gitchef-new.key` (passphrase-
+     protected, passphrase generated with `openssl rand` - never typed or
+     printed anywhere, currently in `~/.tauri/secrets/gitchef-new.key.password`
+     pending a move into 1Password). The old key is untouched at
+     `~/.tauri/gitchef.key`, plus a timestamped backup under
+     `~/.tauri/backup/`.
+  2. ✅ Done. `~/.tauri/gitchef-new.key.pub` is now `plugins.updater.pubkey`
+     in `src-tauri/tauri.conf.json`, shipped in a release still **signed with
+     the OLD key** (`TAURI_SIGNING_PRIVATE_KEY` secret untouched). Old
+     clients verify this release against the old pubkey they already trust,
+     install it, and are now running a binary that trusts the *new* pubkey
+     too.
+  3. ⏳ Pending. Wait until installed clients have picked up that release.
+     Anyone still on an older build trusts only the old pubkey and will
+     reject later updates once step 5 lands - they'd have to reinstall by
+     hand. No fixed window is defined yet; needs a decision on how long is
+     enough (the app checks on every launch, so active users converge fast -
+     idle installs are the tail).
+  4. ⏳ Pending. `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/gitchef-new.key`
+     and `gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the real
+     passphrase, from `~/.tauri/secrets/gitchef-new.key.password` or
+     1Password once moved there - not an empty string).
+  5. ⏳ Pending. Cut a throwaway patch release and confirm an installed
+     client updates. Only then delete the old key (`~/.tauri/gitchef.key`
+     and its backups) and the passphrase file.
+
 Still open:
 
-- **The signing key has no passphrase** (see step 1). This is the one remaining
-  high-severity item: updates install silently and relaunch, so anyone who can
-  read the `TAURI_SIGNING_PRIVATE_KEY` secret can sign an update that every
-  client executes without a prompt. With a passphrase, a secret-store leak
-  yields only an encrypted blob. Rotating it is a deliberate, ordered operation:
-
-  1. `pnpm tauri signer generate -w ~/.tauri/gitchef.key -f` and set a real
-     passphrase (keep the OLD key and `.pub` until step 5 is verified).
-  2. Put the new `~/.tauri/gitchef.key.pub` contents in
-     `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`, and ship that as a
-     normal release built with the **old** key. Clients must be running a build
-     that trusts the new pubkey BEFORE anything is signed with the new key.
-  3. Wait until installed clients have picked that release up. Anyone still on an
-     older build trusts only the old pubkey and will reject later updates -
-     they'd have to reinstall by hand.
-  4. `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/gitchef.key` and
-     `gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the real passphrase,
-     not an empty string).
-  5. Cut a throwaway patch release and confirm an installed client updates. Only
-     then destroy the old key.
 - **A failed build still leaves `main` bumped and tagged.** The Release page
   itself is no longer exposed (see "No half-published releases" above), and
   nothing reaches R2, so users are unaffected - but the version commit and tag
