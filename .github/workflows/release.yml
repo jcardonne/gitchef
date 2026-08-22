@@ -251,12 +251,15 @@ jobs:
           fi
 
   # Bumps the personal Homebrew tap (jcardonne/homebrew-gitchef) to the new
-  # version + macOS dmg sha256. Independent of R2/updater publishing, so it
-  # runs off `build` alone and doesn't block/get blocked by it. Requires a
-  # HOMEBREW_TAP_TOKEN secret (a fine-grained PAT scoped to Contents:
-  # read/write on jcardonne/homebrew-gitchef only) - see docs/RELEASING.md.
+  # version + macOS dmg sha256. Needs `finalize`, not just `build`: GitHub's
+  # "get release by tag" lookup (what `gh release download` uses) 404s on a
+  # DRAFT release, and the release stays draft until `finalize` flips it -
+  # running any earlier raced that and failed with "release not found".
+  # Requires a HOMEBREW_TAP_TOKEN secret (a fine-grained PAT scoped to
+  # Contents: read/write on jcardonne/homebrew-gitchef only) - see
+  # docs/RELEASING.md.
   homebrew:
-    needs: [version, build]
+    needs: [version, build, publish, finalize]
     if: needs.version.outputs.published == 'true'
     runs-on: ubuntu-latest
     permissions:
