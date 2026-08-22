@@ -3,6 +3,7 @@ name = "gitchef"
 version = "0.38.3"
 description = "Open-source visual Git client"
 authors = ["GitChef"]
+license = "MIT"
 edition = "2021"
 
 [lib]
