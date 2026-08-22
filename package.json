@@ -2,6 +2,7 @@
   "name": "gitchef",
   "version": "0.38.3",
   "description": "Open-source visual Git client",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

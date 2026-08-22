@@ -4,6 +4,8 @@ import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnV
 import { SHORTCUT_SECTIONS, comboHint, keyLabel } from "../shortcuts";
 import { GRAPH_COLUMNS } from "./GraphView";
 import { useKeycapPresses } from "../useKeycapPresses";
+import { checkForUpdates } from "../updater";
+import * as api from "../api";
 
 interface Props {
   theme: Theme;
@@ -13,7 +15,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Section = "appearance" | "general" | "keyboard";
+type Section = "appearance" | "general" | "keyboard" | "about";
 
 /// 24-grid stroke glyph used before field titles and option labels.
 const gi = (path: ReactNode) => (
@@ -31,6 +33,11 @@ const TITLE = {
   sort: gi(<path d="M7 4v16M4 7l3-3 3 3M13 8h7M13 12h5M13 16h3" />),
   columns: gi(<><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="16" rx="1" /><rect x="17" y="4" width="4" height="16" rx="1" /></>),
   fetch: gi(<><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 4v4h-4" /></>),
+  author: gi(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>),
+  updates: gi(<><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 21v-5h5" /></>),
+  links: gi(<><path d="M9 15l6-6" /><path d="M8 12a3.5 3.5 0 0 1 0-5l2-2a3.5 3.5 0 0 1 5 5l-1 1" /><path d="M16 12a3.5 3.5 0 0 1 0 5l-2 2a3.5 3.5 0 0 1-5-5l1-1" /></>),
+  license: gi(<><rect x="4" y="2.5" width="16" height="19" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>),
+  credits: gi(<path d="M12 20s-7-4.35-9.5-8.5C1 8 2.5 4 6.5 4c2 0 3.5 1.2 4.5 2.7C12 5.2 13.5 4 15.5 4c4 0 5.5 4 4 7.5C19 15.65 12 20 12 20z" />),
 } as const;
 
 const MODES: { id: Theme; label: string; icon: ReactNode }[] = [
@@ -85,6 +92,7 @@ const SECTIONS: { id: Section; label: string; icon: ReactNode }[] = [
   { id: "general", label: "General", icon: icon(<><path d="M2 4.5h6M11.5 4.5h2.5M2 11.5h2.5M8 11.5h6" /><circle cx="9.5" cy="4.5" r="1.8" /><circle cx="5" cy="11.5" r="1.8" /></>) },
   { id: "appearance", label: "Appearance", icon: icon(<path d="M8 2.5C5.5 5.5 4 7.3 4 9.3a4 4 0 0 0 8 0c0-2-1.5-3.8-4-6.8z" />) },
   { id: "keyboard", label: "Keyboard", icon: icon(<><rect x="1.5" y="4" width="13" height="8" rx="1.5" /><path d="M4 7h0M7 7h0M10 7h0M12.5 7h0M5.5 9.5h5" /></>) },
+  { id: "about", label: "About", icon: icon(<><circle cx="8" cy="8" r="6.3" /><path d="M8 7.3v4M8 5.3h0" /></>) },
 ];
 
 /// Full-page Settings view (rendered over the repo content, not a modal). Esc or
@@ -97,6 +105,8 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
   const [sortAsc, setSortState] = useState(getSortAsc);
   const [cols, setColsState] = useState(getGraphColumnVisibility);
   const [fetchInterval, setFetchState] = useState(getFetchIntervalMinutes);
+  const [checkState, setCheckState] = useState<"idle" | "checking" | "up-to-date" | "unsupported" | "error">("idle");
+  const [available, setAvailable] = useState<{ version: string; install: () => Promise<void> } | null>(null);
   useKeycapPresses(section === "keyboard");
 
   const changeDensity = (d: Density) => {
@@ -122,6 +132,30 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
     setGraphColumnVisibility(next);
     notifyPrefs();
     setColsState(next);
+  };
+  const checkUpdates = async () => {
+    setCheckState("checking");
+    setAvailable(null);
+    const result = await checkForUpdates();
+    if (result.state === "available") {
+      setAvailable({ version: result.version, install: result.install });
+      setCheckState("idle");
+    } else if (result.state === "up-to-date") {
+      setCheckState("up-to-date");
+    } else if (result.state === "unsupported") {
+      setCheckState("unsupported");
+    } else {
+      setCheckState("error");
+    }
+  };
+  const installUpdate = async () => {
+    if (!available) return;
+    setCheckState("checking"); // reuse the busy state; the app relaunches on success
+    try {
+      await available.install();
+    } catch {
+      setCheckState("error");
+    }
   };
 
   useEffect(() => {
@@ -152,7 +186,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
           {SECTIONS.map((s) => (
             <button
               key={s.id}
-              className={section === s.id ? "active" : ""}
+              className={`${section === s.id ? "active" : ""}${s.id === "about" ? " settings-nav-pinned" : ""}`}
               onClick={() => setSection(s.id)}
             >
               {s.icon}
@@ -296,6 +330,79 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                 </div>
               ))}
             </div>
+          )}
+
+          {section === "about" && (
+            <>
+              <div className="about-header">
+                <img className="about-logo" src="/logo.png" alt="" />
+                <div>
+                  <h3>GitChef</h3>
+                  <span className="about-version">v{__APP_VERSION__}</span>
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <div className="settings-field-label">{TITLE.updates}<span>Updates</span></div>
+                <div className="settings-field-hint">
+                  {checkState === "up-to-date"
+                    ? "You're on the latest version."
+                    : checkState === "unsupported"
+                      ? "Updates aren't available in dev builds."
+                      : checkState === "error"
+                        ? "Couldn't check for updates - try again later."
+                        : available
+                          ? `Version ${available.version} is ready to install.`
+                          : "GitChef checks for updates automatically on launch. Check now, or install one already found."}
+                </div>
+                {available ? (
+                  <button className="about-action-btn" onClick={installUpdate} disabled={checkState === "checking"}>
+                    {checkState === "checking" ? "Installing…" : `Install v${available.version}`}
+                  </button>
+                ) : (
+                  <button className="about-action-btn" onClick={checkUpdates} disabled={checkState === "checking" || checkState === "unsupported"}>
+                    {checkState === "checking" ? "Checking…" : "Check for updates"}
+                  </button>
+                )}
+              </div>
+
+              <div className="settings-field">
+                <div className="settings-field-label">{TITLE.links}<span>Links</span></div>
+                <div className="about-links">
+                  <button onClick={() => void api.openUrl("https://github.com/jcardonne/gitchef")}>Repository</button>
+                  <button onClick={() => void api.openUrl("https://github.com/jcardonne/gitchef/releases")}>Release notes</button>
+                  <button onClick={() => void api.openUrl("https://github.com/jcardonne/homebrew-gitchef")}>Homebrew tap</button>
+                  <button onClick={() => void api.openUrl("https://github.com/jcardonne/gitchef/issues/new")}>Report an issue</button>
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <div className="settings-field-label">{TITLE.license}<span>License</span></div>
+                <div className="settings-field-hint">
+                  MIT License, © 2026 GitChef.{" "}
+                  <button className="about-inline-link" onClick={() => void api.openUrl("https://github.com/jcardonne/gitchef/blob/main/LICENSE")}>
+                    View full text
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <div className="settings-field-label">{TITLE.credits}<span>Credits</span></div>
+                <ul className="about-credits">
+                  <li><strong>Tauri 2</strong> - native shell, window chrome, and bundling</li>
+                  <li><strong>React 18</strong> + TypeScript - interface</li>
+                  <li><strong>libgit2</strong> (via <code>git2</code>) - local repository reads</li>
+                  <li><strong>Satoshi</strong> by Fontshare / Indian Type Foundry - brand typeface, Free Font License</li>
+                </ul>
+                <button className="about-author" onClick={() => void api.openUrl("https://github.com/jcardonne")}>
+                  <img className="about-author-avatar" src="https://github.com/jcardonne.png" alt="" />
+                  <span className="about-author-text">
+                    <span className="about-author-name">Made by Jean Cardonne</span>
+                    <span className="about-author-handle">@jcardonne</span>
+                  </span>
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
