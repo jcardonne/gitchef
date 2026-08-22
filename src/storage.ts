@@ -256,3 +256,19 @@ export function setTabColor(path: string, color: TabColor | null): void {
   else delete colors[path];
   localStorage.setItem(TAB_COLORS_KEY, JSON.stringify(colors));
 }
+
+const STAGING_COLLAPSED_KEY = "gitchef.stagingCollapsed";
+
+/// Collapsed state of the unstaged/staged sections in the changes panel.
+export interface StagingCollapsed {
+  unstaged: boolean;
+  staged: boolean;
+}
+
+export function getStagingCollapsed(): StagingCollapsed {
+  return { unstaged: false, staged: false, ...read<Partial<StagingCollapsed>>(STAGING_COLLAPSED_KEY, {}) };
+}
+
+export function setStagingCollapsed(state: StagingCollapsed): void {
+  localStorage.setItem(STAGING_COLLAPSED_KEY, JSON.stringify(state));
+}
