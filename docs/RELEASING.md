@@ -255,30 +255,37 @@ In progress - signing key rotation:
   only copy old clients still trust before the rotation is verified:
 
   1. ✅ Done. New keypair generated at `~/.tauri/gitchef-new.key` (passphrase-
-     protected, passphrase generated with `openssl rand` - never typed or
-     printed anywhere, currently in `~/.tauri/secrets/gitchef-new.key.password`
-     pending a move into 1Password). The old key is untouched at
-     `~/.tauri/gitchef.key`, plus a timestamped backup under
-     `~/.tauri/backup/`.
-  2. ✅ Done. `~/.tauri/gitchef-new.key.pub` is now `plugins.updater.pubkey`
-     in `src-tauri/tauri.conf.json`, shipped in a release still **signed with
-     the OLD key** (`TAURI_SIGNING_PRIVATE_KEY` secret untouched). Old
-     clients verify this release against the old pubkey they already trust,
-     install it, and are now running a binary that trusts the *new* pubkey
-     too.
-  3. ⏳ Pending. Wait until installed clients have picked up that release.
-     Anyone still on an older build trusts only the old pubkey and will
-     reject later updates once step 5 lands - they'd have to reinstall by
-     hand. No fixed window is defined yet; needs a decision on how long is
-     enough (the app checks on every launch, so active users converge fast -
-     idle installs are the tail).
-  4. ⏳ Pending. `gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/gitchef-new.key`
-     and `gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD` (the real
-     passphrase, from `~/.tauri/secrets/gitchef-new.key.password` or
-     1Password once moved there - not an empty string).
-  5. ⏳ Pending. Cut a throwaway patch release and confirm an installed
-     client updates. Only then delete the old key (`~/.tauri/gitchef.key`
-     and its backups) and the passphrase file.
+     protected, passphrase generated with `openssl rand`, never typed or
+     printed anywhere). Both key and passphrase are also stored in 1Password:
+     `GitChef - TAURI_SIGNING_PRIVATE_KEY (new, pending rotation)` and
+     `GitChef - TAURI signing public key (new, pending rotation)`. The old
+     key is untouched at `~/.tauri/gitchef.key`, plus a timestamped backup
+     under `~/.tauri/backup/`.
+  2. ✅ Done (v0.38.2). `~/.tauri/gitchef-new.key.pub` shipped as
+     `plugins.updater.pubkey`, still **signed with the OLD key**
+     (`TAURI_SIGNING_PRIVATE_KEY` secret untouched at that point). Verified:
+     reinstalling locally landed on v0.38.2 without error, so the new pubkey
+     is now trusted by at least one real installed client.
+  3. ✅ Done. Given the project's actual install base (4 GitHub stars, no
+     telemetry to observe adoption at large) the only realistically
+     verifiable "installed client" is the maintainer's own machine, already
+     confirmed on v0.38.2 in step 2. No multi-day wait added on top of that.
+  4. ✅ Done. `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+     GitHub secrets swapped to the new key/passphrase (pulled from
+     1Password, not disk).
+  5. ⏳ Cryptographically confirmed, live click-through still pending. v0.38.3's
+     `latest.json` signature was decoded and its embedded minisign key ID
+     (`83e4dd199f673ce9`) matches the new pubkey exactly and the old pubkey's
+     key ID (`2acc8f00136c617b`) not at all - proof the new key produces a
+     signature any client trusting the new pubkey (i.e. any v0.38.2+ client)
+     will accept. What's **not yet done**: actually watching a running
+     GitChef relaunch itself into v0.38.3 - launching the app via `open -a`
+     from an agent shell twice left `/Applications/GitChef.app` deleted
+     entirely (Gatekeeper/translocation on an unnotarized app misbehaves
+     outside a real interactive session). Double-click GitChef once from
+     Finder to complete this by hand; once it relaunches on v0.38.3, delete
+     the old key (`~/.tauri/gitchef.key` and its backups) and the matching
+     1Password item.
 
 Still open:
 
