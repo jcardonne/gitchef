@@ -102,8 +102,10 @@ pub fn pull(repo: &Repository, mode: &str) -> AppResult<String> {
     // stale remote-tracking refs in the sidebar/graph (plain `git pull` never
     // prunes, unlike our Fetch).
     match mode {
-        "ff" => run_git(dir, &["pull", "--ff", "--prune"]),
-        "ff-only" => run_git(dir, &["pull", "--ff-only", "--prune"]),
+        // --autostash so a dirty tree doesn't block an otherwise-clean pull,
+        // same tradeoff merge() and the "rebase" pull mode below already make.
+        "ff" => run_git(dir, &["pull", "--ff", "--autostash", "--prune"]),
+        "ff-only" => run_git(dir, &["pull", "--ff-only", "--autostash", "--prune"]),
         // A rebasing pull can pause on conflicts like any rebase, so it goes
         // through the sequencer (which tolerates that pause). --autostash lets
         // it run over a dirty tree and re-applies the changes afterwards.
@@ -192,6 +194,30 @@ pub fn stash_all(repo: &Repository, message: Option<&str>) -> AppResult<String> 
         }
     }
     run_git(workdir(repo)?, &args)
+}
+
+/// Checkout `name`, stashing a dirty tree (tracked + untracked) first and
+/// restoring it after. A plain `checkout` never auto-stashes on its own -
+/// silently moving in-progress work out of sight on every branch switch would
+/// surprise more than it helps - so this is only called from the frontend's
+/// "would overwrite local changes" recovery prompt, once the user has agreed.
+pub fn checkout_autostash(repo: &Repository, name: &str) -> AppResult<String> {
+    let dir = workdir(repo)?;
+    let stash_out = stash_all(repo, Some("autostash before checkout"))?;
+    let stashed = !stash_out.contains("No local changes to save");
+    let checkout_result = run_git(dir, &["checkout", name]);
+    if !stashed {
+        return checkout_result.map(|_| format!("Switched to {name}"));
+    }
+    // Always try to restore the stash, even if checkout itself failed for an
+    // unrelated reason - never leave the user's work stranded silently. A
+    // pop that conflicts (target's version of a file diverged too far from
+    // the stash) keeps the stash entry and surfaces as a normal error - the
+    // existing conflict view already knows how to resolve "UU" files.
+    let pop_result = run_git(dir, &["stash", "pop"]);
+    checkout_result?;
+    pop_result?;
+    Ok(format!("Switched to {name}"))
 }
 
 // --- commit-centric operations (via git CLI for conflict/working-tree safety) ---
@@ -304,8 +330,8 @@ pub fn stash_edit_message(repo: &mut Repository, sha: &str, message: &str) -> Ap
 #[cfg(test)]
 mod tests {
     use super::{
-        amend, cherry_pick, commit, fast_forward_to, merge, push, push_force, rebase_onto,
-        reset_to, revert_commit, stash_all, stash_apply, stash_edit_message,
+        amend, checkout_autostash, cherry_pick, commit, fast_forward_to, merge, pull, push,
+        push_force, rebase_onto, reset_to, revert_commit, stash_all, stash_apply, stash_edit_message,
     };
     use crate::git::run_git;
     use git2::Repository;
@@ -438,6 +464,105 @@ mod tests {
         assert_eq!(remote_tip.trim(), work_tip.trim(), "remote updated to the rewritten commit");
         std::fs::remove_dir_all(&work).ok();
         std::fs::remove_dir_all(&remote).ok();
+    }
+
+    #[test]
+    fn pull_ff_only_autostashes_a_dirty_tree() {
+        let remote = tmp("pullstash-remote");
+        run_git(&remote, &["init", "--bare", "-q"]).unwrap();
+
+        let work = tmp("pullstash-work");
+        init(&work);
+        // Three independent lines so the local dirty edit and the incoming
+        // remote commit land in non-overlapping regions (a clean autostash pop).
+        write_commit(&work, "line1\nline2\nline3\n", "expand");
+        run_git(&work, &["remote", "add", "origin", remote.to_str().unwrap()]).unwrap();
+        run_git(&work, &["push", "-q", "-u", "origin", "HEAD"]).unwrap();
+        // git2's Repository::init() (used by `init()` above) always names the
+        // default branch "master", independent of this machine's git CLI
+        // init.defaultBranch config - so clone the exact branch `work` pushed
+        // rather than trusting the bare remote's ambient HEAD to match it.
+        let branch = run_git(&work, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap().trim().to_string();
+
+        // A second clone advances the shared branch past `work`'s current tip.
+        let other = tmp("pullstash-other");
+        run_git(&remote, &["clone", "-q", "-b", &branch, remote.to_str().unwrap(), other.to_str().unwrap()])
+            .unwrap();
+        write_commit(&other, "line1\nline2\nline3-remote\n", "remote advance");
+        run_git(&other, &["push", "-q"]).unwrap();
+        let remote_tip = run_git(&other, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+
+        // Dirty the SAME file's line1 - a plain fast-forward would refuse this
+        // ("local changes would be overwritten by checkout"); --autostash must
+        // set it aside, fast-forward, then cleanly reapply it.
+        std::fs::write(work.join("f.txt"), "line1-local\nline2\nline3\n").unwrap();
+
+        pull(&Repository::open(&work).unwrap(), "ff-only").unwrap();
+
+        assert_eq!(
+            run_git(&work, &["rev-parse", "HEAD"]).unwrap().trim(),
+            remote_tip,
+            "fast-forwarded to the remote's new tip"
+        );
+        assert_eq!(
+            std::fs::read_to_string(work.join("f.txt")).unwrap(),
+            "line1-local\nline2\nline3-remote\n",
+            "dirty edit survived a clean autostash pop, merged alongside the incoming change"
+        );
+        std::fs::remove_dir_all(&work).ok();
+        std::fs::remove_dir_all(&other).ok();
+        std::fs::remove_dir_all(&remote).ok();
+    }
+
+    #[test]
+    fn checkout_autostash_moves_dirty_changes_across_a_blocked_checkout() {
+        let dir = tmp("checkout-autostash");
+        init(&dir);
+        write_commit(&dir, "line1\nline2\nline3\n", "expand");
+        let base_branch = run_git(&dir, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap().trim().to_string();
+        run_git(&dir, &["checkout", "-b", "feature"]).unwrap();
+        write_commit(&dir, "line1\nline2\nline3-feature\n", "feature commit");
+        run_git(&dir, &["checkout", &base_branch]).unwrap();
+
+        // Dirty edit to the same file, in a non-overlapping line - a plain
+        // checkout is refused regardless ("local changes would be overwritten").
+        std::fs::write(dir.join("f.txt"), "line1-local\nline2\nline3\n").unwrap();
+        assert!(
+            run_git(&dir, &["checkout", "feature"]).is_err(),
+            "precondition: a plain checkout is blocked by the dirty file"
+        );
+
+        checkout_autostash(&Repository::open(&dir).unwrap(), "feature").unwrap();
+
+        assert_eq!(
+            run_git(&dir, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap().trim(),
+            "feature",
+            "switched to the target branch"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dir.join("f.txt")).unwrap(),
+            "line1-local\nline2\nline3-feature\n",
+            "dirty edit and the branch's own change merged cleanly"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn checkout_autostash_on_a_clean_tree_is_a_plain_checkout() {
+        let dir = tmp("checkout-autostash-clean");
+        init(&dir);
+        run_git(&dir, &["checkout", "-b", "feature"]).unwrap();
+        write_commit(&dir, "feature\n", "feature commit");
+        run_git(&dir, &["checkout", "-"]).unwrap();
+
+        // Nothing to stash - `git stash push` reports "No local changes to
+        // save" and creates no entry; checkout_autostash must not then error
+        // trying to pop a stash that was never created.
+        checkout_autostash(&Repository::open(&dir).unwrap(), "feature").unwrap();
+
+        assert_eq!(run_git(&dir, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap().trim(), "feature");
+        assert!(run_git(&dir, &["stash", "list"]).unwrap().is_empty(), "no stray stash left behind");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

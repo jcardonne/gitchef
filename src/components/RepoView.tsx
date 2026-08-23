@@ -980,7 +980,28 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
   };
 
   const onCheckout = (name: string) =>
-    run(async () => void (await api.checkout(path, name), await reload()));
+    run(async () => {
+      try {
+        await api.checkout(path, name);
+        await reload();
+      } catch (e) {
+        // A dirty file the target branch also touches blocks a plain
+        // checkout. Unlike pull/merge (which auto-stash silently, since
+        // integrating history is what was asked for), switching branches is
+        // a simple ref move - stashing in-progress work behind the user's
+        // back without asking would be a surprise, so this recovers only
+        // after an explicit confirm.
+        if (!/would be overwritten by checkout/i.test(String(e))) throw e;
+        const ok = await confirm(
+          `Switching to ${name} would overwrite local changes. Stash them, switch, then restore?`,
+          { title: "Checkout blocked", kind: "warning" }
+        );
+        if (!ok) throw e;
+        await api.checkoutAutostash(path, name);
+        await reload();
+        notify(`Switched to ${name} - local changes restored`);
+      }
+    });
 
   const onCheckoutTag = (name: string) =>
     run(async () => {
