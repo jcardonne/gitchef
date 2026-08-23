@@ -68,7 +68,7 @@ const Spinner = () => (
   </svg>
 );
 
-const PULL_OPTIONS: { key: PullAction; label: string }[] = [
+export const PULL_OPTIONS: { key: PullAction; label: string }[] = [
   { key: "fetch", label: "Fetch All" },
   { key: "ff", label: "Pull (fast-forward if possible)" },
   { key: "ff-only", label: "Pull (fast-forward only)" },
