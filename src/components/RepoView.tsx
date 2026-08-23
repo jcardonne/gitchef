@@ -25,7 +25,7 @@ import type {
 } from "../types";
 import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, imageMime, isRateLimited, rateLimitBackoffMs, relativeTime } from "../util";
 import { shouldBackgroundFetch, shouldHandleRepoChange, shouldRefreshPrs, extendBackoff } from "../refreshPolicy";
-import Toolbar from "./Toolbar";
+import Toolbar, { PULL_OPTIONS } from "./Toolbar";
 import Sidebar from "./Sidebar";
 import GraphView from "./GraphView";
 import StagingPanel from "./StagingPanel";
@@ -1029,9 +1029,40 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
     }, "pull");
   const onPush = () =>
     run(async () => {
-      await api.push(path);
-      await refresh();
-      notify("Pushed");
+      try {
+        await api.push(path);
+        await refresh();
+        notify("Pushed");
+      } catch (e) {
+        // origin has commits we don't - offer to pull (using the user's
+        // configured default pull strategy, since that's a strategy choice
+        // they already made) and retry the push, instead of leaving them to
+        // read raw git stderr and click Pull then Push by hand. "fetch" isn't
+        // an integrating mode, so it maps to the safe "ff-only" fallback -
+        // never invents a merge commit or rewrites history on someone's behalf.
+        if (!/\[rejected\][^\n]*\((non-fast-forward|fetch first)\)/i.test(String(e))) throw e;
+        const def = getPullDefault();
+        const mode: api.PullMode = def === "fetch" ? "ff-only" : def;
+        const label = PULL_OPTIONS.find((o) => o.key === mode)?.label ?? "Pull";
+        const ok = await confirm(`origin/${headBranch} has commits your branch doesn't have. ${label}, then push?`, {
+          title: "Push rejected",
+          kind: "warning",
+        });
+        if (!ok) throw e;
+        await api.pull(path, mode);
+        await reload();
+        // A rebase can pause mid-flight on conflicts without throwing (see
+        // sequencer::run_step); pushing on top of a paused rebase would push
+        // the wrong tree, so bail and let the SequencerBanner (now visible
+        // from reload()) drive the resolution instead.
+        if ((await api.sequencerState(path)).kind) {
+          notify("Pulled, but stopped on conflicts - resolve them, then push.");
+          return;
+        }
+        await api.push(path);
+        await refresh();
+        notify("Pulled and pushed");
+      }
     }, "push");
   const onForcePush = () =>
     run(async () => {
