@@ -209,6 +209,11 @@ fn checkout(repo: String, name: String) -> AppResult<()> {
     branch::checkout(&open(&repo)?, &name)
 }
 
+#[tauri::command(async)]
+fn checkout_autostash(repo: String, name: String) -> AppResult<String> {
+    ops::checkout_autostash(&open(&repo)?, &name)
+}
+
 #[tauri::command]
 fn create_branch(repo: String, name: String, checkout: bool) -> AppResult<()> {
     branch::create_branch(&open(&repo)?, &name, checkout)
@@ -646,6 +651,7 @@ pub fn run() {
             commit,
             commit_amend,
             checkout,
+            checkout_autostash,
             create_branch,
             push,
             push_force,

@@ -106,6 +106,8 @@ export const commit = (repo: string, message: string) =>
 export const commitAmend = (repo: string, message: string, resetAuthor: boolean, author: string | null) =>
   invoke<string>("commit_amend", { repo, message, resetAuthor, author });
 export const checkout = (repo: string, name: string) => invoke<void>("checkout", { repo, name });
+export const checkoutAutostash = (repo: string, name: string) =>
+  invoke<string>("checkout_autostash", { repo, name });
 export const createBranch = (repo: string, name: string, checkout: boolean) =>
   invoke<void>("create_branch", { repo, name, checkout });
 
