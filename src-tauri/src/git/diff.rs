@@ -125,10 +125,17 @@ fn diff_to_files(diff: &git2::Diff, max: usize) -> AppResult<Vec<FileDiff>> {
                 old_path,
                 hunks: Vec::new(),
                 truncated: false,
-                oversized: false,
+                // `size()` reads the delta metadata (no blob load). A file over
+                // the cap is marked and its content skipped below, so a 25MB+
+                // modified file can't flood the webview via the diff view.
+                oversized: delta.new_file().size() > MAX_PREVIEW_BYTES
+                    || delta.old_file().size() > MAX_PREVIEW_BYTES,
             });
         }
         let file = files.last_mut().unwrap();
+        if file.oversized {
+            return true; // never materialize an oversized file's content
+        }
 
         match line.origin() {
             'F' => {} // file header - skip, we already have the path
@@ -193,7 +200,7 @@ pub fn file_diff(repo: &Repository, path: &str, staged: bool, full: bool) -> App
 
     let structured = diff_to_files(&diff, max)?.into_iter().find(|f| f.path == path);
     if let Some(fd) = &structured {
-        if !fd.hunks.is_empty() || fd.binary {
+        if !fd.hunks.is_empty() || fd.binary || fd.oversized {
             return Ok(structured.unwrap());
         }
     }
