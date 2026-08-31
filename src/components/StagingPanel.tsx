@@ -37,6 +37,10 @@ interface Props {
   /// there's no commit to amend (unborn / detached HEAD) - hides the toggle.
   lastCommitMessage: string | null;
   isActive: boolean;
+  /// True while a modal/overlay owns the keyboard (RepoView modals or an
+  /// App-level overlay). Commit/stage/unstage combos must stand down so they
+  /// don't fire behind the overlay.
+  suppressShortcuts?: boolean;
 }
 
 /// The commit composer + changes browser. Owns the List/Tree view, the
@@ -47,6 +51,7 @@ export default function StagingPanel({
   onCommit,
   lastCommitMessage,
   isActive,
+  suppressShortcuts,
 }: Props) {
   const { repoPath, busy, activeAction, run, refresh, notify } = useRepo();
   const [view, setView] = useState<ChangesView>(getChangesView());
@@ -327,7 +332,7 @@ export default function StagingPanel({
   // commit message + selection state live here). Modifier combos only, so they
   // never clash with typing in the message box.
   useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || suppressShortcuts) return;
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
       const k = e.key.toLowerCase();
@@ -345,7 +350,7 @@ export default function StagingPanel({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isActive, handleCommit, stageFiles, unstageFiles, selUnstaged, selStaged, status]);
+  }, [isActive, suppressShortcuts, handleCommit, stageFiles, unstageFiles, selUnstaged, selStaged, status]);
 
   const sectionCount = (visible: number, total: number) =>
     hasSearch ? `${visible}/${total}` : String(total);

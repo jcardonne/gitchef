@@ -56,6 +56,10 @@ const PR_REFRESH_MS = 15 * 60_000;
 interface Props {
   path: string;
   isActive: boolean;
+  /// True while an App-level overlay (Settings, Shortcuts, Clone, Create) is
+  /// open. RepoView stays mounted + active behind these, so its window-level
+  /// key handlers must stand down or they fire behind the overlay.
+  overlayOpen: boolean;
   onLoaded: (path: string, info: RepoInfo) => void;
   /// Open another repo path as a tab (App-level). Used to open a worktree.
   onOpenPath: (path: string) => void;
@@ -67,7 +71,7 @@ interface Props {
 /// their tab exists, so switching tabs preserves scroll + selection. Each
 /// instance only talks to the backend while it is the active tab; on activation
 /// it re-points the shared backend at its own path before issuing commands.
-export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose }: Props) {
+export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpenPath, onClose }: Props) {
   const [repo, setRepo] = useState<RepoInfo | null>(null);
   // Set when `path` isn't a Git repo yet (open_repo's sentinel error), so the
   // tab offers to init it or close instead of sitting on the skeleton forever.
@@ -183,7 +187,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
   // below must not act on keystrokes meant for it. Declared up here so every
   // handler's dependency array can see it.
   const modalOpen =
-    paletteOpen || reflogOpen || prOpen || !!historyPath || !!rebasePlanBase || !!namePrompt || globalSearchOpen || quickOpenOpen;
+    overlayOpen || paletteOpen || reflogOpen || prOpen || !!historyPath || !!rebasePlanBase || !!namePrompt || globalSearchOpen || quickOpenOpen;
 
   const loadedRef = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -2469,6 +2473,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
                 onCommit={onCommit}
                 lastCommitMessage={lastCommitMessage}
                 isActive={isActive}
+                suppressShortcuts={modalOpen}
               />
             ) : (
               <div className="commit-detail-panel">
