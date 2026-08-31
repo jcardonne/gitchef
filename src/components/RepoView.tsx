@@ -1615,7 +1615,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   // "Hide"; the sidebar variant uses them as-is.
   const stashMenuItems = (sha: string, message: string) =>
     Promise.all([
-      MenuItem.new({ text: "Show diff", action: () => goToCommit(sha) }),
+      MenuItem.new({ text: "Show diff", action: () => selectCommit(sha) }),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: "Apply Stash", action: () => stashApply(sha) }),
       MenuItem.new({ text: "Pop Stash", action: () => stashPop(sha) }),
