@@ -29,12 +29,15 @@ pub struct FileDiff {
     pub hunks: Vec<DiffHunk>,
     /// True when the diff was capped; the UI offers a "Load full file" action.
     pub truncated: bool,
+    /// True when the file exceeds the preview size limit and was not read at all
+    /// (reading a multi-GB blob into the webview would OOM the app).
+    pub oversized: bool,
 }
 
 impl FileDiff {
     /// A content-less diff (no hunks) - used for "no changes" and binary files.
     fn empty(path: &str, binary: bool, status: FileStatusKind) -> Self {
-        Self { path: path.to_string(), binary, status, old_path: None, hunks: Vec::new(), truncated: false }
+        Self { path: path.to_string(), binary, status, old_path: None, hunks: Vec::new(), truncated: false, oversized: false }
     }
 }
 
@@ -58,12 +61,31 @@ pub struct FileContent {
     pub lines: Vec<String>,
     /// True when the content was capped; the UI offers a "Load full file" action.
     pub truncated: bool,
+    /// True when the file exceeds the preview size limit and was not read (see
+    /// `MAX_PREVIEW_BYTES`).
+    pub oversized: bool,
 }
 
 /// Hard caps so a huge file can never flood the webview with DOM nodes (which
 /// freezes the app). Beyond these the diff is truncated with a marker.
 const MAX_DIFF_LINES: usize = 3000;
 const MAX_LINE_LEN: usize = 2000;
+
+/// A file bigger than this is never previewed (diff, content, or image): reading
+/// and base64-ing a multi-GB blob into the webview would OOM the app. Surfaced
+/// as `oversized` (text/diff) or a clear error (image) instead of a crash.
+const MAX_PREVIEW_BYTES: u64 = 25 * 1024 * 1024;
+
+/// Size of the working-tree file at `path`, or None if it can't be stated.
+fn workdir_len(repo: &Repository, path: &str) -> Option<u64> {
+    let full = super::workdir(repo).ok()?.join(path);
+    std::fs::metadata(full).ok().map(|m| m.len())
+}
+
+/// Size of a blob without loading its content, via the object-database header.
+fn blob_size(repo: &Repository, oid: Oid) -> Option<u64> {
+    repo.odb().ok()?.read_header(oid).ok().map(|(size, _)| size as u64)
+}
 
 /// Cap a single line's length so a minified one-liner can't be megabytes wide.
 fn cap_line(s: &str) -> String {
@@ -103,6 +125,7 @@ fn diff_to_files(diff: &git2::Diff, max: usize) -> AppResult<Vec<FileDiff>> {
                 old_path,
                 hunks: Vec::new(),
                 truncated: false,
+                oversized: false,
             });
         }
         let file = files.last_mut().unwrap();
@@ -194,6 +217,17 @@ fn is_new_in_head(repo: &Repository, path: &str) -> bool {
 /// Render a whole file as an all-additions diff. Binary files and empty files
 /// get a clear marker instead of a misleading "No changes".
 fn whole_file_as_added(repo: &Repository, path: &str, max: usize) -> AppResult<FileDiff> {
+    if workdir_len(repo, path).is_some_and(|n| n > MAX_PREVIEW_BYTES) {
+        return Ok(FileDiff {
+            path: path.to_string(),
+            binary: false,
+            status: FileStatusKind::New,
+            old_path: None,
+            hunks: Vec::new(),
+            truncated: false,
+            oversized: true,
+        });
+    }
     let bytes = std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default();
     if bytes.iter().take(8000).any(|&b| b == 0) {
         return Ok(FileDiff::empty(path, true, FileStatusKind::New));
@@ -224,6 +258,7 @@ fn whole_file_as_added(repo: &Repository, path: &str, max: usize) -> AppResult<F
         old_path: None,
         hunks: vec![DiffHunk { header, lines }],
         truncated: total > shown,
+        oversized: false,
     })
 }
 
@@ -241,13 +276,22 @@ pub fn file_content(
     staged: bool,
     full: bool,
 ) -> AppResult<FileContent> {
-    let bytes = read_file_bytes(repo, path, rev, staged)?;
+    let Some(bytes) = read_file_bytes(repo, path, rev, staged)? else {
+        return Ok(FileContent {
+            path: path.to_string(),
+            binary: false,
+            lines: Vec::new(),
+            truncated: false,
+            oversized: true,
+        });
+    };
     if bytes.iter().take(8000).any(|&b| b == 0) {
         return Ok(FileContent {
             path: path.to_string(),
             binary: true,
             lines: Vec::new(),
             truncated: false,
+            oversized: false,
         });
     }
     let text = String::from_utf8_lossy(&bytes);
@@ -255,7 +299,7 @@ pub fn file_content(
     let total = text.lines().count();
     let lines: Vec<String> = text.lines().take(max).map(cap_line).collect();
     let truncated = total > lines.len();
-    Ok(FileContent { path: path.to_string(), binary: false, lines, truncated })
+    Ok(FileContent { path: path.to_string(), binary: false, lines, truncated, oversized: false })
 }
 
 /// Fetch a file's bytes from the requested source (commit blob, index blob, or
@@ -266,24 +310,39 @@ fn read_file_bytes(
     path: &str,
     rev: Option<&str>,
     staged: bool,
-) -> AppResult<Vec<u8>> {
+) -> AppResult<Option<Vec<u8>>> {
     if let Some(rev) = rev {
         let oid = Oid::from_str(rev).map_err(|e| AppError::Msg(format!("invalid commit id: {e}")))?;
         let tree = repo.find_commit(oid)?.tree()?;
         if let Ok(entry) = tree.get_path(Path::new(path)) {
-            return Ok(repo.find_blob(entry.id())?.content().to_vec());
+            if blob_size(repo, entry.id()).is_some_and(|n| n > MAX_PREVIEW_BYTES) {
+                return Ok(None);
+            }
+            return Ok(Some(repo.find_blob(entry.id())?.content().to_vec()));
         }
         // Absent from this commit (e.g. the file was deleted here): fall back to
         // the working tree, which yields empty bytes for a file that no longer
         // exists - rendered as empty instead of surfacing an error.
-        return Ok(std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default());
+        return read_workdir_bytes(repo, path);
     }
     if staged {
         if let Some(entry) = repo.index()?.get_path(Path::new(path), 0) {
-            return Ok(repo.find_blob(entry.id)?.content().to_vec());
+            if blob_size(repo, entry.id).is_some_and(|n| n > MAX_PREVIEW_BYTES) {
+                return Ok(None);
+            }
+            return Ok(Some(repo.find_blob(entry.id)?.content().to_vec()));
         }
     }
-    Ok(std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default())
+    read_workdir_bytes(repo, path)
+}
+
+/// Read the working-tree file at `path`, or `None` when it exceeds the preview
+/// size limit. A missing file reads as empty bytes (a deleted file renders empty).
+fn read_workdir_bytes(repo: &Repository, path: &str) -> AppResult<Option<Vec<u8>>> {
+    if workdir_len(repo, path).is_some_and(|n| n > MAX_PREVIEW_BYTES) {
+        return Ok(None);
+    }
+    Ok(Some(std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default()))
 }
 
 /// Minimal standard base64 (with padding), no external dep - for embedding a
@@ -308,6 +367,7 @@ fn b64(bytes: &[u8]) -> String {
 /// index; otherwise the working tree. A path absent at `rev` yields "" - e.g. a
 /// file added in that commit has no "before" image.
 pub fn file_bytes(repo: &Repository, path: &str, rev: Option<&str>, staged: bool) -> AppResult<String> {
+    let too_large = || AppError::Msg("image too large to preview (over 25 MB)".into());
     let bytes = if let Some(rev) = rev {
         let tree = repo
             .revparse_single(rev)
@@ -315,16 +375,26 @@ pub fn file_bytes(repo: &Repository, path: &str, rev: Option<&str>, staged: bool
             .map_err(|e| AppError::Msg(format!("invalid revision: {e}")))?
             .tree()?;
         match tree.get_path(Path::new(path)) {
-            Ok(entry) => repo.find_blob(entry.id())?.content().to_vec(),
+            Ok(entry) => {
+                if blob_size(repo, entry.id()).is_some_and(|n| n > MAX_PREVIEW_BYTES) {
+                    return Err(too_large());
+                }
+                repo.find_blob(entry.id())?.content().to_vec()
+            }
             Err(_) => Vec::new(),
         }
     } else if staged {
         match repo.index()?.get_path(Path::new(path), 0) {
-            Some(entry) => repo.find_blob(entry.id)?.content().to_vec(),
-            None => std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default(),
+            Some(entry) => {
+                if blob_size(repo, entry.id).is_some_and(|n| n > MAX_PREVIEW_BYTES) {
+                    return Err(too_large());
+                }
+                repo.find_blob(entry.id)?.content().to_vec()
+            }
+            None => read_workdir_bytes(repo, path)?.ok_or_else(too_large)?,
         }
     } else {
-        std::fs::read(super::workdir(repo)?.join(path)).unwrap_or_default()
+        read_workdir_bytes(repo, path)?.ok_or_else(too_large)?
     };
     Ok(b64(&bytes))
 }

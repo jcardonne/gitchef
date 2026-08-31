@@ -140,6 +140,7 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified", findOpe
 
   if (!diff) return <EmptyState icon={<DocIcon />} title="No file selected" hint="Pick a file from the list to see its changes." />;
   if (diff.binary) return <EmptyState icon={<BinaryIcon />} title="Binary file" hint="No text diff to show." />;
+  if (diff.oversized) return <EmptyState icon={<DocIcon />} title="File too large" hint="This file is over 25 MB and won't be previewed." />;
   if (list.length === 0) return <EmptyState icon={<CheckIcon />} title="No changes" hint={diff.path} />;
 
   const selectable = !!menu;
