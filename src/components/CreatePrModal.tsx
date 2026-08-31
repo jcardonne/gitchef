@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useEscape } from "../useEscape";
 
 /// Form to open a PR (GitHub) / MR (GitLab) for the current branch via the
 /// gh/glab CLI. The source branch is the checked-out one (handled backend-side);
@@ -21,11 +22,7 @@ export default function CreatePrModal({
   const [base, setBase] = useState(baseDefault);
   const label = provider === "gitlab" ? "Merge Request" : "Pull Request";
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   const submit = () => {
     if (!title.trim() || !base) return;

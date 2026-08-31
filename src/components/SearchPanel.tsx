@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as api from "../api";
 import type { ContentSearch, FileHistoryEntry } from "../types";
 import { relativeTime } from "../util";
+import { useEscape } from "../useEscape";
 
 /// Match ranges of `query` in `text`, mirroring the backend flags (fixed-string
 /// vs ERE, case). An invalid regex yields no highlight rather than throwing.
@@ -67,11 +68,7 @@ export default function SearchPanel({
   const [error, setError] = useState("");
   const [path, setPath] = useState("");
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   const q = query.trim();
   useEffect(() => {

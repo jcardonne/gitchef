@@ -16,8 +16,12 @@ const IMAGE_MIME: Record<string, string> = {
   png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
   webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp", ico: "image/x-icon", avif: "image/avif",
 };
+/// Lowercased file extension without the dot, or null when the path has none.
+export function extname(path: string): string | null {
+  return path.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] ?? null;
+}
 export function imageMime(path: string): string | null {
-  const ext = path.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  const ext = extname(path);
   return (ext && IMAGE_MIME[ext]) || null;
 }
 

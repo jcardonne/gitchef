@@ -57,11 +57,9 @@ const COL_VISIBILITY_KEY = "gitchef.graphColumnVisibility";
 const SORT_KEY = "gitchef.graphSortAsc";
 const RIGHT_PANEL_KEY = "gitchef.rightPanelWidth";
 
-/// User overrides for the graph's resizable column widths (px). `graph` is legacy
-/// (the lane column is now auto-sized to lane depth); `refs` is the branch/tag
-/// column left of the lanes.
+/// User overrides for the graph's resizable column widths (px). `refs` is the
+/// branch/tag column left of the lanes.
 export interface GraphCols {
-  graph?: number;
   refs?: number;
   author?: number;
   sha?: number;

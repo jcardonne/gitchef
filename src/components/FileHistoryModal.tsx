@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as api from "../api";
 import type { FileHistoryEntry } from "../types";
 import { relativeTime } from "../util";
+import { useEscape } from "../useEscape";
 
 /// Lists the commits that changed `filePath` (newest first). Picking one jumps
 /// to that commit. Reuses the reflog modal's list styling.
@@ -30,11 +31,7 @@ export default function FileHistoryModal({
     };
   }, [repoPath, filePath]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   return (
     <div className="modal-overlay" onClick={onClose}>

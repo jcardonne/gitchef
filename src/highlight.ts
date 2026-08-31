@@ -26,6 +26,7 @@ import "prismjs/components/prism-markdown";
 import "prismjs/components/prism-sql";
 import type { Segment } from "./wordDiff";
 import type { Hit } from "./find";
+import { extname } from "./util";
 
 // We tokenize on demand, never the DOM-scanning auto-highlighter.
 Prism.manual = true;
@@ -63,7 +64,7 @@ const MAX_LEN = 2000;
 
 /// Prism language id for a file path, or null when unsupported.
 export function langForPath(path: string): string | null {
-  const ext = path.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  const ext = extname(path);
   if (!ext) return null;
   const lang = EXT_LANG[ext];
   return lang && Prism.languages[lang] ? lang : null;

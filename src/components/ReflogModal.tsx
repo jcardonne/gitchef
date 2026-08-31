@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as api from "../api";
 import type { ReflogNode } from "../types";
 import { relativeTime } from "../util";
+import { useEscape } from "../useEscape";
 
 /// Browse the HEAD reflog and jump back to any entry - the safety net beyond the
 /// one-level Undo. Checkout detaches at the entry; Reset --hard moves the current
@@ -31,11 +32,7 @@ export default function ReflogModal({
     };
   }, [repoPath]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   return (
     <div className="modal-overlay" onClick={onClose}>

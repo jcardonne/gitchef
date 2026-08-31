@@ -48,7 +48,7 @@ export const HeadIcon = ({ size = 13 }: IconProps) => (
     <circle cx="8" cy="8" r="3.2" />
   </svg>
 );
-/// Fork = a branch that has an open PR/MR (reserved; not wired up yet).
+/// Fork = a branch that has an open PR/MR.
 export const BranchIcon = ({ size = 13 }: IconProps) => (
   <svg {...base(size)}>
     <circle cx="5" cy="4" r="1.6" />

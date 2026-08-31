@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as api from "../api";
 import { useRepo } from "../repoContext";
 import type { RebaseAction, TodoItem } from "../types";
+import { useEscape } from "../useEscape";
 
 interface Props {
   base: string; // the base ref/sha the rebase replays onto
@@ -38,16 +39,7 @@ export default function RebasePlan({ base, baseLabel, onClose, onStarted }: Prop
     };
   }, [repoPath, base, notify, onClose]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   // Swap a row with its neighbour. dir -1 = up (earlier), +1 = down (later).
   const move = (i: number, dir: -1 | 1) =>

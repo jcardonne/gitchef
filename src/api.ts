@@ -253,8 +253,6 @@ export const listForgeRepos = (provider: "github" | "gitlab") =>
   invoke<ForgeRepo[]>("list_forge_repos", { provider });
 
 // --- tags on the remote (network) ---
-export const pushTags = (repo: string, remote: string) =>
-  invoke<string>("push_tags", { repo, remote });
 export const pushTag = (repo: string, remote: string, name: string) =>
   invoke<string>("push_tag", { repo, remote, name });
 export const deleteRemoteTag = (repo: string, remote: string, name: string) =>

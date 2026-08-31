@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { useEscape } from "../useEscape";
 import { PALETTES, getDensity, setDensity, type Palette, type Theme, type Density } from "../theme";
 import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, getFetchIntervalMinutes, setFetchIntervalMinutes, notifyPrefs, type PullAction, type GraphColumnVisibility } from "../storage";
 import { SHORTCUT_SECTIONS, comboHint, keyLabel } from "../shortcuts";
@@ -158,16 +159,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
     }
   };
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   return (
     <div className="settings-page">

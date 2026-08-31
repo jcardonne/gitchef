@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEscape } from "../useEscape";
 import { SHORTCUT_SECTIONS, keyLabel, type KeyToken } from "../shortcuts";
 import { useKeycapPresses } from "../useKeycapPresses";
 
@@ -12,16 +12,7 @@ function Keycap({ token }: { token: KeyToken }) {
 export default function ShortcutsModal({ onClose }: { onClose: () => void }) {
   useKeycapPresses(true);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   return (
     <div className="modal-overlay" onClick={onClose}>

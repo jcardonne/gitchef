@@ -41,7 +41,7 @@ export function getTheme(): Theme {
 
 export function getPalette(): Palette {
   const v = localStorage.getItem(PALETTE_KEY);
-  return v === "copper" || v === "slate" || v === "carbon" || v === "basil" || v === "ube" ? v : "classic";
+  return PALETTES.some((p) => p.id === v) ? (v as Palette) : "classic";
 }
 
 export function resolvedTheme(): "light" | "dark" {
