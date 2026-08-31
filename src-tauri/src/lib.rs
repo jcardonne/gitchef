@@ -273,11 +273,6 @@ fn search_pickaxe(
 }
 
 #[tauri::command(async)]
-fn push_tags(repo: String, remote: String) -> AppResult<String> {
-    ops::push_tags(&open(&repo)?, &remote)
-}
-
-#[tauri::command(async)]
 fn push_tag(repo: String, remote: String, name: String) -> AppResult<String> {
     ops::push_tag(&open(&repo)?, &remote, &name)
 }
@@ -661,7 +656,6 @@ pub fn run() {
             init_repo,
             search_content,
             search_pickaxe,
-            push_tags,
             push_tag,
             delete_remote_tag,
             watch_repo,

@@ -3,6 +3,7 @@ import * as api from "../api";
 import type { ForgeRepo } from "../types";
 import { getCloneDir, setCloneDir, getCachedRepos, setCachedRepos } from "../storage";
 import { GithubIcon, GitlabIcon, LinkIcon } from "../icons";
+import { useEscape } from "../useEscape";
 
 type Tab = "github" | "gitlab" | "url";
 
@@ -40,11 +41,7 @@ export default function CloneModal({
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState("");
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscape(onClose);
 
   // Show the cached list instantly, then revalidate in the background each time a
   // provider tab is shown (stale-while-revalidate). The spinner appears only on the

@@ -128,7 +128,10 @@ pub fn clone(url: &str, dest: &str) -> AppResult<String> {
     let parent = std::path::Path::new(dest)
         .parent()
         .ok_or_else(|| AppError::Msg("invalid destination".into()))?;
-    run_git(parent, &["clone", url, dest])?;
+    // `--` stops a URL/dest beginning with `-` from being parsed as an option
+    // (e.g. `--upload-pack=...`), the same arg-injection class repo.rs guards
+    // for ssh hosts.
+    run_git(parent, &["clone", "--", url, dest])?;
     Ok(dest.to_string())
 }
 
@@ -150,11 +153,6 @@ pub fn init(dest: &str, branch: &str, initial_commit: bool) -> AppResult<String>
         run_git(path, &["commit", "--allow-empty", "-m", "Initial commit"])?;
     }
     Ok(dest.to_string())
-}
-
-/// Push all local tags to `remote`.
-pub fn push_tags(repo: &Repository, remote: &str) -> AppResult<String> {
-    run_git(workdir(repo)?, &["push", remote, "--tags"])
 }
 
 /// Push a single tag to `remote`.
