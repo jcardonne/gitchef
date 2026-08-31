@@ -27,11 +27,19 @@ GitChef is a desktop Git client built with [Tauri](https://tauri.app) and React.
 ## Features
 
 - **Tabbed workspace** - keep multiple repositories open, color-code tabs to tell them apart, and switch between them.
-- **Commit graph** - browse history with branches, tags, remotes, and stashes.
+- **Commit graph** - browse history with branches, tags, remotes, and stashes, with per-author avatars.
 - **Author avatars** - commit authors show their real GitHub or GitLab profile picture (resolved from the repo's remote), falling back to Gravatar.
-- **Staging panel** - stage, unstage, and discard changes from a searchable file list.
-- **Diff viewer** - read inline diffs with line-level selection, or flip the preview to a full-file view.
-- **Branch tools** - checkout, create branches, and fetch/pull/push from a single toolbar.
+- **Staging panel** - stage, unstage, and discard changes from a searchable file list, with line- and hunk-level staging.
+- **Diff viewer** - read inline or side-by-side diffs, flip to a full-file or blame view, and preview images.
+- **Commit composer** - conventional-commit prefixes, co-authors, and amend.
+- **Branch tools** - checkout, create, merge, rebase, cherry-pick, revert, and reset; interactive rebase planning.
+- **Conflict resolution** - resolve merge/rebase conflicts inline, side by side.
+- **Remotes & tags** - clone and init repositories; add, rename, remove, and re-point remotes; create, push, and delete tags.
+- **Stashes** - create, apply, pop, drop, and re-message stashes.
+- **Worktrees & submodules** - list and add worktrees; view and update submodules.
+- **Search** - filter files, search commit metadata, and run content (`git grep`) and pickaxe (`git log -S`) history searches.
+- **Pull requests** - open a GitHub PR or GitLab MR, and see review/CI status in the sidebar.
+- **Quick open** - fuzzy-find and jump to any tracked file (Cmd/Ctrl+P) and a command palette (Cmd/Ctrl+K).
 - **Recent repositories** - jump back into recently opened repos from the Home tab.
 - **Theming** - light, dark, and system themes.
 - **Auto-updates** - a built-in, signature-verified updater keeps installed builds current.
@@ -82,8 +90,11 @@ docs/           Project documentation (see RELEASING.md)
 ## Tests
 
 ```bash
-pnpm test
+pnpm test                       # frontend unit tests (vitest)
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust backend tests
 ```
+
+End-to-end tests (`e2e/`) drive the real Tauri binary via WebKitWebDriver and run in CI on Linux.
 
 ## Star History
 
