@@ -189,12 +189,12 @@ fn open_url(url: String) -> AppResult<()> {
     files::open_url(&url)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn commit(repo: String, message: String) -> AppResult<String> {
     ops::commit(&open(&repo)?, &message)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn commit_amend(
     repo: String,
     message: String,
@@ -204,7 +204,7 @@ fn commit_amend(
     ops::amend(&open(&repo)?, &message, reset_author, author.as_deref())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn checkout(repo: String, name: String) -> AppResult<()> {
     branch::checkout(&open(&repo)?, &name)
 }
@@ -214,7 +214,7 @@ fn checkout_autostash(repo: String, name: String) -> AppResult<String> {
     ops::checkout_autostash(&open(&repo)?, &name)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_branch(repo: String, name: String, checkout: bool) -> AppResult<()> {
     branch::create_branch(&open(&repo)?, &name, checkout)
 }
@@ -295,17 +295,17 @@ fn unwatch_repo(watchers: tauri::State<watch::Watchers>, repo: String) {
     watch::unwatch(&watchers, &repo)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn merge(repo: String, branch: String) -> AppResult<String> {
     ops::merge(&open(&repo)?, &branch)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn fast_forward_to(repo: String, branch: String) -> AppResult<String> {
     ops::fast_forward_to(&open(&repo)?, &branch)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn rebase_onto(repo: String, branch: String) -> AppResult<String> {
     ops::rebase_onto(&open(&repo)?, &branch)
 }
@@ -317,7 +317,7 @@ fn sequencer_state(repo: String) -> AppResult<sequencer::SequencerState> {
     sequencer::state(&open(&repo)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn sequencer_act(repo: String, action: String) -> AppResult<String> {
     sequencer::act(&open(&repo)?, &action)
 }
@@ -327,12 +327,12 @@ fn conflict_blocks(repo: String, path: String) -> AppResult<conflict::ConflictFi
     conflict::parse(&open(&repo)?, &path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn resolve_conflict(repo: String, path: String, choices: Vec<String>) -> AppResult<()> {
     conflict::resolve(&open(&repo)?, &path, &choices)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn take_conflict_side(repo: String, path: String, side: String) -> AppResult<()> {
     conflict::take_side(&open(&repo)?, &path, &side)
 }
@@ -368,7 +368,7 @@ fn set_upstream(repo: String, local: String, upstream: String) -> AppResult<Stri
 
 // --- commit context-menu actions ---
 
-#[tauri::command]
+#[tauri::command(async)]
 fn create_branch_at(repo: String, name: String, sha: String, checkout: bool) -> AppResult<()> {
     branch::create_branch_at(&open(&repo)?, &name, &sha, checkout)
 }
@@ -416,17 +416,17 @@ fn set_remote_url(repo: String, name: String, url: String) -> AppResult<()> {
     remotes::set_url(&open(&repo)?, &name, &url)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn cherry_pick(repo: String, sha: String) -> AppResult<String> {
     ops::cherry_pick(&open(&repo)?, &sha)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn revert_commit(repo: String, sha: String) -> AppResult<String> {
     ops::revert_commit(&open(&repo)?, &sha)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn reset_to(repo: String, sha: String, mode: String) -> AppResult<String> {
     ops::reset_to(&open(&repo)?, &sha, &mode)
 }
@@ -468,27 +468,27 @@ fn ignore_path(repo: String, pattern: String) -> AppResult<()> {
     files::ignore_path(&open(&repo)?, &pattern)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn stash_file(repo: String, path: String) -> AppResult<String> {
     files::stash_file(&open(&repo)?, &path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn stash_apply(repo: String, sha: String) -> AppResult<String> {
     ops::stash_apply(&mut open(&repo)?, &sha)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn stash_pop(repo: String, sha: String) -> AppResult<String> {
     ops::stash_pop(&mut open(&repo)?, &sha)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn stash_drop(repo: String, sha: String) -> AppResult<String> {
     ops::stash_drop(&mut open(&repo)?, &sha)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn stash_edit_message(repo: String, sha: String, message: String) -> AppResult<String> {
     ops::stash_edit_message(&mut open(&repo)?, &sha, &message)
 }
@@ -563,17 +563,17 @@ fn open_terminal(path: String) -> AppResult<()> {
     files::open_terminal(&path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn stash_all(repo: String, message: Option<String>) -> AppResult<String> {
     ops::stash_all(&open(&repo)?, message.as_deref())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn apply_hunk(repo: String, path: String, action: String, hunk_header: String) -> AppResult<()> {
     files::apply_hunk(&open(&repo)?, &path, &action, &hunk_header)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn apply_lines(
     repo: String,
     path: String,
