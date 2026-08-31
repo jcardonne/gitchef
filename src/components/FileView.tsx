@@ -37,6 +37,7 @@ export default function FileView({ content, findOpen, onFindClose, scrollToLine 
 
   if (!content) return <EmptyState icon={<DocIcon />} title="No file selected" hint="Pick a file from the list to view it." />;
   if (content.binary) return <EmptyState icon={<BinaryIcon />} title="Binary file" hint="No preview available." />;
+  if (content.oversized) return <EmptyState icon={<DocIcon />} title="File too large" hint="This file is over 25 MB and won't be previewed." />;
   if (lines.length === 0) return <EmptyState icon={<DocIcon />} title="Empty file" hint="This file has no content." />;
 
   return (

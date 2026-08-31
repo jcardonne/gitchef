@@ -208,6 +208,8 @@ export interface FileDiff {
   status: FileStatusKind;
   hunks: DiffHunk[];
   truncated: boolean;
+  /// True when the file exceeds the preview size limit and was not read.
+  oversized: boolean;
 }
 
 /// The raw file content shown by the "File" preview (vs the diff). `lines` is
@@ -217,6 +219,8 @@ export interface FileContent {
   binary: boolean;
   lines: string[];
   truncated: boolean;
+  /// True when the file exceeds the preview size limit and was not read.
+  oversized: boolean;
 }
 
 /// One matching line within a file (global content search).
