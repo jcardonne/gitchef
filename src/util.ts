@@ -167,3 +167,39 @@ export function affectedPaths(files: FileStatus[]): string[] {
   }
   return [...paths];
 }
+
+export const KNOWN_BOT_AVATARS: Record<string, string> = {
+  renovate: "https://avatars.githubusercontent.com/in/2740?v=4&s=64",
+  dependabot: "https://avatars.githubusercontent.com/in/29110?v=4&s=64",
+  "github-actions": "https://avatars.githubusercontent.com/in/15368?v=4&s=64",
+};
+
+/// Resolve an author avatar for a PR or commit login from AvatarContext accounts,
+/// falling back to known GitHub bot app icons if not discovered in git commits.
+export function resolveAuthorAvatar(author: string, ctx?: AvatarContext): string | null {
+  const clean = author.trim().replace(/^@/, "").replace(/^app\//, "").toLowerCase();
+  const base = clean.replace(/\[bot\]$/, "");
+  if (!base) return null;
+  if (ctx) {
+    const direct =
+      ctx.accounts.get("@" + clean) ??
+      ctx.accounts.get("@" + base) ??
+      ctx.accounts.get(clean) ??
+      ctx.accounts.get(base);
+    if (direct) return direct;
+    const patterns = [
+      `+${base}[bot]@users.noreply.github.com`,
+      `+${base}@users.noreply.github.com`,
+      `${base}[bot]@users.noreply.github.com`,
+      `${base}@users.noreply.github.com`,
+    ];
+    for (const [email, url] of ctx.accounts.entries()) {
+      const em = email.toLowerCase();
+      if (patterns.some((pat) => em === pat || em.endsWith(pat)) && url) {
+        return url;
+      }
+    }
+  }
+  return KNOWN_BOT_AVATARS[base] ?? null;
+}
+

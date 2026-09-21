@@ -2,12 +2,15 @@ import { useState, useEffect } from "react";
 import type { BranchInfo, RepoInfo } from "../types";
 import { getPullDefault, setPullDefault, type PullAction } from "../storage";
 import { comboHint } from "../shortcuts";
+import { SidebarIcon } from "../icons";
 
 interface Props {
   repo: RepoInfo;
   busy: boolean;
   activeAction: string | null;
   branches: BranchInfo[];
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
   onCheckout: (name: string) => void;
   onPullAction: (action: PullAction) => void;
   onPush: () => void;
@@ -81,6 +84,8 @@ export default function Toolbar({
   busy,
   activeAction,
   branches,
+  sidebarOpen,
+  onToggleSidebar,
   onCheckout,
   onPullAction,
   onPush,
@@ -112,6 +117,16 @@ export default function Toolbar({
 
   return (
     <div className="toolbar">
+      {onToggleSidebar && (
+        <button
+          className={`sidebar-toggle${sidebarOpen ? " active" : ""}`}
+          onClick={onToggleSidebar}
+          title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${comboHint(["mod", "B"])})`}
+          aria-label={`${sidebarOpen ? "Hide" : "Show"} sidebar`}
+        >
+          <SidebarIcon />
+        </button>
+      )}
       <span className="repo-name">{repo.name}</span>
 
       <div className="branch-picker">

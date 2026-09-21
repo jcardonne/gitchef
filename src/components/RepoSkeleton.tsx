@@ -1,3 +1,5 @@
+import { getRightPanelWidth, getSidebarVisible, getSidebarWidth } from "../storage";
+
 // Loading placeholder shown while libgit2 opens a repository. Mirrors the real
 // toolbar + 3-pane shell (same layout classes) so content drops in without a
 // jump. Pure presentational; the shimmer is a CSS pulse, reduced-motion-guarded.
@@ -7,9 +9,14 @@
 const MSG_W = ["58%", "44%", "69%", "52%", "38%", "63%", "49%", "57%", "42%", "66%", "47%", "54%", "61%", "45%"];
 
 export default function RepoSkeleton() {
+  const sidebarVisible = getSidebarVisible();
+  const sidebarWidth = getSidebarWidth();
+  const rightWidth = getRightPanelWidth();
+
   return (
     <>
       <div className="toolbar">
+        <span className="skeleton" style={{ width: 28, height: 28, borderRadius: 6 }} />
         <span className="skeleton" style={{ width: 60, height: 14 }} />
         <span className="skeleton" style={{ width: 96, height: 24, borderRadius: 6 }} />
         <span className="toolbar-spacer" />
@@ -19,20 +26,26 @@ export default function RepoSkeleton() {
       </div>
 
       <div className="main">
-        <div className="sidebar">
-          {[0, 1, 2, 3].map((g) => (
-            <div key={g} className="sk-group">
-              <span className="skeleton" style={{ width: 88, height: 11 }} />
-              {[0, 1, 2].map((r) => (
-                <span
-                  key={r}
-                  className="skeleton"
-                  style={{ width: `${52 + ((g * 3 + r) % 4) * 11}%`, height: 11 }}
-                />
+        {sidebarVisible && (
+          <>
+            <div className="sidebar" style={{ width: sidebarWidth }}>
+              {[0, 1, 2, 3].map((g) => (
+                <div key={g} className="sk-group">
+                  <span className="skeleton" style={{ width: 88, height: 11 }} />
+                  {[0, 1, 2].map((r) => (
+                    <span
+                      key={r}
+                      className="skeleton"
+                      style={{ width: `${52 + ((g * 3 + r) % 4) * 11}%`, height: 11 }}
+                    />
+                  ))}
+                </div>
               ))}
             </div>
-          ))}
-        </div>
+
+            <div className="panel-resize" />
+          </>
+        )}
 
         <div className="center">
           <div className="center-graph">
@@ -47,7 +60,9 @@ export default function RepoSkeleton() {
           </div>
         </div>
 
-        <div className="right">
+        <div className="panel-resize" />
+
+        <div className="right" style={{ width: rightWidth }}>
           <div className="sk-panel">
             <span className="skeleton" style={{ width: 130, height: 14 }} />
             <span className="skeleton" style={{ width: "82%", height: 11 }} />

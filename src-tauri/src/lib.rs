@@ -170,8 +170,28 @@ fn create_pr(repo: String, title: String, body: String, base: String) -> AppResu
 }
 
 #[tauri::command(async)]
-fn list_prs(repo: String) -> AppResult<Vec<forge::PullRequest>> {
-    forge::list_prs(&open(&repo)?)
+fn list_prs(app: tauri::AppHandle, repo: String) -> AppResult<Vec<forge::PullRequest>> {
+    forge::list_prs(Some(&app), &open(&repo)?)
+}
+
+#[tauri::command(async)]
+fn get_pr_details(app: tauri::AppHandle, repo: String, number: u64) -> AppResult<forge::PrDetails> {
+    forge::get_pr_details(Some(&app), &open(&repo)?, number)
+}
+
+#[tauri::command(async)]
+fn get_pr_diff(repo: String, number: u64) -> AppResult<Vec<diff::FileDiff>> {
+    forge::get_pr_diff(&open(&repo)?, number)
+}
+
+#[tauri::command(async)]
+fn merge_pr(repo: String, number: u64, method: Option<String>) -> AppResult<String> {
+    forge::merge_pr(&open(&repo)?, number, method)
+}
+
+#[tauri::command(async)]
+fn approve_pr(repo: String, number: u64) -> AppResult<String> {
+    forge::approve_pr(&open(&repo)?, number)
 }
 
 #[tauri::command(async)]
@@ -646,6 +666,10 @@ pub fn run() {
             file_blame,
             create_pr,
             list_prs,
+            get_pr_details,
+            get_pr_diff,
+            merge_pr,
+            approve_pr,
             list_forge_repos,
             open_url,
             commit,

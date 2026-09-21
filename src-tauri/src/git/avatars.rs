@@ -116,12 +116,17 @@ pub fn resolve(
 
     // Only write the cache when the fetch completed: on a transient error keep
     // the cached positives and retry next time (don't poison with negatives).
-    if let Ok((found, backoff)) = fetched {
+    if let Ok((found, found_logins, backoff)) = fetched {
         if let Some(secs) = backoff {
             // Header-exact: tell the UI precisely how long to pause background fetch.
             let _ = app.emit("rate-limited", secs);
         }
         let mut st = CACHE.lock();
+        for (login, url) in found_logins {
+            if !url.is_empty() {
+                st.map.insert(login, CacheEntry { url, fetched_at: now });
+            }
+        }
         for email in &missing {
             match found.get(email).filter(|u| !u.is_empty()) {
                 Some(url) => {
@@ -145,6 +150,51 @@ pub fn resolve(
         save_cache(&path, &st.map);
     }
     Ok(out)
+}
+
+/// Look up a cached avatar for a provider login (e.g. GitHub username or bot).
+/// Checks `@<login>`, and also checks if any no-reply email matching this login is cached.
+pub fn cached_avatar_for_login(app: &AppHandle, login: &str) -> Option<String> {
+    let clean = login.trim().trim_start_matches('@').to_lowercase();
+    let base = clean
+        .strip_prefix("app/")
+        .unwrap_or(&clean)
+        .trim_end_matches("[bot]");
+    if base.is_empty() {
+        return None;
+    }
+    let path = cache_path(app).ok()?;
+    let now = now_secs();
+    let mut st = CACHE.lock();
+    if st.loaded_from.as_deref() != Some(path.as_path()) {
+        st.map = load_cache(&path);
+        st.loaded_from = Some(path);
+    }
+    for key in [&format!("@{base}"), &format!("@{base}[bot]"), &format!("@{clean}")] {
+        if let Some(e) = st.map.get(key.as_str()) {
+            if fresh(e, now) && !e.url.is_empty() {
+                return Some(e.url.clone());
+            }
+        }
+    }
+    let patterns = [
+        format!("+{base}[bot]@users.noreply.github.com"),
+        format!("+{base}@users.noreply.github.com"),
+        format!("{base}[bot]@users.noreply.github.com"),
+        format!("{base}@users.noreply.github.com"),
+    ];
+    for (email, entry) in &st.map {
+        let em = email.to_lowercase();
+        if patterns.iter().any(|pat| &em == pat || em.ends_with(pat)) && fresh(entry, now) && !entry.url.is_empty() {
+            return Some(entry.url.clone());
+        }
+    }
+    match base {
+        "renovate" => Some("https://avatars.githubusercontent.com/in/2740?v=4&s=64".to_string()),
+        "dependabot" => Some("https://avatars.githubusercontent.com/in/29110?v=4&s=64".to_string()),
+        "github-actions" => Some("https://avatars.githubusercontent.com/in/15368?v=4&s=64".to_string()),
+        _ => None,
+    }
 }
 
 fn fresh(e: &CacheEntry, now: u64) -> bool {
@@ -191,6 +241,8 @@ struct GhSig {
 }
 #[derive(Deserialize)]
 struct GhUser {
+    #[serde(default)]
+    login: Option<String>,
     avatar_url: String,
 }
 
@@ -243,10 +295,11 @@ fn fetch_github(
     target: &RemoteTarget,
     head: Option<&str>,
     wanted: &HashSet<String>,
-) -> AppResult<(HashMap<String, String>, Option<u64>)> {
+) -> AppResult<(HashMap<String, String>, HashMap<String, String>, Option<u64>)> {
     let token = provider_token("github", &target.host);
     let path = encode_path(&target.path);
     let mut out = HashMap::new();
+    let mut logins = HashMap::new();
     let mut remaining = wanted.len();
 
     // Scan the current branch first: its commit list includes the base branch's
@@ -264,13 +317,13 @@ fn fetch_github(
     // authors the aborted head scan never got to.
     let mut backoff = None;
     if let Some(h) = head {
-        backoff = scan_commits(&path, Some(&encode_path(h)), token.as_deref(), wanted, &mut out, &mut remaining)?;
+        backoff = scan_commits(&path, Some(&encode_path(h)), token.as_deref(), wanted, &mut out, &mut logins, &mut remaining)?;
     }
     // A rate-limited head scan means the default scan would hit the same wall.
     if remaining > 0 && backoff.is_none() {
-        backoff = scan_commits(&path, None, token.as_deref(), wanted, &mut out, &mut remaining)?;
+        backoff = scan_commits(&path, None, token.as_deref(), wanted, &mut out, &mut logins, &mut remaining)?;
     }
-    Ok((out, backoff))
+    Ok((out, logins, backoff))
 }
 
 /// Page through a repo's commits (optionally pinned to `sha` = a branch/ref),
@@ -283,6 +336,7 @@ fn scan_commits(
     token: Option<&str>,
     wanted: &HashSet<String>,
     out: &mut HashMap<String, String>,
+    logins: &mut HashMap<String, String>,
     remaining: &mut usize,
 ) -> AppResult<Option<u64>> {
     for page in 1..=MAX_PAGES {
@@ -313,8 +367,24 @@ fn scan_commits(
         };
         let n = commits.len();
         for c in commits {
-            take(out, remaining, wanted, c.commit.author.email, c.author.map(|u| sized_github(&u.avatar_url)));
-            take(out, remaining, wanted, c.commit.committer.email, c.committer.map(|u| sized_github(&u.avatar_url)));
+            if let Some(ref u) = c.author {
+                if let Some(ref login) = u.login {
+                    if !login.is_empty() {
+                        logins.entry(format!("@{}", login.trim().to_lowercase()))
+                            .or_insert_with(|| sized_github(&u.avatar_url));
+                    }
+                }
+            }
+            if let Some(ref u) = c.committer {
+                if let Some(ref login) = u.login {
+                    if !login.is_empty() {
+                        logins.entry(format!("@{}", login.trim().to_lowercase()))
+                            .or_insert_with(|| sized_github(&u.avatar_url));
+                    }
+                }
+            }
+            take(out, remaining, wanted, c.commit.author.email, c.author.as_ref().map(|u| sized_github(&u.avatar_url)));
+            take(out, remaining, wanted, c.commit.committer.email, c.committer.as_ref().map(|u| sized_github(&u.avatar_url)));
         }
         if n < 100 {
             break; // last page
@@ -330,7 +400,7 @@ fn sized_github(url: &str) -> String {
 
 // --- GitLab (GraphQL; the REST commits list carries no avatar) ---
 
-const GITLAB_QUERY: &str = "query($p: ID!, $ref: String!, $after: String) { project(fullPath: $p) { repository { commits(ref: $ref, first: 100, after: $after) { nodes { authorEmail author { avatarUrl } } pageInfo { hasNextPage endCursor } } } } }";
+const GITLAB_QUERY: &str = "query($p: ID!, $ref: String!, $after: String) { project(fullPath: $p) { repository { commits(ref: $ref, first: 100, after: $after) { nodes { authorEmail author { username avatarUrl } } pageInfo { hasNextPage endCursor } } } } }";
 
 #[derive(Deserialize)]
 struct GlResponse {
@@ -362,6 +432,8 @@ struct GlNode {
 }
 #[derive(Deserialize)]
 struct GlUser {
+    #[serde(default)]
+    username: Option<String>,
     #[serde(rename = "avatarUrl")]
     avatar_url: Option<String>,
 }
@@ -377,16 +449,17 @@ fn fetch_gitlab(
     target: &RemoteTarget,
     head: Option<&str>,
     wanted: &HashSet<String>,
-) -> AppResult<(HashMap<String, String>, Option<u64>)> {
+) -> AppResult<(HashMap<String, String>, HashMap<String, String>, Option<u64>)> {
     // Private repos (the common case) require auth; with no token there's nothing
     // to resolve, so bail to Gravatar instead of erroring.
     let token = match provider_token("gitlab", &target.host) {
         Some(t) => t,
-        None => return Ok((HashMap::new(), None)),
+        None => return Ok((HashMap::new(), HashMap::new(), None)),
     };
     let refname = head.unwrap_or("HEAD");
     let endpoint = format!("https://{}/api/graphql", target.host);
     let mut out = HashMap::new();
+    let mut logins = HashMap::new();
     let mut remaining = wanted.len();
     let mut cursor: Option<String> = None;
     for _ in 0..MAX_PAGES {
@@ -404,7 +477,7 @@ fn fetch_gitlab(
             Ok(r) => r.into_json()?,
             Err(ureq::Error::Status(code, resp)) => {
                 if code == 403 || code == 429 {
-                    return Ok((out, Some(resp_backoff(&resp))));
+                    return Ok((out, logins, Some(resp_backoff(&resp))));
                 }
                 break; // other Status (bad ref / no access): keep the partial result
             }
@@ -421,6 +494,14 @@ fn fetch_gitlab(
         };
         for n in commits.nodes {
             let host = &target.host;
+            if let Some(ref u) = n.author {
+                if let (Some(ref username), Some(ref av)) = (&u.username, &u.avatar_url) {
+                    if !username.is_empty() {
+                        logins.entry(format!("@{}", username.trim().to_lowercase()))
+                            .or_insert_with(|| sized_gitlab(host, av));
+                    }
+                }
+            }
             take(&mut out, &mut remaining, wanted, n.author_email, n.author.and_then(|u| u.avatar_url).map(|a| sized_gitlab(host, &a)));
         }
         if !commits.page_info.has_next_page {
@@ -431,7 +512,7 @@ fn fetch_gitlab(
             None => break,
         }
     }
-    Ok((out, None))
+    Ok((out, logins, None))
 }
 
 /// GitLab `avatarUrl` is instance-relative (`/uploads/.../avatar.png`); make it
@@ -532,6 +613,80 @@ mod tests {
     }
 
     #[test]
+    fn matches_cached_login_and_noreply_patterns() {
+        let mut map = HashMap::new();
+        map.insert("@octocat".to_string(), CacheEntry {
+            url: "https://avatars.githubusercontent.com/u/583231?s=64".to_string(),
+            fetched_at: now_secs(),
+        });
+        map.insert("123456+jcardonne@users.noreply.github.com".to_string(), CacheEntry {
+            url: "https://avatars.githubusercontent.com/u/50085165?s=64".to_string(),
+            fetched_at: now_secs(),
+        });
+        map.insert("29139614+renovate[bot]@users.noreply.github.com".to_string(), CacheEntry {
+            url: "https://avatars.githubusercontent.com/in/2740?v=4&s=64".to_string(),
+            fetched_at: now_secs(),
+        });
+        let now = now_secs();
+        let find_in_map = |login: &str| -> Option<String> {
+            let clean = login.trim().trim_start_matches('@').to_lowercase();
+            let base = clean
+                .strip_prefix("app/")
+                .unwrap_or(&clean)
+                .trim_end_matches("[bot]");
+            if base.is_empty() {
+                return None;
+            }
+            for key in [&format!("@{base}"), &format!("@{base}[bot]"), &format!("@{clean}")] {
+                if let Some(e) = map.get(key.as_str()) {
+                    if fresh(e, now) && !e.url.is_empty() {
+                        return Some(e.url.clone());
+                    }
+                }
+            }
+            let patterns = [
+                format!("+{base}[bot]@users.noreply.github.com"),
+                format!("+{base}@users.noreply.github.com"),
+                format!("{base}[bot]@users.noreply.github.com"),
+                format!("{base}@users.noreply.github.com"),
+            ];
+            for (email, entry) in &map {
+                let em = email.to_lowercase();
+                if patterns.iter().any(|pat| &em == pat || em.ends_with(pat)) && fresh(entry, now) && !entry.url.is_empty() {
+                    return Some(entry.url.clone());
+                }
+            }
+            match base {
+                "renovate" => Some("https://avatars.githubusercontent.com/in/2740?v=4&s=64".to_string()),
+                "dependabot" => Some("https://avatars.githubusercontent.com/in/29110?v=4&s=64".to_string()),
+                "github-actions" => Some("https://avatars.githubusercontent.com/in/15368?v=4&s=64".to_string()),
+                _ => None,
+            }
+        };
+        assert_eq!(
+            find_in_map("octocat").as_deref(),
+            Some("https://avatars.githubusercontent.com/u/583231?s=64")
+        );
+        assert_eq!(
+            find_in_map("jcardonne").as_deref(),
+            Some("https://avatars.githubusercontent.com/u/50085165?s=64")
+        );
+        assert_eq!(
+            find_in_map("app/renovate").as_deref(),
+            Some("https://avatars.githubusercontent.com/in/2740?v=4&s=64")
+        );
+        assert_eq!(
+            find_in_map("renovate[bot]").as_deref(),
+            Some("https://avatars.githubusercontent.com/in/2740?v=4&s=64")
+        );
+        assert_eq!(
+            find_in_map("dependabot").as_deref(),
+            Some("https://avatars.githubusercontent.com/in/29110?v=4&s=64")
+        );
+        assert_eq!(find_in_map("unknown"), None);
+    }
+
+    #[test]
     fn backoff_prefers_retry_after_then_reset_then_default() {
         // Retry-After (seconds) wins, clamped to 30s..1h.
         assert_eq!(backoff_secs(Some("90"), Some("999999"), 1000), 90);
@@ -599,7 +754,7 @@ mod tests {
             .collect();
         assert!(!wanted.is_empty(), "no linked GitHub author emails discovered");
         // Emails were discovered from the default branch (no sha), so scan that.
-        let (out, _backoff) = fetch_github(&t, None, &wanted).unwrap();
+        let (out, _logins, _backoff) = fetch_github(&t, None, &wanted).unwrap();
         assert!(!out.is_empty(), "expected resolved GitHub avatars for {} emails: {out:?}", wanted.len());
     }
 
@@ -633,7 +788,7 @@ mod tests {
             })
             .unwrap_or_default();
         assert!(!wanted.is_empty(), "no linked GitLab author emails discovered");
-        let (out, _backoff) = fetch_gitlab(&t, Some("main"), &wanted).unwrap();
+        let (out, _logins, _backoff) = fetch_gitlab(&t, Some("main"), &wanted).unwrap();
         assert!(!out.is_empty(), "expected resolved GitLab avatars for {} emails: {out:?}", wanted.len());
     }
 }

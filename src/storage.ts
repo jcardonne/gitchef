@@ -56,6 +56,11 @@ const COLS_KEY = "gitchef.graphCols";
 const COL_VISIBILITY_KEY = "gitchef.graphColumnVisibility";
 const SORT_KEY = "gitchef.graphSortAsc";
 const RIGHT_PANEL_KEY = "gitchef.rightPanelWidth";
+const SIDEBAR_WIDTH_KEY = "gitchef.sidebarWidth";
+const SIDEBAR_VISIBLE_KEY = "gitchef.sidebarVisible";
+
+export const DEFAULT_SIDEBAR_WIDTH = 220;
+export const DEFAULT_RIGHT_PANEL_WIDTH = 440;
 
 /// User overrides for the graph's resizable column widths (px). `graph` is legacy
 /// (the lane column is now auto-sized to lane depth); `refs` is the branch/tag
@@ -129,8 +134,22 @@ export function setSortAsc(asc: boolean): void {
   notifyPrefs();
 }
 
+export function getSidebarWidth(): number {
+  return read<number>(SIDEBAR_WIDTH_KEY, DEFAULT_SIDEBAR_WIDTH);
+}
+export function setSidebarWidth(width: number): void {
+  localStorage.setItem(SIDEBAR_WIDTH_KEY, JSON.stringify(width));
+}
+
+export function getSidebarVisible(): boolean {
+  return localStorage.getItem(SIDEBAR_VISIBLE_KEY) !== "0";
+}
+export function setSidebarVisible(visible: boolean): void {
+  localStorage.setItem(SIDEBAR_VISIBLE_KEY, visible ? "1" : "0");
+}
+
 export function getRightPanelWidth(): number {
-  return read<number>(RIGHT_PANEL_KEY, 440);
+  return read<number>(RIGHT_PANEL_KEY, DEFAULT_RIGHT_PANEL_WIDTH);
 }
 export function setRightPanelWidth(width: number): void {
   localStorage.setItem(RIGHT_PANEL_KEY, JSON.stringify(width));
