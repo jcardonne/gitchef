@@ -4,7 +4,18 @@ import { listen } from "@tauri-apps/api/event";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import * as api from "../api";
 import { RepoContext, type RefreshOpts } from "../repoContext";
-import { getRightPanelWidth, setRightPanelWidth, getPullDefault, getFetchIntervalMinutes } from "../storage";
+import {
+  DEFAULT_RIGHT_PANEL_WIDTH,
+  DEFAULT_SIDEBAR_WIDTH,
+  getFetchIntervalMinutes,
+  getPullDefault,
+  getRightPanelWidth,
+  getSidebarVisible,
+  getSidebarWidth,
+  setRightPanelWidth as setStoredRightPanelWidth,
+  setSidebarVisible as setStoredSidebarVisible,
+  setSidebarWidth as setStoredSidebarWidth,
+} from "../storage";
 import type { PullAction } from "../storage";
 import type {
   BranchInfo,
@@ -27,6 +38,7 @@ import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, ima
 import { shouldBackgroundFetch, shouldHandleRepoChange, shouldRefreshPrs, extendBackoff } from "../refreshPolicy";
 import Toolbar, { PULL_OPTIONS } from "./Toolbar";
 import Sidebar from "./Sidebar";
+import PrView from "./PrView";
 import GraphView from "./GraphView";
 import StagingPanel from "./StagingPanel";
 import DiffViewer from "./DiffViewer";
@@ -83,6 +95,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
   const [submodules, setSubmodules] = useState<SubmoduleInfo[]>([]);
   const [stashes, setStashes] = useState<StashInfo[]>([]);
   const [prs, setPrs] = useState<PullRequest[]>([]);
+  const [activePr, setActivePr] = useState<PullRequest | null>(null);
   const [wips, setWips] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<StatusResult>(EMPTY_STATUS);
   const [workStats, setWorkStats] = useState<WorkStats | null>(null);
@@ -158,8 +171,11 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
   const [reflogOpen, setReflogOpen] = useState(false);
   const [historyPath, setHistoryPath] = useState<string | null>(null);
   const [prOpen, setPrOpen] = useState(false);
+  const [refreshingPrs, setRefreshingPrs] = useState(false);
   // Bumped on a `gitchef:prefs` event so the auto-fetch interval re-reads live.
   const [autoFetchTick, setAutoFetchTick] = useState(0);
+  const [sidebarOpen, setSidebarOpen] = useState(getSidebarVisible);
+  const [sidebarWidth, setSidebarWidth] = useState(getSidebarWidth);
   const [rightWidth, setRightWidth] = useState(getRightPanelWidth);
   const [selectedCommitAvatar, setSelectedCommitAvatar] = useState<string | null>(null);
   const [selectedCommitStats, setSelectedCommitStats] = useState<WorkStats | null>(null);
@@ -195,6 +211,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
   const fileReq = useRef(0);
   const statsReq = useRef(0);
   const graphReq = useRef(0);
+  const sidebarRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
   const dragTeardown = useRef<(() => void) | null>(null);
   // Live mirror of `busy` for the auto-fetch interval's stale closure.
@@ -334,7 +351,11 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
       return;
     }
     lastPrAt.current = Date.now();
-    api.listPrs(path).then(setPrs).catch((e) => noteBackoff(String(e)));
+    setRefreshingPrs(true);
+    api.listPrs(path)
+      .then(setPrs)
+      .catch((e) => noteBackoff(String(e)))
+      .finally(() => setRefreshingPrs(false));
   }, [path, repo?.provider, noteBackoff]);
   useEffect(() => refreshPrs(), [refreshPrs]);
 
@@ -363,6 +384,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
       } else if (k === "p") {
         e.preventDefault();
         setQuickOpenOpen(true);
+      } else if (k === "b") {
+        e.preventDefault();
+        setSidebarOpen((v) => !v);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -525,14 +549,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
     await (await Menu.new({ items })).popup();
   };
 
-  const openPr = (url: string) => run(async () => void (await api.openUrl(url)));
-  const showPrMenu = async (pr: PullRequest) => {
-    const items = await Promise.all([
-      MenuItem.new({ text: `Open #${pr.number} in browser`, action: () => openPr(pr.url) }),
-      MenuItem.new({ text: "Copy URL", action: () => run(async () => (await api.copyText(pr.url), notify("URL copied"))) }),
-    ]);
-    await (await Menu.new({ items })).popup();
-  };
+  const openPrUrl = (url: string) => run(async () => void (await api.openUrl(url)));
 
   // Load another page of commits into the graph (search beyond the window).
   const loadMore = () =>
@@ -542,13 +559,59 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
       setNodes(await api.commitGraph(path, next));
     });
 
-  useEffect(() => setRightPanelWidth(rightWidth), [rightWidth]);
+  useEffect(() => setStoredSidebarWidth(sidebarWidth), [sidebarWidth]);
+  useEffect(() => setStoredRightPanelWidth(rightWidth), [rightWidth]);
+  useEffect(() => setStoredSidebarVisible(sidebarOpen), [sidebarOpen]);
+
+  // Sync panel widths and sidebar visibility when tab becomes active
+  useEffect(() => {
+    if (!isActive) return;
+    const sw = getSidebarWidth();
+    const rw = getRightPanelWidth();
+    const sv = getSidebarVisible();
+    setSidebarWidth(sw);
+    setRightWidth(rw);
+    setSidebarOpen(sv);
+    if (sidebarRef.current) sidebarRef.current.style.width = `${sw}px`;
+    if (rightRef.current) rightRef.current.style.width = `${rw}px`;
+  }, [isActive]);
+
+  const startLeftResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    const maxW = Math.max(220, Math.min(600, window.innerWidth - rightWidth - 250));
+    let w = startW;
+    // Write the width straight to the DOM during the drag so we don't re-render
+    // the whole tab on every mousemove; commit to React state once on release.
+    const move = (ev: MouseEvent) => {
+      w = Math.min(maxW, Math.max(160, startW + (ev.clientX - startX)));
+      if (sidebarRef.current) sidebarRef.current.style.width = `${w}px`;
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      dragTeardown.current = null;
+      setSidebarWidth(w);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    dragTeardown.current = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+  };
+
+  const resetLeftResize = () => {
+    setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+    if (sidebarRef.current) sidebarRef.current.style.width = `${DEFAULT_SIDEBAR_WIDTH}px`;
+  };
 
   const startRightResize = (e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
     const startW = rightWidth;
-    const maxW = Math.max(340, window.innerWidth - 560);
+    const maxW = Math.max(340, window.innerWidth - (sidebarOpen ? sidebarWidth : 0) - 250);
     let w = startW;
     // Write the width straight to the DOM during the drag so we don't re-render
     // the whole tab (and the change list) on every mousemove; commit to React
@@ -572,6 +635,11 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
     };
+  };
+
+  const resetRightResize = () => {
+    setRightWidth(DEFAULT_RIGHT_PANEL_WIDTH);
+    if (rightRef.current) rightRef.current.style.width = `${DEFAULT_RIGHT_PANEL_WIDTH}px`;
   };
   useEffect(() => () => dragTeardown.current?.(), []);
 
@@ -763,6 +831,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
   // pages (up to a cap) until it appears, then reveal - so the user never has to
   // hit "Load more" by hand.
   const goToCommit = (id: string) => {
+    setActivePr(null);
     if (selectedCommit !== id) selectCommit(id);
     if (nodes.some((n) => n.id === id)) {
       setReveal({ id, seq: ++revealSeq.current });
@@ -1410,7 +1479,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
     const topItems = await Promise.all([
       ...(prForBranch
         ? [
-            MenuItem.new({ text: `Open pull request #${prForBranch.number}`, action: () => openPr(prForBranch.url) }),
+            MenuItem.new({ text: `View PR #${prForBranch.number} details`, action: () => setActivePr(prForBranch) }),
+            MenuItem.new({ text: `Open #${prForBranch.number} in browser`, action: () => openPrUrl(prForBranch.url) }),
             PredefinedMenuItem.new({ item: "Separator" }),
           ]
         : []),
@@ -1569,6 +1639,47 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
         target: targetSha,
       } satisfies BranchInfo);
     void showBranchMenu(branch, { includeCommitActions: true });
+  };
+
+  const showPrMenu = async (pr: PullRequest) => {
+    const isCurrent = headBranch === pr.branch;
+    const matchingBranch = branches.find(
+      (b) => b.name === pr.branch || b.name === `origin/${pr.branch}` || b.name.endsWith(`/${pr.branch}`)
+    );
+    const items = await Promise.all([
+      MenuItem.new({
+        text: `View PR #${pr.number} details`,
+        action: () => setActivePr(pr),
+      }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      ...(!isCurrent
+        ? [
+            MenuItem.new({
+              text: `Checkout '${pr.branch}'`,
+              action: () => onCheckout(pr.branch),
+            }),
+          ]
+        : []),
+      ...(matchingBranch?.target
+        ? [
+            MenuItem.new({
+              text: "Reveal in graph",
+              action: () => goToCommit(matchingBranch.target!),
+            }),
+          ]
+        : []),
+      MenuItem.new({
+        text: "Copy branch name",
+        action: () => run(async () => (await api.copyText(pr.branch), notify("Branch name copied"))),
+      }),
+      PredefinedMenuItem.new({ item: "Separator" }),
+      MenuItem.new({ text: `Open #${pr.number} in browser`, action: () => openPrUrl(pr.url) }),
+      MenuItem.new({
+        text: "Copy URL",
+        action: () => run(async () => (await api.copyText(pr.url), notify("URL copied"))),
+      }),
+    ]);
+    await (await Menu.new({ items })).popup();
   };
 
   // --- stash node actions ---
@@ -2201,6 +2312,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
   const paletteCommands: PaletteCommand[] = [
     { title: "Go to file…", run: () => setQuickOpenOpen(true) },
     { title: "Search in files…", run: () => setGlobalSearchOpen(true) },
+    { title: `${sidebarOpen ? "Hide" : "Show"} sidebar`, run: () => setSidebarOpen((v) => !v) },
     { title: "Push", run: onPush },
     { title: "Force push (with lease)", run: onForcePush },
     { title: "Pull (fast-forward)", run: () => onPullAction("ff") },
@@ -2340,6 +2452,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
         busy={busy}
         activeAction={activeAction}
         branches={branches}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((v) => !v)}
         onCheckout={onCheckout}
         onPullAction={onPullAction}
         onPush={onPush}
@@ -2369,39 +2483,68 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
       )}
 
       <div className="main">
-        <Sidebar
-          branches={branches}
-          tags={tags}
-          remotes={remotes}
-          onRemoteMenu={showRemoteMenu}
-          worktrees={worktrees}
-          submodules={submodules}
-          stashes={stashes}
-          prs={prs}
-          wips={wips}
-          selectedCommit={selectedCommit}
-          onSelectBranch={goToCommit}
-          onOpenPr={openPr}
-          onPrMenu={showPrMenu}
-          onRefreshPrs={refreshPrs}
-          onCheckout={onCheckout}
-          onMerge={onMerge}
-          onBranchMenu={showBranchMenu}
-          onSelectTag={goToCommit}
-          onCheckoutTag={onCheckoutTag}
-          onTagMenu={showTagMenu}
-          onSectionMenu={showSectionMenu}
-          onOpenWorktree={onOpenPath}
-          onRefreshWips={refreshWipsManually}
-          onAddWorktree={() => void addWorktreeFlow()}
-          onOpenSubmodule={openSubmodule}
-          onSubmoduleMenu={showSubmoduleMenu}
-          onUpdateAllSubmodules={() => submoduleUpdate(null, false)}
-          onSelectStash={goToCommit}
-          onStashMenu={showSidebarStashMenu}
-        />
+        {sidebarOpen && (
+          <>
+            <Sidebar
+              ref={sidebarRef}
+              width={sidebarWidth}
+              branches={branches}
+              tags={tags}
+              remotes={remotes}
+              onRemoteMenu={showRemoteMenu}
+              worktrees={worktrees}
+              submodules={submodules}
+              stashes={stashes}
+              prs={prs}
+              selectedPrNumber={activePr?.number}
+              refreshingPrs={refreshingPrs}
+              avatarCtx={avatarCtx}
+              wips={wips}
+              selectedCommit={selectedCommit}
+              onSelectBranch={goToCommit}
+              onOpenPr={setActivePr}
+              onPrMenu={showPrMenu}
+              onRefreshPrs={refreshPrs}
+              onCheckout={onCheckout}
+              onMerge={onMerge}
+              onBranchMenu={showBranchMenu}
+              onSelectTag={goToCommit}
+              onCheckoutTag={onCheckoutTag}
+              onTagMenu={showTagMenu}
+              onSectionMenu={showSectionMenu}
+              onOpenWorktree={onOpenPath}
+              onRefreshWips={refreshWipsManually}
+              onAddWorktree={() => void addWorktreeFlow()}
+              onOpenSubmodule={openSubmodule}
+              onSubmoduleMenu={showSubmoduleMenu}
+              onUpdateAllSubmodules={() => submoduleUpdate(null, false)}
+              onSelectStash={goToCommit}
+              onStashMenu={showSidebarStashMenu}
+            />
 
-        <div className={`center${previewOpen ? " has-diff" : ""}`}>
+            <div
+              className="panel-resize"
+              onMouseDown={startLeftResize}
+              onDoubleClick={resetLeftResize}
+              title="Resize sidebar (double-click to reset)"
+              aria-label="Resize sidebar"
+            />
+          </>
+        )}
+
+        {activePr ? (
+          <PrView
+            pr={activePr}
+            path={path}
+            isCurrentBranch={headBranch === activePr.branch}
+            onCheckout={onCheckout}
+            onClose={() => setActivePr(null)}
+            onOpenUrl={openPrUrl}
+            notify={notify}
+          />
+        ) : (
+          <>
+            <div className={`center${previewOpen ? " has-diff" : ""}`}>
           {previewOpen && (
             <div className="center-diff">{previewInner}</div>
           )}
@@ -2440,7 +2583,8 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
         <div
           className="panel-resize"
           onMouseDown={startRightResize}
-          title="Resize right panel"
+          onDoubleClick={resetRightResize}
+          title="Resize right panel (double-click to reset)"
           aria-label="Resize right panel"
         />
 
@@ -2511,7 +2655,9 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
             )}
           </div>
         </div>
-      </div>
+      </>
+    )}
+  </div>
 
       {toastEl}
 

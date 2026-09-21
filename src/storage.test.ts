@@ -87,6 +87,24 @@ describe("persistence round-trips", () => {
     expect(store.getRightPanelWidth()).toBe(612);
   });
 
+  it("persists the sidebar width and uses default", () => {
+    localStorage.removeItem("gitchef.sidebarWidth");
+    expect(store.getSidebarWidth()).toBe(store.DEFAULT_SIDEBAR_WIDTH);
+    expect(store.DEFAULT_SIDEBAR_WIDTH).toBe(220);
+    expect(store.DEFAULT_RIGHT_PANEL_WIDTH).toBe(440);
+    store.setSidebarWidth(285);
+    expect(store.getSidebarWidth()).toBe(285);
+  });
+
+  it("persists the sidebar visibility", () => {
+    localStorage.removeItem("gitchef.sidebarVisible");
+    expect(store.getSidebarVisible()).toBe(true);
+    store.setSidebarVisible(false);
+    expect(store.getSidebarVisible()).toBe(false);
+    store.setSidebarVisible(true);
+    expect(store.getSidebarVisible()).toBe(true);
+  });
+
   it("round-trips the open-tab session", () => {
     store.saveSession({ paths: ["/x", "/y"], activePath: "/y" });
     expect(store.getSession()).toEqual({ paths: ["/x", "/y"], activePath: "/y" });

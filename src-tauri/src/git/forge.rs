@@ -4,6 +4,7 @@ use git2::Repository;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
+use tauri::AppHandle;
 
 /// Run a forge CLI (`gh`/`glab`) inside the repo dir and return its stdout. GUI
 /// apps launch with a minimal PATH, so the usual install dirs are prepended
@@ -97,14 +98,14 @@ pub struct PullRequest {
 /// CLI. Returns an empty list for non-forge remotes rather than erroring, so the
 /// UI just hides the section. GitLab yields a degraded row (no CI/review/avatar -
 /// `glab mr list` doesn't include them).
-pub fn list_prs(repo: &Repository) -> AppResult<Vec<PullRequest>> {
+pub fn list_prs(app: Option<&AppHandle>, repo: &Repository) -> AppResult<Vec<PullRequest>> {
     let Some(target) = remote_target(repo) else {
         return Ok(Vec::new());
     };
     let dir = super::workdir(repo)?;
     match target.provider {
-        RemoteProvider::Github => list_github(dir),
-        RemoteProvider::Gitlab => list_gitlab(dir),
+        RemoteProvider::Github => list_github(app, dir),
+        RemoteProvider::Gitlab => list_gitlab(app, dir),
     }
 }
 
@@ -123,7 +124,7 @@ struct GhPr {
     #[serde(rename = "reviewDecision", default)]
     review_decision: Option<String>,
 }
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 struct GhAuthor {
     #[serde(default)]
     login: String,
@@ -140,7 +141,7 @@ struct GhCheck {
     state: Option<String>,
 }
 
-fn list_github(dir: &Path) -> AppResult<Vec<PullRequest>> {
+fn list_github(app: Option<&AppHandle>, dir: &Path) -> AppResult<Vec<PullRequest>> {
     let out = run_cli(
         dir,
         &[
@@ -153,15 +154,22 @@ fn list_github(dir: &Path) -> AppResult<Vec<PullRequest>> {
     Ok(prs
         .into_iter()
         .map(|p| {
-            let author_avatar = (!p.login().is_empty())
-                .then(|| format!("https://github.com/{}.png?size=40", p.author.login));
+            let clean_login = p.login().strip_prefix("app/").unwrap_or_else(|| p.login()).to_string();
+            let author_avatar = (!clean_login.is_empty()).then(|| {
+                if let Some(app) = app {
+                    if let Some(cached) = super::avatars::cached_avatar_for_login(app, &clean_login) {
+                        return cached;
+                    }
+                }
+                format!("https://github.com/{clean_login}.png?size=40")
+            });
             PullRequest {
                 number: p.number,
                 title: p.title,
                 url: p.url,
                 branch: p.head_ref_name,
                 draft: p.is_draft,
-                author: p.author.login.clone(),
+                author: clean_login,
                 author_avatar,
                 checks: rollup_checks(&p.status_check_rollup),
                 review: normalize_review(p.review_decision.as_deref()),
@@ -237,22 +245,29 @@ struct GlAuthor {
     username: String,
 }
 
-fn list_gitlab(dir: &Path) -> AppResult<Vec<PullRequest>> {
+fn list_gitlab(app: Option<&AppHandle>, dir: &Path) -> AppResult<Vec<PullRequest>> {
     let out = run_cli(dir, &["glab", "mr", "list", "--output", "json"])?;
     let mrs: Vec<GlMr> = serde_json::from_str(&out)
         .map_err(|e| AppError::Msg(format!("could not parse `glab mr list` output: {e}")))?;
     Ok(mrs
         .into_iter()
-        .map(|m| PullRequest {
-            number: m.iid,
-            title: m.title,
-            url: m.web_url,
-            branch: m.source_branch,
-            draft: m.draft || m.work_in_progress,
-            author: m.author.username,
-            author_avatar: None, // glab doesn't hand out an avatar URL in list output
-            checks: "none".into(),
-            review: "none".into(),
+        .map(|m| {
+            let author_avatar = if !m.author.username.is_empty() {
+                app.and_then(|a| super::avatars::cached_avatar_for_login(a, &m.author.username))
+            } else {
+                None
+            };
+            PullRequest {
+                number: m.iid,
+                title: m.title,
+                url: m.web_url,
+                branch: m.source_branch,
+                draft: m.draft || m.work_in_progress,
+                author: m.author.username,
+                author_avatar,
+                checks: "none".into(),
+                review: "none".into(),
+            }
         })
         .collect())
 }
@@ -349,6 +364,388 @@ fn map_gl(out: &str) -> AppResult<Vec<ForgeRepo>> {
         .collect())
 }
 
+#[derive(Serialize)]
+pub struct PrCheckDetail {
+    pub name: String,
+    pub workflow: Option<String>,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub url: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PrReviewDetail {
+    pub author: String,
+    pub author_avatar: Option<String>,
+    pub state: String,
+    pub body: String,
+    pub submitted_at: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct PrCommitDetail {
+    pub oid: String,
+    pub headline: String,
+    pub body: String,
+    pub author: String,
+    pub date: String,
+}
+
+#[derive(Serialize)]
+pub struct PrCommentDetail {
+    pub author: String,
+    pub author_avatar: Option<String>,
+    pub body: String,
+    pub created_at: String,
+}
+
+#[derive(Serialize)]
+pub struct PrDetails {
+    pub number: u64,
+    pub title: String,
+    pub body: String,
+    pub state: String,
+    pub url: String,
+    pub branch: String,
+    pub base_branch: String,
+    pub draft: bool,
+    pub author: String,
+    pub author_avatar: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub merged_at: Option<String>,
+    pub closed_at: Option<String>,
+    pub additions: usize,
+    pub deletions: usize,
+    pub changed_files: usize,
+    pub mergeable: String,
+    pub checks: Vec<PrCheckDetail>,
+    pub reviews: Vec<PrReviewDetail>,
+    pub commits: Vec<PrCommitDetail>,
+    pub comments: Vec<PrCommentDetail>,
+}
+
+pub fn get_pr_details(
+    app: Option<&AppHandle>,
+    repo: &Repository,
+    number: u64,
+) -> AppResult<PrDetails> {
+    let Some(target) = remote_target(repo) else {
+        return Err(AppError::Msg("no GitHub/GitLab remote for this repo".into()));
+    };
+    let dir = super::workdir(repo)?;
+    match target.provider {
+        RemoteProvider::Github => get_pr_github(app, dir, number),
+        RemoteProvider::Gitlab => get_pr_gitlab(dir, number),
+    }
+}
+
+pub fn get_pr_diff(repo: &Repository, number: u64) -> AppResult<Vec<super::diff::FileDiff>> {
+    let Some(target) = remote_target(repo) else {
+        return Err(AppError::Msg("no GitHub/GitLab remote for this repo".into()));
+    };
+    let dir = super::workdir(repo)?;
+    let num_str = number.to_string();
+    let patch = match target.provider {
+        RemoteProvider::Github => run_cli(dir, &["gh", "pr", "diff", &num_str])?,
+        RemoteProvider::Gitlab => run_cli(dir, &["glab", "mr", "diff", &num_str])?,
+    };
+    super::diff::diff_from_patch(&patch)
+}
+
+pub fn merge_pr(repo: &Repository, number: u64, method: Option<String>) -> AppResult<String> {
+    let Some(target) = remote_target(repo) else {
+        return Err(AppError::Msg("no GitHub/GitLab remote for this repo".into()));
+    };
+    let dir = super::workdir(repo)?;
+    let num_str = number.to_string();
+    match target.provider {
+        RemoteProvider::Github => {
+            let flag = match method.as_deref() {
+                Some("squash") => "--squash",
+                Some("rebase") => "--rebase",
+                _ => "--merge",
+            };
+            run_cli(dir, &["gh", "pr", "merge", &num_str, flag, "--auto"])
+                .or_else(|_| run_cli(dir, &["gh", "pr", "merge", &num_str, flag]))
+        }
+        RemoteProvider::Gitlab => {
+            run_cli(dir, &["glab", "mr", "merge", &num_str])
+        }
+    }
+}
+
+pub fn approve_pr(repo: &Repository, number: u64) -> AppResult<String> {
+    let Some(target) = remote_target(repo) else {
+        return Err(AppError::Msg("no GitHub/GitLab remote for this repo".into()));
+    };
+    let dir = super::workdir(repo)?;
+    let num_str = number.to_string();
+    match target.provider {
+        RemoteProvider::Github => {
+            run_cli(dir, &["gh", "pr", "review", &num_str, "--approve"])
+        }
+        RemoteProvider::Gitlab => {
+            run_cli(dir, &["glab", "mr", "approve", &num_str])
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct GhPrView {
+    number: u64,
+    title: String,
+    #[serde(default)]
+    body: String,
+    state: String,
+    url: String,
+    #[serde(rename = "headRefName")]
+    head_ref_name: String,
+    #[serde(rename = "baseRefName")]
+    base_ref_name: String,
+    #[serde(rename = "isDraft", default)]
+    is_draft: bool,
+    author: GhAuthor,
+    #[serde(rename = "createdAt", default)]
+    created_at: String,
+    #[serde(rename = "updatedAt", default)]
+    updated_at: String,
+    #[serde(rename = "mergedAt")]
+    merged_at: Option<String>,
+    #[serde(rename = "closedAt")]
+    closed_at: Option<String>,
+    #[serde(default)]
+    additions: usize,
+    #[serde(default)]
+    deletions: usize,
+    #[serde(rename = "changedFiles", default)]
+    changed_files: usize,
+    #[serde(default)]
+    mergeable: Option<String>,
+    #[serde(rename = "statusCheckRollup", default)]
+    status_check_rollup: Vec<GhCheckView>,
+    #[serde(default)]
+    reviews: Vec<GhReviewView>,
+    #[serde(default)]
+    commits: Vec<GhCommitView>,
+    #[serde(default)]
+    comments: Vec<GhCommentView>,
+}
+
+#[derive(Deserialize)]
+struct GhCheckView {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(rename = "workflowName", default)]
+    workflow_name: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    conclusion: Option<String>,
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(rename = "detailsUrl", default)]
+    details_url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GhReviewView {
+    #[serde(default)]
+    author: GhAuthor,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    body: String,
+    #[serde(rename = "submittedAt")]
+    submitted_at: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GhCommitView {
+    #[serde(default)]
+    oid: String,
+    #[serde(rename = "messageHeadline", default)]
+    message_headline: String,
+    #[serde(rename = "messageBody", default)]
+    message_body: String,
+    #[serde(rename = "committedDate", default)]
+    committed_date: String,
+    #[serde(default)]
+    authors: Vec<GhCommitAuthor>,
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct GhCommitAuthor {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    email: String,
+    #[serde(default)]
+    login: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GhCommentView {
+    #[serde(default)]
+    author: GhAuthor,
+    #[serde(default)]
+    body: String,
+    #[serde(rename = "createdAt", default)]
+    created_at: String,
+}
+
+fn get_pr_github(app: Option<&AppHandle>, dir: &Path, number: u64) -> AppResult<PrDetails> {
+    let num_str = number.to_string();
+    let out = run_cli(
+        dir,
+        &[
+            "gh", "pr", "view", &num_str, "--json",
+            "number,title,body,state,url,headRefName,baseRefName,isDraft,author,createdAt,updatedAt,mergedAt,closedAt,additions,deletions,changedFiles,mergeable,statusCheckRollup,reviews,commits,comments",
+        ],
+    )?;
+    let p: GhPrView = serde_json::from_str(&out)
+        .map_err(|e| AppError::Msg(format!("could not parse `gh pr view` output: {e}")))?;
+
+    let clean_login = p.author.login.strip_prefix("app/").unwrap_or_else(|| &p.author.login).to_string();
+    let author_avatar = (!clean_login.is_empty()).then(|| {
+        if let Some(app) = app {
+            if let Some(cached) = super::avatars::cached_avatar_for_login(app, &clean_login) {
+                return cached;
+            }
+        }
+        format!("https://github.com/{clean_login}.png?size=40")
+    });
+
+    let checks = p.status_check_rollup.into_iter().map(|c| {
+        let status = c.status.or(c.state).unwrap_or_else(|| "UNKNOWN".into());
+        PrCheckDetail {
+            name: c.name.unwrap_or_else(|| "check".into()),
+            workflow: c.workflow_name,
+            status,
+            conclusion: c.conclusion,
+            url: c.details_url,
+        }
+    }).collect();
+
+    let reviews = p.reviews.into_iter().map(|r| {
+        let r_author = r.author.login.strip_prefix("app/").unwrap_or_else(|| &r.author.login).to_string();
+        let r_avatar = (!r_author.is_empty()).then(|| format!("https://github.com/{r_author}.png?size=40"));
+        PrReviewDetail {
+            author: r_author,
+            author_avatar: r_avatar,
+            state: r.state,
+            body: r.body,
+            submitted_at: r.submitted_at,
+        }
+    }).collect();
+
+    let commits = p.commits.into_iter().map(|cm| {
+        let author_name = cm.authors.first().map(|a| a.name.clone()).unwrap_or_default();
+        PrCommitDetail {
+            oid: cm.oid,
+            headline: cm.message_headline,
+            body: cm.message_body,
+            author: author_name,
+            date: cm.committed_date,
+        }
+    }).collect();
+
+    let comments = p.comments.into_iter().map(|c| {
+        let c_author = c.author.login.strip_prefix("app/").unwrap_or_else(|| &c.author.login).to_string();
+        let c_avatar = (!c_author.is_empty()).then(|| format!("https://github.com/{c_author}.png?size=40"));
+        PrCommentDetail {
+            author: c_author,
+            author_avatar: c_avatar,
+            body: c.body,
+            created_at: c.created_at,
+        }
+    }).collect();
+
+    Ok(PrDetails {
+        number: p.number,
+        title: p.title,
+        body: p.body,
+        state: p.state,
+        url: p.url,
+        branch: p.head_ref_name,
+        base_branch: p.base_ref_name,
+        draft: p.is_draft,
+        author: clean_login,
+        author_avatar,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+        merged_at: p.merged_at,
+        closed_at: p.closed_at,
+        additions: p.additions,
+        deletions: p.deletions,
+        changed_files: p.changed_files,
+        mergeable: p.mergeable.unwrap_or_else(|| "UNKNOWN".into()),
+        checks,
+        reviews,
+        commits,
+        comments,
+    })
+}
+
+fn get_pr_gitlab(dir: &Path, number: u64) -> AppResult<PrDetails> {
+    let num_str = number.to_string();
+    let out = run_cli(dir, &["glab", "mr", "view", &num_str, "--output", "json"])?;
+    #[derive(Deserialize)]
+    struct GlMrView {
+        iid: u64,
+        title: String,
+        #[serde(default)]
+        description: String,
+        state: String,
+        web_url: String,
+        source_branch: String,
+        target_branch: String,
+        #[serde(default)]
+        draft: bool,
+        author: GlAuthor,
+        #[serde(default)]
+        created_at: String,
+        #[serde(default)]
+        updated_at: String,
+        merged_at: Option<String>,
+        closed_at: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct GlAuthor {
+        #[serde(default)]
+        username: String,
+        #[serde(default)]
+        avatar_url: Option<String>,
+    }
+    let m: GlMrView = serde_json::from_str(&out)
+        .map_err(|e| AppError::Msg(format!("could not parse `glab mr view` output: {e}")))?;
+    Ok(PrDetails {
+        number: m.iid,
+        title: m.title,
+        body: m.description,
+        state: m.state.to_ascii_uppercase(),
+        url: m.web_url,
+        branch: m.source_branch,
+        base_branch: m.target_branch,
+        draft: m.draft,
+        author: m.author.username,
+        author_avatar: m.author.avatar_url,
+        created_at: m.created_at,
+        updated_at: m.updated_at,
+        merged_at: m.merged_at,
+        closed_at: m.closed_at,
+        additions: 0,
+        deletions: 0,
+        changed_files: 0,
+        mergeable: "UNKNOWN".into(),
+        checks: Vec::new(),
+        reviews: Vec::new(),
+        commits: Vec::new(),
+        comments: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{first_url, map_gh, map_gl, normalize_review, rollup_checks, GhCheck};
@@ -429,5 +826,12 @@ mod tests {
         );
         assert_eq!(first_url("https://gitlab.com/g/p/-/merge_requests/7").as_deref(), Some("https://gitlab.com/g/p/-/merge_requests/7"));
         assert_eq!(first_url("no url here"), None);
+    }
+
+    #[test]
+    fn cleans_bot_logins() {
+        let raw = r#"[{"number":1,"title":"bump","url":"https://github.com/a/b/pull/1","headRefName":"dep","isDraft":false,"author":{"login":"app/dependabot"},"statusCheckRollup":[],"reviewDecision":null}]"#;
+        let prs: Vec<super::GhPr> = serde_json::from_str(raw).unwrap();
+        assert_eq!(prs[0].login().strip_prefix("app/").unwrap_or_else(|| prs[0].login()), "dependabot");
     }
 }

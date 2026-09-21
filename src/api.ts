@@ -10,6 +10,7 @@ import type {
   FileDiff,
   FileHistoryEntry,
   PullRequest,
+  PrDetails,
   ReflogNode,
   RepoInfo,
   RemoteInfo,
@@ -98,6 +99,14 @@ export const createPr = (repo: string, title: string, body: string, base: string
   invoke<string>("create_pr", { repo, title, body, base });
 /// Open pull/merge requests for the repo's remote (empty for non-forge remotes).
 export const listPrs = (repo: string) => invoke<PullRequest[]>("list_prs", { repo });
+export const getPrDetails = (repo: string, number: number) =>
+  invoke<PrDetails>("get_pr_details", { repo, number });
+export const getPrDiff = (repo: string, number: number) =>
+  invoke<FileDiff[]>("get_pr_diff", { repo, number });
+export const mergePr = (repo: string, number: number, method?: "merge" | "squash" | "rebase") =>
+  invoke<string>("merge_pr", { repo, number, method: method ?? null });
+export const approvePr = (repo: string, number: number) =>
+  invoke<string>("approve_pr", { repo, number });
 /// Open a web URL in the default browser (backend validates it's http/https).
 export const openUrl = (url: string) => invoke<void>("open_url", { url });
 

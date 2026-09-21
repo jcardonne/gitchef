@@ -25,7 +25,12 @@ export function useTooltips(): void {
     };
 
     const show = (el: HTMLElement, text: string) => {
-      tip.textContent = text;
+      tip.className = "tooltip" + (el.dataset.tipKind ? ` tip-${el.dataset.tipKind}` : "");
+      if (el.dataset.tipHtml) {
+        tip.innerHTML = el.dataset.tipHtml;
+      } else {
+        tip.textContent = text;
+      }
       tip.classList.add("show");
       const r = el.getBoundingClientRect();
       const t = tip.getBoundingClientRect();

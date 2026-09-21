@@ -110,3 +110,12 @@ export const LinkIcon = ({ size = 14 }: IconProps) => (
     <path d="M9.5 6.5a2.5 2.5 0 0 0-3.5 0l-2 2a2.5 2.5 0 0 0 3.5 3.5l1-1" />
   </svg>
 );
+
+/// Left sidebar panel toggle icon.
+export const SidebarIcon = ({ size = 14 }: IconProps) => (
+  <svg {...base(size)}>
+    <rect x="2" y="2.5" width="12" height="11" rx="1.5" />
+    <path d="M6 2.5v11" />
+  </svg>
+);
+
