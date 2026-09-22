@@ -74,6 +74,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
   {
     title: "General",
     items: [
+      { label: "Toggle sidebar", combo: ["mod", "B"] },
       { label: "Command palette", combo: ["mod", "K"] },
       { label: "Open Settings", combo: ["mod", ","] },
       { label: "Show keyboard combos", combo: ["mod", "/"] },

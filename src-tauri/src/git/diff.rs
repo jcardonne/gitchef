@@ -99,7 +99,7 @@ fn cap_line(s: &str) -> String {
 
 /// Turn a libgit2 patch into structured per-file hunks the UI can render,
 /// stopping once `max` content lines have been collected.
-fn diff_to_files(diff: &git2::Diff, max: usize) -> AppResult<Vec<FileDiff>> {
+pub(crate) fn diff_to_files(diff: &git2::Diff, max: usize) -> AppResult<Vec<FileDiff>> {
     let mut files: Vec<FileDiff> = Vec::new();
     let mut total_lines = 0usize;
     let mut truncated = false;
@@ -468,6 +468,16 @@ pub fn diff_commits(repo: &Repository, a: &str, b: &str) -> AppResult<Vec<FileDi
     let mut opts = DiffOptions::new();
     let mut diff = repo.diff_tree_to_tree(Some(&tree_a), Some(&tree_b), Some(&mut opts))?;
     diff.find_similar(Some(&mut find_renames()))?;
+    diff_to_files(&diff, MAX_DIFF_LINES)
+}
+
+/// All file changes parsed from a unified diff patch (e.g. from `gh pr diff` or `glab mr diff`).
+pub fn diff_from_patch(patch: &str) -> AppResult<Vec<FileDiff>> {
+    if patch.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let diff = git2::Diff::from_buffer(patch.as_bytes())
+        .map_err(|e| AppError::Msg(format!("failed to parse diff patch: {e}")))?;
     diff_to_files(&diff, MAX_DIFF_LINES)
 }
 

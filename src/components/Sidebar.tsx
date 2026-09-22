@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { forwardRef, useMemo, useState, type ReactNode } from "react";
 import type { BranchInfo, PullRequest, RemoteInfo, StashInfo, SubmoduleInfo, TagInfo, WorktreeInfo } from "../types";
-import { relativeTime } from "../util";
+import { relativeTime, resolveAuthorAvatar, type AvatarContext } from "../util";
 import { getSidebarGroups, setSidebarGroups } from "../storage";
 import { CheckIcon, CloseIcon, LocalIcon, LockIcon, PullRequestIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
 
@@ -36,6 +36,7 @@ const DownloadIcon = () => (
 );
 
 interface Props {
+  width?: number;
   branches: BranchInfo[];
   tags: TagInfo[];
   remotes: RemoteInfo[];
@@ -43,12 +44,15 @@ interface Props {
   submodules: SubmoduleInfo[];
   stashes: StashInfo[];
   prs: PullRequest[];
+  selectedPrNumber?: number | null;
+  refreshingPrs?: boolean;
+  avatarCtx?: AvatarContext;
   /// Per-worktree dirty flags keyed by worktree path, refreshed on demand.
   wips: Record<string, boolean>;
   selectedCommit: string | null;
   /// Jump the graph to a branch's tip commit (does NOT checkout).
   onSelectBranch: (target: string) => void;
-  onOpenPr: (url: string) => void;
+  onOpenPr: (pr: PullRequest) => void;
   onPrMenu: (pr: PullRequest) => void;
   onRefreshPrs: () => void;
   onCheckout: (name: string) => void;
@@ -75,37 +79,74 @@ interface Props {
 /// double-click = checkout (detached). Worktree: click = open it in a new tab;
 /// hover the header for refresh-WIPs / add-worktree. Stash: click = inspect,
 /// right-click = apply / pop / drop / edit.
-export default function Sidebar({
-  branches,
-  tags,
-  remotes,
-  worktrees,
-  submodules,
-  stashes,
-  prs,
-  wips,
-  selectedCommit,
-  onSelectBranch,
-  onOpenPr,
-  onPrMenu,
-  onRefreshPrs,
-  onCheckout,
-  onMerge,
-  onBranchMenu,
-  onSelectTag,
-  onCheckoutTag,
-  onTagMenu,
-  onRemoteMenu,
-  onSectionMenu,
-  onOpenWorktree,
-  onRefreshWips,
-  onAddWorktree,
-  onOpenSubmodule,
-  onSubmoduleMenu,
-  onUpdateAllSubmodules,
-  onSelectStash,
-  onStashMenu,
-}: Props) {
+
+function ciCheckTitle(checks: PullRequest["checks"]): string {
+  switch (checks) {
+    case "success":
+      return "CI: Passed";
+    case "failure":
+      return "CI: Failed";
+    case "pending":
+      return "CI: Running";
+    default:
+      return `CI: ${checks}`;
+  }
+}
+
+function aheadBehindTitle(ahead: number, behind: number): string {
+  const parts: string[] = [];
+  if (ahead > 0) parts.push(`${ahead} commit${ahead > 1 ? "s" : ""} ahead`);
+  if (behind > 0) parts.push(`${behind} commit${behind > 1 ? "s" : ""} behind`);
+  return parts.join(", ");
+}
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+const Sidebar = forwardRef<HTMLDivElement, Props>(function Sidebar(
+  {
+    width,
+    branches,
+    tags,
+    remotes,
+    worktrees,
+    submodules,
+    stashes,
+    prs,
+    selectedPrNumber,
+    refreshingPrs,
+    avatarCtx,
+    wips,
+    selectedCommit,
+    onSelectBranch,
+    onOpenPr,
+    onPrMenu,
+    onRefreshPrs,
+    onCheckout,
+    onMerge,
+    onBranchMenu,
+    onSelectTag,
+    onCheckoutTag,
+    onTagMenu,
+    onRemoteMenu,
+    onSectionMenu,
+    onOpenWorktree,
+    onRefreshWips,
+    onAddWorktree,
+    onOpenSubmodule,
+    onSubmoduleMenu,
+    onUpdateAllSubmodules,
+    onSelectStash,
+    onStashMenu,
+  }: Props,
+  ref
+) {
+  const [failedAvatars, setFailedAvatars] = useState<Set<string>>(() => new Set());
   const [open, setOpen] = useState(getSidebarGroups);
   const toggle = (k: keyof typeof open) =>
     setOpen((o) => {
@@ -116,6 +157,13 @@ export default function Sidebar({
 
   const local = branches.filter((b) => !b.is_remote);
   const remote = branches.filter((b) => b.is_remote);
+
+  // Branch name -> open PR, to display PR badge in the Local branches section.
+  const prByBranch = useMemo(() => {
+    const m = new Map<string, PullRequest>();
+    for (const pr of prs) if (!m.has(pr.branch)) m.set(pr.branch, pr);
+    return m;
+  }, [prs]);
 
   // Hover-revealed header buttons for the Worktrees section. stopPropagation so
   // a click acts instead of toggling the section open/closed.
@@ -133,7 +181,7 @@ export default function Sidebar({
       </button>
       <button
         className="group-action"
-        title="Add a new workspace (worktree)"
+        title="Create new worktree"
         onClick={(e) => {
           e.stopPropagation();
           onAddWorktree();
@@ -162,10 +210,11 @@ export default function Sidebar({
 
   // Hover-revealed "refresh pull requests" button (a network CLI call, on demand).
   const prActions = (
-    <span className="group-actions">
+    <span className={`group-actions${refreshingPrs ? " has-active" : ""}`}>
       <button
-        className="group-action"
-        title="Refresh pull requests"
+        className={`group-action${refreshingPrs ? " spinning" : ""}`}
+        title={refreshingPrs ? "Refreshing pull requests…" : "Refresh pull requests"}
+        disabled={refreshingPrs}
         onClick={(e) => {
           e.stopPropagation();
           onRefreshPrs();
@@ -177,42 +226,64 @@ export default function Sidebar({
   );
 
   return (
-    <div className="sidebar">
+    <div
+      className="sidebar"
+      ref={ref}
+      style={width !== undefined ? { width } : undefined}
+    >
       <Group title="Local" icon={<LocalIcon />} count={local.length} open={open.local} onToggle={() => toggle("local")} onMenu={() => onSectionMenu("local")}>
         {local.length === 0 && <div className="empty-hint small">No branches</div>}
-        {local.map((b) => (
-          <div
-            key={b.name}
-            className={`branch-row${b.is_head ? " head" : ""}${selectedCommit && selectedCommit === b.target ? " selected" : ""}`}
-            onClick={() => b.target && onSelectBranch(b.target)}
-            onDoubleClick={() => !b.is_head && onCheckout(b.name)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              onBranchMenu(b);
-            }}
-            title={b.upstream ? `${b.upstream}\nClick to reveal · double-click to checkout` : "Click to reveal · double-click to checkout"}
-          >
-            <span className="branch-name">{b.name}</span>
-            {(b.ahead > 0 || b.behind > 0) && (
-              <span className="ab">
-                {b.ahead > 0 && <span className="ahead">↑{b.ahead}</span>}
-                {b.behind > 0 && <span className="behind">↓{b.behind}</span>}
+        {local.map((b) => {
+          const pr = prByBranch.get(b.name);
+          return (
+            <div
+              key={b.name}
+              className={`branch-row${b.is_head ? " head" : ""}${selectedCommit && selectedCommit === b.target ? " selected" : ""}`}
+              onClick={() => b.target && onSelectBranch(b.target)}
+              onDoubleClick={() => !b.is_head && onCheckout(b.name)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onBranchMenu(b);
+              }}
+              title={b.upstream ? `${b.upstream}\nClick to reveal · double-click to checkout` : "Click to reveal · double-click to checkout"}
+            >
+              <span className="branch-name">{b.name}</span>
+              {pr && (
+                <span
+                  className="branch-pr"
+                  title={`#${pr.number} ${pr.title}\nClick to open PR`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenPr(pr);
+                  }}
+                >
+                  <PullRequestIcon size={11} />
+                  <span>#{pr.number}</span>
+                </span>
+              )}
+              <span className="branch-row-right">
+                {(b.ahead > 0 || b.behind > 0) && (
+                  <span className="ab" title={aheadBehindTitle(b.ahead, b.behind)}>
+                    {b.ahead > 0 && <span className="ahead">↑{b.ahead}</span>}
+                    {b.behind > 0 && <span className="behind">↓{b.behind}</span>}
+                  </span>
+                )}
+                {!b.is_head && (
+                  <button
+                    className="mini-btn branch-merge"
+                    title={`Merge ${b.name} into current branch`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onMerge(b.name);
+                    }}
+                  >
+                    Merge
+                  </button>
+                )}
               </span>
-            )}
-            {!b.is_head && (
-              <button
-                className="mini-btn branch-merge"
-                title={`Merge ${b.name} into current branch`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMerge(b.name);
-                }}
-              >
-                Merge
-              </button>
-            )}
-          </div>
-        ))}
+            </div>
+          );
+        })}
       </Group>
 
       <Group title="Remote" icon={<RemoteIcon />} count={remote.length} open={open.remote} onToggle={() => toggle("remote")} onMenu={() => onSectionMenu("remote")}>
@@ -233,48 +304,73 @@ export default function Sidebar({
         ))}
       </Group>
 
-      <Group title="Pull Requests" icon={<PullRequestIcon />} count={prs.length} open={open.pullRequests} onToggle={() => toggle("pullRequests")} actions={prs.length ? prActions : undefined}>
+      <Group title="Pull Requests" icon={<PullRequestIcon />} count={prs.length} open={open.pullRequests} onToggle={() => toggle("pullRequests")} actions={prActions}>
         {prs.length === 0 && <div className="empty-hint small">No open pull requests</div>}
-        {prs.map((pr) => (
-          <div
-            key={pr.number}
-            className="branch-row pr"
-            title={`#${pr.number} ${pr.title}\n${pr.branch} · @${pr.author}`}
-            onClick={() => onOpenPr(pr.url)}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              onPrMenu(pr);
-            }}
-          >
-            {pr.author_avatar ? (
-              <img className="pr-avatar" src={pr.author_avatar} alt="" />
-            ) : (
-              <span className="pr-avatar pr-avatar-fallback" aria-hidden="true">
-                {pr.author.charAt(0).toUpperCase() || "?"}
-              </span>
-            )}
-            <span className="pr-num">#{pr.number}</span>
-            {pr.checks !== "none" && (
-              <span className={`pr-ci pr-ci-${pr.checks}`} title={`CI: ${pr.checks}`} />
-            )}
-            {pr.review === "approved" && (
-              <span className="pr-review approved" title="Approved">
-                <CheckIcon size={11} />
-              </span>
-            )}
-            {pr.review === "changes_requested" && (
-              <span className="pr-review changes" title="Changes requested">
-                <CloseIcon size={11} />
-              </span>
-            )}
-            <span className="branch-name pr-title">{pr.title}</span>
-            {pr.draft && (
-              <span className="sm-badge" title="Draft">
-                draft
-              </span>
-            )}
-          </div>
-        ))}
+        {prs.map((pr) => {
+          const cleanAuthor = pr.author.replace(/^app\//, "");
+          const cached = resolveAuthorAvatar(cleanAuthor, avatarCtx);
+          const src = cached || pr.author_avatar;
+          const tipHtml = `<div class="tip-pr-title"><span class="tip-pr-num">#${pr.number}</span>${escapeHtml(pr.title)}</div><div class="tip-pr-meta"><span class="tip-pr-branch">${escapeHtml(pr.branch)}</span><span>·</span><span class="tip-pr-author">@${escapeHtml(cleanAuthor)}</span></div>`;
+
+          return (
+            <div
+              key={pr.number}
+              className={`branch-row pr${selectedPrNumber === pr.number ? " selected" : ""}`}
+              title={`#${pr.number} ${pr.title}\n${pr.branch} · @${pr.author}`}
+              data-tip-kind="pr"
+              data-tip-html={tipHtml}
+              onClick={() => onOpenPr(pr)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onPrMenu(pr);
+              }}
+            >
+              {src && !failedAvatars.has(src) ? (
+                <img
+                  className="pr-avatar"
+                  src={src}
+                  alt=""
+                  title={`@${cleanAuthor}`}
+                  data-tip-kind="author"
+                  onError={() => setFailedAvatars((prev) => new Set(prev).add(src))}
+                />
+              ) : (
+                <span
+                  className="pr-avatar pr-avatar-fallback"
+                  aria-hidden="true"
+                  title={`@${cleanAuthor}`}
+                  data-tip-kind="author"
+                >
+                  {cleanAuthor.charAt(0).toUpperCase() || "?"}
+                </span>
+              )}
+              <span className="pr-num">#{pr.number}</span>
+              {pr.checks !== "none" && (
+                <span
+                  className={`pr-ci pr-ci-${pr.checks}`}
+                  title={ciCheckTitle(pr.checks)}
+                  data-tip-kind={`ci-${pr.checks}`}
+                />
+              )}
+              {pr.review === "approved" && (
+                <span className="pr-review approved" title="Approved" data-tip-kind="approved">
+                  <CheckIcon size={11} />
+                </span>
+              )}
+              {pr.review === "changes_requested" && (
+                <span className="pr-review changes" title="Changes requested" data-tip-kind="changes">
+                  <CloseIcon size={11} />
+                </span>
+              )}
+              <span className="branch-name pr-title">{pr.title}</span>
+              {pr.draft && (
+                <span className="sm-badge" title="Draft">
+                  draft
+                </span>
+              )}
+            </div>
+          );
+        })}
       </Group>
 
       <Group title="Tags" icon={<TagIcon />} count={tags.length} open={open.tags} onToggle={() => toggle("tags")} onMenu={() => onSectionMenu("tags")}>
@@ -389,7 +485,9 @@ export default function Sidebar({
       </Group>
     </div>
   );
-}
+});
+
+export default Sidebar;
 
 function Group({
   title,
