@@ -13,6 +13,8 @@ import ShortcutsModal from "./components/ShortcutsModal";
 import Settings from "./components/Settings";
 import { getTheme, getPalette, setTheme, setPalette, type Theme, type Palette } from "./theme";
 import { useTooltips } from "./useTooltips";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /// App shell: owns the open tabs + recents, routes between the Home tab and one
 /// mounted RepoView per open repository. All repo state lives inside RepoView.
@@ -109,6 +111,50 @@ export default function App() {
     setActivePath(order[(cur + dir + order.length) % order.length]);
   };
 
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+  const closeTabRef = useRef(closeTab);
+  closeTabRef.current = closeTab;
+  const pickAndOpenRef = useRef(pickAndOpen);
+  pickAndOpenRef.current = pickAndOpen;
+
+  // Native macOS system menu bar actions
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+
+    listen<string>("menu-action", (event) => {
+      const action = event.payload;
+      if (action === "open_repo" || action === "new_tab") {
+        void pickAndOpenRef.current();
+      } else if (action === "close_tab") {
+        if (activePathRef.current) closeTabRef.current(activePathRef.current);
+      } else if (action === "close_window") {
+        void getCurrentWindow().close();
+      } else if (action === "settings") {
+        setSettingsOpen((v) => !v);
+      } else if (action === "toggle_sidebar") {
+        window.dispatchEvent(new CustomEvent("gitchef:toggle-sidebar"));
+      } else if (action === "help") {
+        void api.openUrl("https://github.com/jcardonne/gitchef#readme");
+      } else if (action === "releases") {
+        void api.openUrl("https://github.com/jcardonne/gitchef/releases");
+      } else if (action === "report_issue") {
+        void api.openUrl("https://github.com/jcardonne/gitchef/issues/new");
+      }
+    })
+      .then((un) => {
+        if (disposed) un();
+        else unlisten = un;
+      })
+      .catch(console.error);
+
+    return () => {
+      disposed = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   // Tab keyboard shortcuts (Cmd on macOS / Ctrl elsewhere).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -120,7 +166,7 @@ export default function App() {
       } else if (mod && e.shiftKey && key === "t") {
         e.preventDefault();
         restoreTab();
-      } else if (mod && key === "t") {
+      } else if (mod && (key === "t" || key === "o")) {
         e.preventDefault();
         void pickAndOpen();
       } else if (mod && key === "w") {

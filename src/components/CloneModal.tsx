@@ -117,10 +117,16 @@ export default function CloneModal({
   );
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal clone-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose} role="presentation">
+      <div
+        className="modal clone-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="clone-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="clone-head">
-          <h3>Clone a repository</h3>
+          <h3 id="clone-modal-title">Clone a repository</h3>
           <button className="clone-close" onClick={onClose} aria-label="Close">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
           </button>
@@ -139,6 +145,12 @@ export default function CloneModal({
               autoFocus
               value={url}
               onChange={(e) => setUrlAndFolder(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && valid && !busy) {
+                  e.preventDefault();
+                  submit();
+                }
+              }}
               placeholder="https://github.com/owner/repo.git"
             />
           </div>
@@ -212,6 +224,12 @@ export default function CloneModal({
                 onChange={(e) => {
                   setFolderEdited(true);
                   setFolder(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && valid && !busy) {
+                    e.preventDefault();
+                    submit();
+                  }
                 }}
                 placeholder="repo"
               />

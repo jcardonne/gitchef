@@ -48,10 +48,16 @@ export default function CreateModal({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal clone-modal create-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose} role="presentation">
+      <div
+        className="modal clone-modal create-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="clone-head">
-          <h3>Create a repository</h3>
+          <h3 id="create-modal-title">Create a repository</h3>
           <button className="clone-close" onClick={onClose} aria-label="Close">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
           </button>
@@ -70,6 +76,12 @@ export default function CreateModal({
                 autoFocus
                 value={folder}
                 onChange={(e) => setFolder(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && valid && !busy) {
+                    e.preventDefault();
+                    void create();
+                  }
+                }}
                 placeholder="repo"
               />
             </div>
@@ -78,7 +90,17 @@ export default function CreateModal({
           <div className="create-row">
             <label className="create-field">
               <span>Initial branch</span>
-              <input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="main" />
+              <input
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && valid && !busy) {
+                    e.preventDefault();
+                    void create();
+                  }
+                }}
+                placeholder="main"
+              />
             </label>
             <label className="create-check">
               <input type="checkbox" checked={initialCommit} onChange={(e) => setInitialCommit(e.target.checked)} />

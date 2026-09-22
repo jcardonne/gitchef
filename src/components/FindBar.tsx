@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import type { FindApi } from "../useFind";
 
 /// The find-in-preview bar: query input, match-case toggle, `n/m` counter, and
@@ -7,6 +8,19 @@ import type { FindApi } from "../useFind";
 /// is owned by the parent (it owns the open flag).
 export default function FindBar({ api, onClose }: { api: FindApi; onClose: () => void }) {
   const { query, setQuery, caseSensitive, toggleCase, count, index, step, inputRef } = api;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        step(e.shiftKey ? -1 : 1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [step]);
+
   return (
     <div className="preview-find">
       <input
@@ -34,10 +48,10 @@ export default function FindBar({ api, onClose }: { api: FindApi; onClose: () =>
       >
         Aa
       </button>
-      <button className="search-nav" disabled={!count} onClick={() => step(-1)} title="Previous (Shift+Enter)">
+      <button className="search-nav" disabled={!count} onClick={() => step(-1)} title="Previous (Shift+Enter / ⇧⌘G)">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10l4-4 4 4" /></svg>
       </button>
-      <button className="search-nav" disabled={!count} onClick={() => step(1)} title="Next (Enter)">
+      <button className="search-nav" disabled={!count} onClick={() => step(1)} title="Next (Enter / ⌘G)">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4" /></svg>
       </button>
       <button className="search-nav" onClick={onClose} title="Close (Esc)">
