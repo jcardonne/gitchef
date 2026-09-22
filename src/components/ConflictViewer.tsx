@@ -102,6 +102,18 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
     scrollRef.current?.querySelectorAll<HTMLElement>(".diff-line")[row]?.scrollIntoView({ block: "center" })
   );
 
+  useEffect(() => {
+    if (!aiLoading) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancelAi();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [aiLoading, cancelAi]);
+
   if (loading) return <div className="conflict-bar">Loading conflicts...</div>;
   if (!file) return null;
 
@@ -148,18 +160,6 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
     const res = await explainConflict(path, oursText, theirsText);
     if (res && reqId.current === id) setAiExplanation(res);
   };
-
-  useEffect(() => {
-    if (!aiLoading) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        cancelAi();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [aiLoading, cancelAi]);
 
   // Walk the segments; a running index ties each conflict block to its slot in
   // `choices` (keyed by conflict-block document order).
