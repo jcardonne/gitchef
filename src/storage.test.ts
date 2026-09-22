@@ -87,6 +87,24 @@ describe("persistence round-trips", () => {
     expect(store.getRightPanelWidth()).toBe(612);
   });
 
+  it("persists the sidebar width and uses default", () => {
+    localStorage.removeItem("gitchef.sidebarWidth");
+    expect(store.getSidebarWidth()).toBe(store.DEFAULT_SIDEBAR_WIDTH);
+    expect(store.DEFAULT_SIDEBAR_WIDTH).toBe(220);
+    expect(store.DEFAULT_RIGHT_PANEL_WIDTH).toBe(440);
+    store.setSidebarWidth(285);
+    expect(store.getSidebarWidth()).toBe(285);
+  });
+
+  it("persists the sidebar visibility", () => {
+    localStorage.removeItem("gitchef.sidebarVisible");
+    expect(store.getSidebarVisible()).toBe(true);
+    store.setSidebarVisible(false);
+    expect(store.getSidebarVisible()).toBe(false);
+    store.setSidebarVisible(true);
+    expect(store.getSidebarVisible()).toBe(true);
+  });
+
   it("round-trips the open-tab session", () => {
     store.saveSession({ paths: ["/x", "/y"], activePath: "/y" });
     expect(store.getSession()).toEqual({ paths: ["/x", "/y"], activePath: "/y" });
@@ -154,5 +172,15 @@ describe("malformed persisted values", () => {
     expect(store.getRecents()).toEqual([]);
     localStorage.setItem("gitchef.recents", JSON.stringify([{ path: "/a", name: "a" }, null, { name: "no path" }]));
     expect(store.getRecents()).toEqual([{ path: "/a", name: "a" }]);
+  });
+
+  it("stores and retrieves pr viewed files cleanly", () => {
+    expect(store.getPrViewedFiles("/repo", 42)).toEqual([]);
+    store.setPrViewedFiles("/repo", 42, ["src/a.ts", "src/b.ts"]);
+    expect(store.getPrViewedFiles("/repo", 42)).toEqual(["src/a.ts", "src/b.ts"]);
+
+    // Handles malformed storage
+    localStorage.setItem("gitchef.prViewed./repo.42", "not valid json");
+    expect(store.getPrViewedFiles("/repo", 42)).toEqual([]);
   });
 });

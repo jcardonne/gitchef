@@ -107,6 +107,62 @@ export interface PullRequest {
   review: "approved" | "changes_requested" | "review_required" | "none";
 }
 
+export interface PrCheckDetail {
+  name: string;
+  workflow?: string;
+  status: string;
+  conclusion?: string;
+  url?: string;
+}
+
+export interface PrReviewDetail {
+  author: string;
+  author_avatar: string | null;
+  state: string;
+  body: string;
+  submitted_at: string | null;
+}
+
+export interface PrCommitDetail {
+  oid: string;
+  headline: string;
+  body: string;
+  author: string;
+  date: string;
+}
+
+export interface PrCommentDetail {
+  author: string;
+  author_avatar: string | null;
+  body: string;
+  created_at: string;
+}
+
+export interface PrDetails {
+  number: number;
+  title: string;
+  body: string;
+  state: string; // "OPEN" | "MERGED" | "CLOSED"
+  url: string;
+  branch: string;
+  base_branch: string;
+  draft: boolean;
+  author: string;
+  author_avatar: string | null;
+  created_at: string;
+  updated_at: string;
+  merged_at: string | null;
+  closed_at: string | null;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  mergeable: string; // "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
+  checks: PrCheckDetail[];
+  reviews: PrReviewDetail[];
+  commits: PrCommitDetail[];
+  comments: PrCommentDetail[];
+}
+
 export interface TagInfo {
   name: string;
   target: string; // commit SHA the tag points at

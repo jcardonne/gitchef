@@ -486,6 +486,8 @@ mod tests {
         let other = tmp("pullstash-other");
         run_git(&remote, &["clone", "-q", "-b", &branch, remote.to_str().unwrap(), other.to_str().unwrap()])
             .unwrap();
+        run_git(&other, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&other, &["config", "user.name", "t"]).unwrap();
         write_commit(&other, "line1\nline2\nline3-remote\n", "remote advance");
         run_git(&other, &["push", "-q"]).unwrap();
         let remote_tip = run_git(&other, &["rev-parse", "HEAD"]).unwrap().trim().to_string();

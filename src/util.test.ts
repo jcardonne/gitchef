@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { affectedPaths, avatarUrl, edgePath, isRateLimited, noreplyAvatarUrl, rateLimitBackoffMs, relativeTime } from "./util";
+import { affectedPaths, avatarUrl, edgePath, isRateLimited, noreplyAvatarUrl, rateLimitBackoffMs, relativeTime, resolveAuthorAvatar } from "./util";
 import type { FileStatus } from "./types";
 
 describe("noreplyAvatarUrl", () => {
@@ -78,6 +78,39 @@ describe("avatarUrl precedence", () => {
     // wildcard needs a subdomain label), which surfaces as a broken avatar.
     const url = await avatarUrl("nobody@nowhere.test", { accounts: new Map() });
     expect(url.startsWith("https://www.gravatar.com/avatar/")).toBe(true);
+  });
+});
+
+describe("resolveAuthorAvatar", () => {
+  it("resolves from accounts map directly by login", () => {
+    const accounts = new Map([["@octocat", "https://provider/octocat.png"]]);
+    expect(resolveAuthorAvatar("octocat", { accounts })).toBe("https://provider/octocat.png");
+    expect(resolveAuthorAvatar("@octocat", { accounts })).toBe("https://provider/octocat.png");
+  });
+
+  it("resolves bot logins from noreply committer email in accounts", () => {
+    const accounts = new Map([
+      ["29139614+renovate[bot]@users.noreply.github.com", "https://provider/renovate-custom.png"],
+    ]);
+    expect(resolveAuthorAvatar("app/renovate", { accounts })).toBe("https://provider/renovate-custom.png");
+    expect(resolveAuthorAvatar("renovate[bot]", { accounts })).toBe("https://provider/renovate-custom.png");
+  });
+
+  it("falls back to known bot icons when not cached or when ctx is missing", () => {
+    expect(resolveAuthorAvatar("app/renovate")).toBe(
+      "https://avatars.githubusercontent.com/in/2740?v=4&s=64"
+    );
+    expect(resolveAuthorAvatar("renovate[bot]", { accounts: new Map() })).toBe(
+      "https://avatars.githubusercontent.com/in/2740?v=4&s=64"
+    );
+    expect(resolveAuthorAvatar("app/dependabot", { accounts: new Map() })).toBe(
+      "https://avatars.githubusercontent.com/in/29110?v=4&s=64"
+    );
+  });
+
+  it("returns null for unknown authors when not in accounts or known bots", () => {
+    expect(resolveAuthorAvatar("unknown-user", { accounts: new Map() })).toBeNull();
+    expect(resolveAuthorAvatar("")).toBeNull();
   });
 });
 
