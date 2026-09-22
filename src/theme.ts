@@ -64,11 +64,13 @@ function applyAppearance(): void {
 export function setTheme(theme: Theme): void {
   localStorage.setItem(KEY, theme);
   applyAppearance();
+  notifyPrefs();
 }
 
 export function setPalette(palette: Palette): void {
   localStorage.setItem(PALETTE_KEY, palette);
   applyAppearance();
+  notifyPrefs();
 }
 
 export function getDensity(): Density {
@@ -87,6 +89,9 @@ export function setDensity(density: Density): void {
 export function initTheme(): void {
   applyAppearance();
   media.addEventListener("change", () => {
-    if (getTheme() === "system") applyAppearance();
+    if (getTheme() === "system") {
+      applyAppearance();
+      notifyPrefs();
+    }
   });
 }

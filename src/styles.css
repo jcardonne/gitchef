@@ -279,6 +279,8 @@ button {
 }
 .sidebar-toggle.active {
   color: var(--text);
+  background: var(--bg-elev2);
+  border-color: var(--border);
 }
 .tool-btn {
   display: inline-flex;
@@ -2862,6 +2864,17 @@ button {
   background: var(--border);
   flex: 0 0 auto;
 }
+.tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .tab-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2871,8 +2884,19 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin-left: 2px;
+  margin-right: -4px;
   color: var(--text);
   opacity: 0.55;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: opacity 0.1s var(--ease), background 0.1s var(--ease), color 0.1s var(--ease);
 }
 /* fully reveal the ✕ once the tab is hovered/active so it never sits dim-on-dim */
 .tab:hover .tab-close,
@@ -2882,14 +2906,26 @@ button {
 .tab-close:hover {
   opacity: 1;
   color: var(--del);
+  background: color-mix(in srgb, var(--del) 15%, transparent);
 }
 .tab-add {
-  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
   cursor: pointer;
   color: var(--text-dim);
   font-size: 16px;
+  flex: 0 0 auto;
+  transition: background 0.1s var(--ease), color 0.1s var(--ease);
 }
 .tab-add:hover {
+  background: var(--bg-elev2);
   color: var(--text);
 }
 .tabbar-drag-region {
@@ -2933,15 +2969,30 @@ button {
   width: 12px;
   height: 12px;
   border-radius: 999px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.window-controls.mac .mac-glyph {
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease);
+}
+.window-controls.mac:hover .mac-glyph {
+  opacity: 1;
 }
 .window-controls.mac .window-control.close {
   background: #ff5f57;
+  color: #4d0000;
 }
 .window-controls.mac .window-control.minimize {
   background: #ffbd2e;
+  color: #995700;
 }
 .window-controls.mac .window-control.maximize {
   background: #28c840;
+  color: #006500;
 }
 .window-controls.mac:hover .window-control {
   filter: brightness(0.95);

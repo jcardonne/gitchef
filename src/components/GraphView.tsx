@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CheckMenuItem, Menu } from "@tauri-apps/api/menu";
 import type { CommitNode, RefKind, RefLabel, WorkStats } from "../types";
-import { avatarUrl, type AvatarContext, edgePath, LANE_COLORS, laneColor, relativeTime } from "../util";
+import { avatarUrl, type AvatarContext, edgePath, getLaneColors, relativeTime } from "../util";
+import { resolvedTheme } from "../theme";
 import { BranchIcon, HeadIcon, LocalIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
 import {
   getGraphColumnVisibility,
@@ -130,16 +131,29 @@ export default function GraphView({
     setSortAscState(next);
     setSortAsc(next);
   };
+  const [isDark, setIsDark] = useState(() => resolvedTheme() === "dark");
   const [ROW_H, setRowH] = useState(readRowH);
   useEffect(() => {
     const sync = () => {
+      setIsDark(resolvedTheme() === "dark");
       setRowH(readRowH());
       setSortAscState(getSortAsc());
       setVisibleCols(getGraphColumnVisibility());
     };
     window.addEventListener("gitchef:prefs", sync);
-    return () => window.removeEventListener("gitchef:prefs", sync);
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    media.addEventListener("change", sync);
+    const observer = new MutationObserver(() => sync());
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => {
+      window.removeEventListener("gitchef:prefs", sync);
+      media.removeEventListener("change", sync);
+      observer.disconnect();
+    };
   }, []);
+
+  const currentLaneColors = useMemo(() => getLaneColors(isDark), [isDark]);
+  const getCol = (c: number) => currentLaneColors[c % currentLaneColors.length];
 
   // Display order: newest-first by default, reversed for "oldest first". Lanes
   // (x) are order-independent, so reversing rows just flips the DAG vertically.
@@ -179,6 +193,19 @@ export default function GraphView({
   const step = (d: number) =>
     matchList.length && setMatchIdx((i) => (Math.min(i, matchList.length - 1) + d + matchList.length) % matchList.length);
   const closeSearch = () => onSearchClose();
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        step(e.shiftKey ? -1 : 1);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [searchOpen, step]);
 
   // Closing search (Esc / ✕) clears the query + filter, stopping highlighting.
   useEffect(() => {
@@ -311,7 +338,7 @@ export default function GraphView({
   const offset = hasWip && !sortAsc ? 1 : 0;
   const headIdx = sortAsc ? displayed.length - 1 : 0;
   const wipLane = displayed[headIdx]?.lane ?? 0;
-  const wipColor = laneColor(displayed[headIdx]?.color ?? 0);
+  const wipColor = getCol(displayed[headIdx]?.color ?? 0);
 
   // --- virtualization: mount only the rows in/around the viewport ---
   const graphRef = useRef<HTMLDivElement>(null);
@@ -578,10 +605,10 @@ export default function GraphView({
           >
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h12l-4.5 5.5V13L6.5 14.5V8.5z" /></svg>
           </button>
-          <button className="search-nav" disabled={!matchList.length} onClick={() => step(-1)} title="Previous (Shift+Enter)">
+          <button className="search-nav" disabled={!matchList.length} onClick={() => step(-1)} title="Previous (Shift+Enter / ⇧⌘G)">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10l4-4 4 4" /></svg>
           </button>
-          <button className="search-nav" disabled={!matchList.length} onClick={() => step(1)} title="Next (Enter)">
+          <button className="search-nav" disabled={!matchList.length} onClick={() => step(1)} title="Next (Enter / ⌘G)">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4" /></svg>
           </button>
           <button className="search-nav" onClick={closeSearch} title="Close (Esc)">
@@ -644,7 +671,14 @@ export default function GraphView({
           </div>
         )}
       </div>
-      <div className="graph" ref={graphRef} tabIndex={0} onKeyDown={onGraphKey}>
+      <div
+        className="graph"
+        ref={graphRef}
+        tabIndex={0}
+        onKeyDown={onGraphKey}
+        role="region"
+        aria-label="Commit graph"
+      >
       {visibleCols.graph && (
         <svg
           className="graph-svg"
@@ -655,7 +689,7 @@ export default function GraphView({
         {/* One horizontal transparent->color gradient per lane color, reused by
             every relief band (objectBoundingBox remaps it to each rect's box). */}
         <defs>
-          {LANE_COLORS.map((c, i) => (
+          {currentLaneColors.map((c, i) => (
             <linearGradient key={i} id={`band-${i}`} x1="0" y1="0" x2="1" y2="0">
               <stop offset="0" stopColor={c} stopOpacity="0" />
               <stop offset="1" stopColor={c} stopOpacity="1" />
@@ -683,7 +717,7 @@ export default function GraphView({
           const x0 = x(n.lane) + AVATAR_R + 2;
           const bandH = AVATAR_R * 2 + 2; // slim: ~ the avatar's own height
           const top = cy - bandH / 2;
-          const col = laneColor(n.color);
+          const col = getCol(n.color);
           const border = 4; // opaque right edge, kept just inside the SVG
           return (
             <g key={`band-${n.id}`}>
@@ -706,7 +740,7 @@ export default function GraphView({
                 y={top}
                 width={Math.max(0, graphWidth - x0)}
                 height={bandH}
-                fill={`url(#band-${n.color % LANE_COLORS.length})`}
+                fill={`url(#band-${n.color % currentLaneColors.length})`}
                 opacity={selected ? 0.32 : on ? 0.2 : 0.13}
               />
               <rect
@@ -741,7 +775,7 @@ export default function GraphView({
                 key={`${n.id}-${pid}`}
                 d={d}
                 fill="none"
-                stroke={laneColor(n.color)}
+                stroke={getCol(n.color)}
                 strokeWidth={onSpine ? 2.6 : firstParent ? 2 : 1.6}
                 strokeDasharray={firstParent ? undefined : "4 3"}
                 opacity={onSpine ? 1 : 0.85}
@@ -777,7 +811,7 @@ export default function GraphView({
               <path
                 key={n.id}
                 d={`M ${cx} ${cy - r} L ${cx + r} ${cy} L ${cx} ${cy + r} L ${cx - r} ${cy} Z`}
-                fill={laneColor(n.color)}
+                fill={getCol(n.color)}
                 opacity={dim}
                 style={{ stroke: selected ? "var(--text)" : "var(--bg)" }}
                 strokeWidth={selected ? 2 : 1.5}
@@ -793,7 +827,7 @@ export default function GraphView({
                 cx={cx}
                 cy={cy}
                 r={n.refs.length ? DOT_R + 1.5 : DOT_R}
-                fill={laneColor(n.color)}
+                fill={getCol(n.color)}
                 opacity={dim}
                 style={{ stroke: selected ? "var(--text)" : "var(--bg)" }}
                 strokeWidth={selected ? 2 : 1.5}
@@ -806,7 +840,7 @@ export default function GraphView({
                 <circle cx={cx} cy={cy} r={AVATAR_R} />
               </clipPath>
               {/* lane-colored backdrop shows through while the image loads / offline */}
-              <circle cx={cx} cy={cy} r={AVATAR_R} fill={laneColor(n.color)} />
+              <circle cx={cx} cy={cy} r={AVATAR_R} fill={getCol(n.color)} />
               <image
                 href={url}
                 x={cx - AVATAR_R}
@@ -822,7 +856,7 @@ export default function GraphView({
                 cy={cy}
                 r={AVATAR_R}
                 fill="none"
-                style={{ stroke: selected ? "var(--text)" : laneColor(n.color) }}
+                style={{ stroke: selected ? "var(--text)" : getCol(n.color) }}
                 strokeWidth={selected ? 2 : 1.5}
               />
             </g>
@@ -851,7 +885,7 @@ export default function GraphView({
                 height: ROW_H,
                 // Checked-out branch: a thick lane-colored bar down the far left of
                 // the row marks "you are here".
-                boxShadow: n.id === headId ? `inset 3px 0 0 ${laneColor(n.color)}` : undefined,
+                boxShadow: n.id === headId ? `inset 3px 0 0 ${getCol(n.color)}` : undefined,
               }}
               onClick={() => onSelect(n.id)}
               onMouseEnter={() => setTraceId(n.id)}
@@ -864,7 +898,7 @@ export default function GraphView({
                 <div className="col-refs" style={{ flex: `0 0 ${refsW}px` }}>
                   <CommitRefs
                     refs={n.refs}
-                    color={laneColor(n.color)}
+                    color={getCol(n.color)}
                     prBranches={prBranches}
                     headBranch={headBranch}
                     onBranchMenu={(branchName, isRemote) =>
@@ -875,7 +909,7 @@ export default function GraphView({
                   {ghost && (
                     <span
                       className="ref-badge ref-ghost"
-                      style={{ ["--lane"]: laneColor(n.color) } as CSSProperties}
+                      style={{ ["--lane"]: getCol(n.color) } as CSSProperties}
                       title={`On ${ghost.name}`}
                     >
                       <span className="ref-name">{ghost.name}</span>
@@ -900,7 +934,7 @@ export default function GraphView({
                     (failedAvatars.has(url) ? (
                       <span
                         className="author-avatar author-avatar-fallback"
-                        style={{ background: laneColor(n.color), borderColor: laneColor(n.color) }}
+                        style={{ background: getCol(n.color), borderColor: getCol(n.color) }}
                         aria-hidden="true"
                       >
                         {n.author.trim().charAt(0).toUpperCase() || "?"}
@@ -910,7 +944,7 @@ export default function GraphView({
                         className="author-avatar"
                         src={url}
                         alt=""
-                        style={{ borderColor: laneColor(n.color) }}
+                        style={{ borderColor: getCol(n.color) }}
                         onError={() => setFailedAvatars((s) => new Set(s).add(url))}
                       />
                     ))}

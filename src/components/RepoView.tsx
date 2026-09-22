@@ -118,6 +118,8 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   const [undoState, setUndoState] = useState<{ label: string; sha: string; branch: string } | null>(
     null
   );
+  const headBranch = branches.find((b) => b.is_head)?.name ?? "HEAD";
+  const doUndoRef = useRef<(() => void) | null>(null);
 
   const [rightTab, setRightTab] = useState<"changes" | "commit">("changes");
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
@@ -389,11 +391,28 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
 
   // Cmd/Ctrl+F: opens the in-preview find when a file preview is open, else the
   // commit search. Cmd/Ctrl+K opens the command palette (active tab only).
+  // Cmd/Ctrl+Z triggers Git Undo when focus is outside text fields.
   useEffect(() => {
     if (!isActive || modalOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
       const k = e.key.toLowerCase();
+      const isInput =
+        document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement ||
+        document.activeElement?.getAttribute("contenteditable") === "true";
+
+      if (k === "z" && !e.shiftKey && !isInput) {
+        if (undoState && undoState.branch === headBranch && doUndoRef.current) {
+          e.preventDefault();
+          doUndoRef.current();
+          return;
+        }
+      }
+
+      if (e.shiftKey) return;
+
       if (k === "f") {
         if (activePr) return; // ponytail: PrView owns its own search/filter when active
         e.preventDefault();
@@ -412,7 +431,14 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isActive, modalOpen, activePr]);
+  }, [isActive, modalOpen, activePr, undoState, headBranch]);
+
+  useEffect(() => {
+    if (!isActive) return;
+    const onToggle = () => setSidebarOpen((v) => !v);
+    window.addEventListener("gitchef:toggle-sidebar", onToggle);
+    return () => window.removeEventListener("gitchef:toggle-sidebar", onToggle);
+  }, [isActive]);
 
   const run = useCallback(
     async (fn: () => Promise<void>, action?: string) => {
@@ -1271,8 +1297,6 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   }, [isActive, refreshPrs]);
 
   // --- commit context-menu actions ---
-  const headBranch = branches.find((b) => b.is_head)?.name ?? "HEAD";
-
   const shortRemoteBranchName = (name: string) => {
     const slash = name.indexOf("/");
     return slash >= 0 ? name.slice(slash + 1) : name;
@@ -1330,6 +1354,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
       notify(`Undid ${undoState.label}`);
       setUndoState(null);
     });
+  doUndoRef.current = doUndo;
   // Stable identity so RebasePlan's fetch effect doesn't re-run (refetching the
   // plan) on every RepoView re-render while the modal is open.
   const closeRebasePlan = useCallback(() => setRebasePlanBase(null), []);
@@ -2886,23 +2911,55 @@ function NamePromptModal({
     onClose();
     onSubmit(v);
   };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose} role="presentation">
+      <div
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+      >
         <h3>{title}</h3>
-        <input
-          autoFocus
-          placeholder={placeholder}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-        />
-        <div className="modal-actions">
-          <button onClick={onClose}>Cancel</button>
-          <button className="primary-btn" disabled={!value.trim()} onClick={submit}>
-            {cta ?? "Create"}
-          </button>
-        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <input
+            autoFocus
+            placeholder={placeholder}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onClose();
+              }
+            }}
+          />
+          <div className="modal-actions">
+            <button type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="primary-btn" disabled={!value.trim()}>
+              {cta ?? "Create"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

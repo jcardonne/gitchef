@@ -26,18 +26,45 @@ export function imageMime(path: string): string | null {
 }
 
 // Lane colors for the commit graph - cycled by `color` index from the backend.
-export const LANE_COLORS = [
+// Dark mode palette (luminous pastels on dark surfaces).
+export const DARK_LANE_COLORS = [
   "#22c5a4", // teal (brand)
-  "#6ea8fe",
-  "#f7768e",
-  "#e0af68",
-  "#bb9af7",
-  "#7dcfff",
-  "#9ece6a",
-  "#ff9e64",
+  "#6ea8fe", // blue
+  "#f7768e", // red/pink
+  "#e0af68", // amber
+  "#bb9af7", // purple
+  "#7dcfff", // cyan
+  "#9ece6a", // lime
+  "#ff9e64", // orange
 ];
 
-export const laneColor = (i: number) => LANE_COLORS[i % LANE_COLORS.length];
+// Light mode palette (deep, high-contrast equivalents ensuring WCAG AA >= 4.5:1 on #ffffff).
+export const LIGHT_LANE_COLORS = [
+  "#117f69", // deep teal
+  "#0969da", // vibrant blue
+  "#cf222e", // crimson red
+  "#9a6700", // warm amber
+  "#7a52d8", // rich violet
+  "#0e7490", // deep cyan
+  "#1a7f37", // forest green
+  "#b45309", // burnt orange
+];
+
+export const LANE_COLORS = DARK_LANE_COLORS;
+
+export function getLaneColors(isDark = true): string[] {
+  return isDark ? DARK_LANE_COLORS : LIGHT_LANE_COLORS;
+}
+
+export const laneColor = (i: number, isDark?: boolean) => {
+  const dark = isDark !== undefined
+    ? isDark
+    : typeof document !== "undefined"
+    ? document.documentElement.dataset.theme !== "light"
+    : true;
+  const list = getLaneColors(dark);
+  return list[i % list.length];
+};
 
 /// SVG path for an orthogonal (GitKraken-style) graph edge from a child node
 /// (x1,y1) to a parent node (x2,y2): straight along the child's lane, a small

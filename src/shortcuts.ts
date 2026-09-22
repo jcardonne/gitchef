@@ -58,6 +58,8 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     title: "Find",
     items: [
       { label: "Find in file / search commits", combo: ["mod", "F"] },
+      { label: "Find next", combo: ["mod", "G"] },
+      { label: "Find previous", combo: ["mod", "shift", "G"] },
       { label: "Search files & history", combo: ["mod", "shift", "F"] },
       { label: "Go to file", combo: ["mod", "P"] },
     ],
@@ -65,7 +67,8 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
   {
     title: "Tabs",
     items: [
-      { label: "Open a repository", combo: ["mod", "T"] },
+      { label: "Open repository", combo: ["mod", "O"] },
+      { label: "New tab", combo: ["mod", "T"] },
       { label: "Close tab", combo: ["mod", "W"] },
       { label: "Reopen closed tab", combo: ["mod", "shift", "T"] },
       { label: "Next / previous tab", combo: ["ctrl", "Tab"] },
@@ -74,6 +77,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
   {
     title: "General",
     items: [
+      { label: "Undo Git action", combo: ["mod", "Z"] },
       { label: "Toggle sidebar", combo: ["mod", "B"] },
       { label: "Command palette", combo: ["mod", "K"] },
       { label: "Open Settings", combo: ["mod", ","] },

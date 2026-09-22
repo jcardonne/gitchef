@@ -629,22 +629,60 @@ pub fn run() {
     // menu with just App + Edit (no Window menu) so Cmd+W is free for the JS
     // tab-close shortcut, while keeping Quit and copy/paste/undo working.
     #[cfg(target_os = "macos")]
-    let builder = builder.menu(|handle| {
-        use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
-        let app = Submenu::with_items(handle, "GitChef", true, &[
-            &PredefinedMenuItem::quit(handle, None)?,
-        ])?;
-        let edit = Submenu::with_items(handle, "Edit", true, &[
-            &PredefinedMenuItem::undo(handle, None)?,
-            &PredefinedMenuItem::redo(handle, None)?,
-            &PredefinedMenuItem::separator(handle)?,
-            &PredefinedMenuItem::cut(handle, None)?,
-            &PredefinedMenuItem::copy(handle, None)?,
-            &PredefinedMenuItem::paste(handle, None)?,
-            &PredefinedMenuItem::select_all(handle, None)?,
-        ])?;
-        Menu::with_items(handle, &[&app, &edit])
-    });
+    let builder = builder
+        .menu(|handle| {
+            use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+            let app = Submenu::with_items(handle, "GitChef", true, &[
+                &PredefinedMenuItem::about(handle, None, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &MenuItem::with_id(handle, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::services(handle, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::hide(handle, None)?,
+                &PredefinedMenuItem::hide_others(handle, None)?,
+                &PredefinedMenuItem::show_all(handle, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::quit(handle, None)?,
+            ])?;
+            let file = Submenu::with_items(handle, "File", true, &[
+                &MenuItem::with_id(handle, "new_tab", "New Tab", true, Some("CmdOrCtrl+T"))?,
+                &MenuItem::with_id(handle, "open_repo", "Open Repository…", true, Some("CmdOrCtrl+O"))?,
+                &PredefinedMenuItem::separator(handle)?,
+                &MenuItem::with_id(handle, "close_tab", "Close Tab", true, Some("CmdOrCtrl+W"))?,
+                &MenuItem::with_id(handle, "close_window", "Close Window", true, Some("CmdOrCtrl+Shift+W"))?,
+            ])?;
+            let edit = Submenu::with_items(handle, "Edit", true, &[
+                &PredefinedMenuItem::undo(handle, None)?,
+                &PredefinedMenuItem::redo(handle, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::cut(handle, None)?,
+                &PredefinedMenuItem::copy(handle, None)?,
+                &PredefinedMenuItem::paste(handle, None)?,
+                &PredefinedMenuItem::select_all(handle, None)?,
+            ])?;
+            let view = Submenu::with_items(handle, "View", true, &[
+                &MenuItem::with_id(handle, "toggle_sidebar", "Toggle Sidebar", true, Some("CmdOrCtrl+B"))?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::fullscreen(handle, None)?,
+            ])?;
+            let window = Submenu::with_items(handle, "Window", true, &[
+                &PredefinedMenuItem::minimize(handle, None)?,
+                &PredefinedMenuItem::maximize(handle, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::show_all(handle, None)?,
+            ])?;
+            let help = Submenu::with_items(handle, "Help", true, &[
+                &MenuItem::with_id(handle, "help", "Documentation", true, None::<&str>)?,
+                &MenuItem::with_id(handle, "releases", "Release Notes", true, None::<&str>)?,
+                &MenuItem::with_id(handle, "report_issue", "Report Issue…", true, None::<&str>)?,
+            ])?;
+            Menu::with_items(handle, &[&app, &file, &edit, &view, &window, &help])
+        })
+        .on_menu_event(|app, event| {
+            use tauri::Emitter;
+            let _ = app.emit("menu-action", event.id().as_ref());
+        });
 
     builder
         .invoke_handler(tauri::generate_handler![
