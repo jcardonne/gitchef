@@ -464,7 +464,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     <rect x="9" y="9" width="6" height="6" />
                     <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3" />
                   </svg>
-                  <span>Modèle</span>
+                  <span>Model</span>
                 </button>
                 <button
                   type="button"
@@ -477,7 +477,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     <circle cx="12" cy="12" r="3" />
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
                   </svg>
-                  <span>Paramètres</span>
+                  <span>Preferences</span>
                 </button>
               </div>
 
@@ -485,9 +485,9 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                 <>
                   {/* 1. Provider Cards */}
                   <div className="settings-field">
-                    <div className="settings-field-label">{TITLE.ai}<span>Moteur d'IA (Provider)</span></div>
+                    <div className="settings-field-label">{TITLE.ai}<span>AI Provider</span></div>
                 <div className="settings-field-hint">
-                  Sélectionnez le moteur d'intelligence artificielle utilisé pour vos commits, PRs et explications de conflits.
+                  Select the AI engine used for commit generation, PR drafting, and conflict explanations.
                 </div>
                 <div className="ai-provider-grid">
                   <div
@@ -496,11 +496,11 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                   >
                     <div className="ai-provider-card-top">
                       <QwenLogo size={24} />
-                      <span className="ai-badge recommended">1-Clic • 0 Config</span>
+                      <span className="ai-badge recommended">1-Click • Zero Setup</span>
                     </div>
-                    <div className="ai-provider-title">Local Embarqué</div>
+                    <div className="ai-provider-title">Local Embedded</div>
                     <div className="ai-provider-desc">
-                      Qwen 2.5 Coder 0.5B natif. 100% privé, sans Ollama ni ligne de commande.
+                      Native Qwen 2.5 Coder 0.5B. 100% private, no Ollama or command line required.
                     </div>
                   </div>
 
@@ -510,11 +510,11 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                   >
                     <div className="ai-provider-card-top">
                       <OllamaLogo size={24} />
-                      <span className="ai-badge">Serveur local</span>
+                      <span className="ai-badge">Local Server</span>
                     </div>
                     <div className="ai-provider-title">Ollama</div>
                     <div className="ai-provider-desc">
-                      Connectez votre instance Ollama locale (Qwen, Llama 3.2, DeepSeek...).
+                      Connect to your local Ollama instance (Qwen, Llama 3.2, DeepSeek...).
                     </div>
                   </div>
 
@@ -528,7 +528,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     </div>
                     <div className="ai-provider-title">Custom / OpenAI</div>
                     <div className="ai-provider-desc">
-                      OpenAI (GPT-4o), Groq, LM Studio ou tout serveur compatible OpenAI.
+                      OpenAI (GPT-4o), Groq, LM Studio, or any OpenAI-compatible API.
                     </div>
                   </div>
                 </div>
@@ -538,10 +538,10 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
               {aiConfig.provider === "embedded" && (
                 <div className="settings-field">
                   <div className="settings-field-label">
-                    <span>Modèle Local Intégré</span>
+                    <span>Local Embedded Model</span>
                   </div>
                   <div className="settings-field-hint">
-                    Exécution native directement dans GitChef via <code>llama-cpp</code> sans dépendance tierce.
+                    Runs directly inside GitChef via embedded <code>llama-cpp</code> with zero dependencies.
                   </div>
 
                   <div className="ai-hero-card">
@@ -551,7 +551,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 14 }}>Qwen 2.5 Coder 0.5B Instruct</div>
                           <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "monospace" }}>
-                            GGUF Q4_K_M • 491 Mo
+                            GGUF Q4_K_M • 491 MB
                           </div>
                         </div>
                       </div>
@@ -574,30 +574,30 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                         }}
                       >
                         {embeddedStatus?.installed
-                          ? "● Installé & Prêt"
+                          ? "● Ready"
                           : isDownloading
-                          ? "● Téléchargement..."
-                          : "○ Non installé"}
+                          ? "● Downloading..."
+                          : "○ Not installed"}
                       </span>
                     </div>
 
                     <div className="ai-specs-row">
-                      <span className="ai-spec-pill" title="Accélération GPU Metal sur Apple Silicon et multithread CPU">
+                      <span className="ai-spec-pill" title="Metal GPU acceleration on Apple Silicon and CPU multithreading">
                         <AppleLogo size={13} style={{ color: "var(--text)" }} />
                         <span>~150 ms (Metal GPU) / 1-2s (CPU)</span>
                       </span>
-                      <span className="ai-spec-pill" title="Empreinte mémoire vive minimale">
+                      <span className="ai-spec-pill" title="Minimal memory footprint">
                         <RamIcon size={14} style={{ color: "var(--accent)" }} />
-                        <span>&lt; 450 Mo RAM (Raspberry Pi OK)</span>
+                        <span>&lt; 450 MB RAM (lightweight)</span>
                       </span>
-                      <span className="ai-spec-pill" title="Aucune donnée ne quitte votre ordinateur">
+                      <span className="ai-spec-pill" title="No data leaves your computer">
                         <ShieldLockIcon size={14} style={{ color: "var(--add)" }} />
-                        <span>100% Hors-ligne & Privé</span>
+                        <span>100% Offline &amp; Private</span>
                       </span>
                     </div>
 
                     <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 12 }}>
-                      Modèle ultra-performant et économe taillé pour rédiger les commits conventionnels, les résumés de Pull Requests et analyser les conflits Git.
+                      Fast, lightweight model optimized for conventional commits, PR summaries, and conflict analysis.
                     </div>
 
                     {isDownloading && (
@@ -622,7 +622,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                         </div>
                         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)" }}>
                           <span>
-                            {formatMb(embeddedProgress?.bytes_downloaded ?? 0)} Mo / {formatMb(embeddedProgress?.total_bytes ?? 515000000)} Mo ({percent}%)
+                            {formatMb(embeddedProgress?.bytes_downloaded ?? 0)} MB / {formatMb(embeddedProgress?.total_bytes ?? 515000000)} MB ({percent}%)
                           </span>
                           <span>{formatSpeed(embeddedProgress?.speed_bytes_per_sec ?? 0)}</span>
                         </div>
@@ -644,7 +644,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                           style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
                         >
                           <QwenLogo size={15} />
-                          <span>{isStartingDownload ? "Démarrage..." : "Télécharger le modèle (491 Mo)"}</span>
+                          <span>{isStartingDownload ? "Starting..." : "Download Model (491 MB)"}</span>
                         </button>
                       )}
                       {isDownloading && (
@@ -653,7 +653,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                           style={{ padding: "6px 12px" }}
                           onClick={handleCancelDownload}
                         >
-                          Annuler le téléchargement
+                          Cancel Download
                         </button>
                       )}
                       {embeddedStatus?.installed && (
@@ -663,15 +663,15 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                             onClick={testAi}
                             disabled={testingAi}
                           >
-                            {testingAi ? "Test de l'inférence en cours..." : "Tester l'inférence locale"}
+                            {testingAi ? "Testing inference..." : "Test Local Inference"}
                           </button>
                           <button
                             className="mini-btn"
                             style={{ padding: "6px 12px", color: "var(--del)" }}
                             onClick={handleDeleteEmbedded}
-                            title="Supprime le fichier du disque pour libérer 491 Mo"
+                            title="Remove model file from disk to free 491 MB"
                           >
-                            Supprimer le modèle
+                            Delete Model
                           </button>
                         </>
                       )}
@@ -686,7 +686,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     <div className="settings-field-label">
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <OllamaLogo size={16} />
-                        <span>Connexion Ollama</span>
+                        <span>Ollama Connection</span>
                       </div>
                       <span
                         style={{
@@ -708,13 +708,13 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                           }}
                         />
                         {ollamaOnline === null
-                          ? "Vérification..."
+                          ? "Checking..."
                           : ollamaOnline
-                          ? "Ollama actif"
-                          : "Non détecté"}
+                          ? "Ollama online"
+                          : "Not detected"}
                       </span>
                     </div>
-                    <div className="settings-field-hint">Hôte HTTP de l'API locale Ollama (port par défaut 11434).</div>
+                    <div className="settings-field-hint">Local Ollama HTTP host (default port 11434).</div>
                     <input
                       className="ai-input"
                       value={aiConfig.endpoint}
@@ -724,8 +724,8 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                   </div>
 
                   <div className="settings-field">
-                    <div className="settings-field-label"><span>Modèle Ollama</span></div>
-                    <div className="settings-field-hint">Sélectionnez un modèle recommandé ou tapez le tag :</div>
+                    <div className="settings-field-label"><span>Ollama Model</span></div>
+                    <div className="settings-field-hint">Select a recommended model or enter a custom tag:</div>
                     <input
                       className="ai-input"
                       value={aiConfig.model}
@@ -734,9 +734,9 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     />
                     <div className="ai-chip-group">
                       {[
-                        { tag: "qwen2.5-coder:0.5b", label: "Qwen 2.5 Coder 0.5B (~350Mo, Ultra-léger)", icon: <QwenLogo size={13} /> },
-                        { tag: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B (~980Mo, Recommandé)", icon: <QwenLogo size={13} /> },
-                        { tag: "llama3.2:1b", label: "Llama 3.2 1B (~750Mo, Rapide)", icon: <MetaLogo size={13} /> },
+                        { tag: "qwen2.5-coder:0.5b", label: "Qwen 2.5 Coder 0.5B (~350MB, Ultra-light)", icon: <QwenLogo size={13} /> },
+                        { tag: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B (~980MB, Recommended)", icon: <QwenLogo size={13} /> },
+                        { tag: "llama3.2:1b", label: "Llama 3.2 1B (~750MB, Fast)", icon: <MetaLogo size={13} /> },
                       ].map((m) => (
                         <button
                           key={m.tag}
@@ -754,7 +754,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
 
                   <div className="settings-field">
                     <button className="about-action-btn" onClick={testAi} disabled={testingAi}>
-                      {testingAi ? "Test de connexion..." : "Tester la connexion Ollama"}
+                      {testingAi ? "Testing connection..." : "Test Ollama Connection"}
                     </button>
                   </div>
 
@@ -762,10 +762,10 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     <div className="ai-info-card">
                       <div className="ai-info-title">
                         <OllamaLogo size={15} />
-                        <span>Lancer Ollama en arrière-plan</span>
+                        <span>Start Ollama in Background</span>
                       </div>
                       <div className="ai-info-body">
-                        Si Ollama n'est pas encore démarré, lancez cette commande dans votre terminal :
+                        If Ollama is not running, run this command in your terminal:
                         <div>
                           <code className="ai-info-code">ollama run {aiConfig.model || "qwen2.5-coder:0.5b"}</code>
                         </div>
@@ -781,10 +781,10 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     <div className="settings-field-label">
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <OpenAiLogo size={16} />
-                        <span>Configuration Endpoint & Clé</span>
+                        <span>Endpoint &amp; API Key</span>
                       </div>
                     </div>
-                    <div className="settings-field-hint">Présélections rapides pour vos fournisseurs préférés :</div>
+                    <div className="settings-field-hint">Quick presets for popular providers:</div>
                     <div className="ai-chip-group" style={{ marginBottom: 12 }}>
                       {[
                         { label: "OpenAI (gpt-4o-mini)", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini", icon: <OpenAiLogo size={13} /> },
@@ -815,7 +815,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                         />
                       </div>
                       <div>
-                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 500 }}>Identifiant du modèle</div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 500 }}>Model Name</div>
                         <input
                           className="ai-input"
                           value={aiConfig.model}
@@ -824,7 +824,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                         />
                       </div>
                       <div>
-                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 500 }}>Clé d'API (Optionnelle si serveur local)</div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 500 }}>API Key (optional for local servers)</div>
                         <input
                           type="password"
                           className="ai-input"
@@ -838,7 +838,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
 
                   <div className="settings-field">
                     <button className="about-action-btn" onClick={testAi} disabled={testingAi}>
-                      {testingAi ? "Test de connexion..." : "Tester la connexion API"}
+                      {testingAi ? "Testing connection..." : "Test API Connection"}
                     </button>
                   </div>
                 </>
@@ -857,13 +857,13 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
 
               {aiSubTab === "settings" && (
                 <>
-                  {/* 1. Format du Message de Commit */}
+                  {/* 1. Commit Message Format */}
                   <div className="settings-field">
                     <div className="settings-field-label">
-                      <span>Format du Message de Commit</span>
+                      <span>Commit Message Format</span>
                     </div>
                     <div className="settings-field-hint">
-                      Choisissez la structure générée lors de l'utilisation du bouton ✨ ou de <code>Cmd/Ctrl + I</code>.
+                      Choose the default structure generated by ✨ or <code>Cmd/Ctrl + I</code>.
                     </div>
 
                     <div className="ai-style-grid">
@@ -874,12 +874,12 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                         <div className="ai-radio-dot" />
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
-                            Titre seul (Concis)
+                            Title only (Concise)
                           </div>
                           <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
-                            Une seule ligne conventionnelle sous 72 caractères.
+                            Single conventional line under 72 characters.
                             <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
-                              ex: feat(auth): add refresh token handling
+                              feat(auth): add refresh token handling
                             </div>
                           </div>
                         </div>
@@ -892,12 +892,12 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                         <div className="ai-radio-dot" />
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
-                            Titre & Description (Détaillé)
+                            Title &amp; Description (Detailed)
                           </div>
                           <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
-                            Titre conventionnel suivi d'un paragraphe ou d'une liste à puces.
+                            Conventional title followed by summary bullet points.
                             <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
-                              ex: fix(diff): handle binary files<br />- avoid utf8 decoding crash
+                              fix(diff): handle binary files
                             </div>
                           </div>
                         </div>
@@ -905,47 +905,50 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     </div>
                   </div>
 
-                  {/* 2. Fonctionnalités & Intégrations Chef AI */}
+                  {/* 2. Chef AI Features */}
                   <div className="settings-field" style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
                     <div className="settings-field-label">
-                      <span>Fonctionnalités & Intégrations Chef AI</span>
+                      <span>Chef AI Features</span>
                     </div>
                     <div className="settings-field-hint">
-                      Chef AI s'intègre naturellement dans les vues clés de GitChef :
+                      Built-in AI shortcuts across GitChef:
                     </div>
                     <div className="ai-features-grid">
                       <div className="ai-feature-card">
                         <div className="ai-feature-card-header">
-                          <span>✨ Messages de Commit</span>
+                          <span className="ai-feature-title">✨ Commit Messages</span>
+                          <span className="ai-feature-badge">Staging • ⌘I</span>
                         </div>
                         <div className="ai-feature-card-desc">
-                          Dans le panneau Staging, cliquez sur <strong>✨</strong> ou appuyez sur <code>Cmd/Ctrl + I</code> pour générer un message conventionnel précis basé sur vos fichiers indexés.
+                          Generate conventional commit messages from staged changes.
                         </div>
                       </div>
                       <div className="ai-feature-card">
                         <div className="ai-feature-card-header">
-                          <span>🔀 Pull Requests</span>
+                          <span className="ai-feature-title">🔀 Pull Requests</span>
+                          <span className="ai-feature-badge">Create PR</span>
                         </div>
                         <div className="ai-feature-card-desc">
-                          Dans la modale de création de PR, cliquez sur <strong>Rédiger avec Chef AI</strong> pour synthétiser automatiquement tous les commits de la branche en un titre et description Markdown.
+                          Draft PR title and Markdown description from branch commits.
                         </div>
                       </div>
                       <div className="ai-feature-card">
                         <div className="ai-feature-card-header">
-                          <span>⚡ Résolution de Conflits</span>
+                          <span className="ai-feature-title">⚡ Merge Conflicts</span>
+                          <span className="ai-feature-badge">Conflict Viewer</span>
                         </div>
                         <div className="ai-feature-card-desc">
-                          Lors d'un conflit de fusion ou rebase, cliquez sur <strong>Expliquer avec Chef AI</strong> dans le visualiseur 3-way pour comprendre la divergence et la marche à suivre.
+                          Explain 3-way divergence and recommend resolution steps.
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* 3. Sécurité & Confidentialité */}
+                  {/* 3. Security & Privacy */}
                   <div className="ai-privacy-note">
                     <ShieldLockIcon size={18} style={{ color: "var(--add)", marginTop: 2, flexShrink: 0 }} />
                     <div>
-                      <strong style={{ color: "var(--text)" }}>Sécurité & Respect de la vie privée :</strong> Seuls les fichiers stagés (ou le diff spécifique) sont analysés. Les fichiers volumineux ou générés (<code>pnpm-lock.yaml</code>, <code>Cargo.lock</code>, binaires) sont automatiquement ignorés pour préserver le contexte et la mémoire. Avec le modèle <strong>Local Embarqué</strong>, 100% du calcul s'exécute sur votre machine sans aucune connexion externe.
+                      <strong style={{ color: "var(--text)" }}>100% Local &amp; Private:</strong> Only staged changes are analyzed. Lockfiles and binaries are automatically ignored, and inference stays entirely on your machine.
                     </div>
                   </div>
                 </>
