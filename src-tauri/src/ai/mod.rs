@@ -16,14 +16,20 @@ pub fn generate_commit(
     config: &AiConfig,
 ) -> AppResult<GeneratedCommit> {
     let mut files = diff::staged_diff(repo)?;
-    if files.is_empty() && !staged_only {
-        files = diff::unstaged_diff(repo)?;
-    }
-
     if files.is_empty() {
-        return Err(AppError::Msg(
-            "No changed files to generate a commit message for.".into(),
-        ));
+        if !staged_only {
+            // For amend with no staged files, inspect the HEAD commit being amended
+            if let Ok(head) = repo.head() {
+                if let Ok(commit) = head.peel_to_commit() {
+                    files = diff::commit_diff(repo, &commit.id().to_string()).unwrap_or_default();
+                }
+            }
+        }
+        if files.is_empty() {
+            return Err(AppError::Msg(
+                "No staged changes found. Please stage files first to generate a commit message.".into(),
+            ));
+        }
     }
 
     let diff_summary = diff_filter::prepare_diff_for_llm(&files);

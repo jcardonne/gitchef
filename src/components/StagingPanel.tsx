@@ -333,11 +333,12 @@ export default function StagingPanel({
   const handleChefAiCommit = async () => {
     if (aiLoading) return;
     const hasStaged = status.staged.length > 0;
-    if (!hasStaged && status.unstaged.length === 0) {
-      notify("No changes to generate commit message for.", true);
+    const isAmending = amend && canAmend;
+    if (!hasStaged && !isAmending) {
+      notify("Stage changes first to generate a commit message with Chef AI.", true);
       return;
     }
-    const res = await generateCommit(hasStaged);
+    const res = await generateCommit(!isAmending || hasStaged);
     if (!res) return;
     if (res.commit_type && COMMIT_TYPES.includes(res.commit_type)) {
       setType(res.commit_type);
@@ -569,9 +570,13 @@ export default function StagingPanel({
           <button
             type="button"
             className="chef-ai-btn"
-            disabled={aiLoading || (status.staged.length === 0 && status.unstaged.length === 0)}
+            disabled={aiLoading || (!status.staged.length && !(amend && canAmend))}
             onClick={handleChefAiCommit}
-            title={`Generate commit message with Chef AI (${comboHint(["mod", "I"])})`}
+            title={
+              !status.staged.length && !(amend && canAmend)
+                ? "Stage changes first to generate a commit message"
+                : `Generate commit message with Chef AI (${comboHint(["mod", "I"])})`
+            }
           >
             {aiLoading ? (
               <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">

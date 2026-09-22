@@ -491,15 +491,6 @@ pub fn staged_diff(repo: &Repository) -> AppResult<Vec<FileDiff>> {
     diff_to_files(&diff, MAX_DIFF_LINES)
 }
 
-/// All unstaged changes in the working directory (index -> workdir).
-pub fn unstaged_diff(repo: &Repository) -> AppResult<Vec<FileDiff>> {
-    let mut opts = DiffOptions::new();
-    opts.include_untracked(true).recurse_untracked_dirs(true);
-    let mut diff = repo.diff_index_to_workdir(None, Some(&mut opts))?;
-    diff.find_similar(Some(&mut find_renames()))?;
-    diff_to_files(&diff, MAX_DIFF_LINES)
-}
-
 
 #[cfg(test)]
 mod tests {
