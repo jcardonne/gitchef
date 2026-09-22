@@ -129,6 +129,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
   const [embeddedStatus, setEmbeddedStatus] = useState<EmbeddedModelStatus | null>(null);
   const [embeddedProgress, setEmbeddedProgress] = useState<DownloadProgressEvent | null>(null);
   const [isStartingDownload, setIsStartingDownload] = useState(false);
+  const [aiSubTab, setAiSubTab] = useState<"model" | "settings">("model");
   useKeycapPresses(section === "keyboard");
 
   const fetchEmbeddedStatus = async () => {
@@ -449,9 +450,42 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
 
           {section === "ai" && (
             <>
-              {/* 1. Provider Cards */}
-              <div className="settings-field">
-                <div className="settings-field-label">{TITLE.ai}<span>Moteur d'IA (Provider)</span></div>
+              {/* Chef AI Sub-tabs */}
+              <div className="ai-subtabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={aiSubTab === "model"}
+                  className={`ai-subtab-btn${aiSubTab === "model" ? " active" : ""}`}
+                  onClick={() => setAiSubTab("model")}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="4" y="4" width="16" height="16" rx="2" />
+                    <rect x="9" y="9" width="6" height="6" />
+                    <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3" />
+                  </svg>
+                  <span>Modèle</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={aiSubTab === "settings"}
+                  className={`ai-subtab-btn${aiSubTab === "settings" ? " active" : ""}`}
+                  onClick={() => setAiSubTab("settings")}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                  <span>Paramètres</span>
+                </button>
+              </div>
+
+              {aiSubTab === "model" && (
+                <>
+                  {/* 1. Provider Cards */}
+                  <div className="settings-field">
+                    <div className="settings-field-label">{TITLE.ai}<span>Moteur d'IA (Provider)</span></div>
                 <div className="settings-field-hint">
                   Sélectionnez le moteur d'intelligence artificielle utilisé pour vos commits, PRs et explications de conflits.
                 </div>
@@ -818,53 +852,104 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                 </div>
               )}
 
-              {/* 3. Universal Commit Preferences */}
-              <div className="settings-field" style={{ marginTop: 24, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
-                <div className="settings-field-label">
-                  <span>Format du Message de Commit</span>
-                </div>
-                <div className="settings-field-hint">
-                  Choisissez la structure générée lors de l'utilisation du bouton ✨ ou de <code>Cmd/Ctrl + I</code>.
-                </div>
+                </>
+              )}
 
-                <div className="ai-style-grid">
-                  <div
-                    className={`ai-style-card${(aiConfig.commit_style || "title_only") === "title_only" ? " active" : ""}`}
-                    onClick={() => updateAi({ commit_style: "title_only" })}
-                  >
-                    <div className="ai-radio-dot" />
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
-                        Titre seul (Concis)
+              {aiSubTab === "settings" && (
+                <>
+                  {/* 1. Format du Message de Commit */}
+                  <div className="settings-field">
+                    <div className="settings-field-label">
+                      <span>Format du Message de Commit</span>
+                    </div>
+                    <div className="settings-field-hint">
+                      Choisissez la structure générée lors de l'utilisation du bouton ✨ ou de <code>Cmd/Ctrl + I</code>.
+                    </div>
+
+                    <div className="ai-style-grid">
+                      <div
+                        className={`ai-style-card${(aiConfig.commit_style || "title_only") === "title_only" ? " active" : ""}`}
+                        onClick={() => updateAi({ commit_style: "title_only" })}
+                      >
+                        <div className="ai-radio-dot" />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
+                            Titre seul (Concis)
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
+                            Une seule ligne conventionnelle sous 72 caractères.
+                            <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
+                              ex: feat(auth): add refresh token handling
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
-                        Une seule ligne conventionnelle sous 72 caractères.
-                        <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
-                          ex: feat(auth): add refresh token handling
+
+                      <div
+                        className={`ai-style-card${aiConfig.commit_style === "title_and_body" ? " active" : ""}`}
+                        onClick={() => updateAi({ commit_style: "title_and_body" })}
+                      >
+                        <div className="ai-radio-dot" />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
+                            Titre & Description (Détaillé)
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
+                            Titre conventionnel suivi d'un paragraphe ou d'une liste à puces.
+                            <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
+                              ex: fix(diff): handle binary files<br />- avoid utf8 decoding crash
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  <div
-                    className={`ai-style-card${aiConfig.commit_style === "title_and_body" ? " active" : ""}`}
-                    onClick={() => updateAi({ commit_style: "title_and_body" })}
-                  >
-                    <div className="ai-radio-dot" />
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
-                        Titre & Description (Détaillé)
+                  {/* 2. Fonctionnalités & Intégrations Chef AI */}
+                  <div className="settings-field" style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
+                    <div className="settings-field-label">
+                      <span>Fonctionnalités & Intégrations Chef AI</span>
+                    </div>
+                    <div className="settings-field-hint">
+                      Chef AI s'intègre naturellement dans les vues clés de GitChef :
+                    </div>
+                    <div className="ai-features-grid">
+                      <div className="ai-feature-card">
+                        <div className="ai-feature-card-header">
+                          <span>✨ Messages de Commit</span>
+                        </div>
+                        <div className="ai-feature-card-desc">
+                          Dans le panneau Staging, cliquez sur <strong>✨</strong> ou appuyez sur <code>Cmd/Ctrl + I</code> pour générer un message conventionnel précis basé sur vos fichiers indexés.
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
-                        Titre conventionnel suivi d'un paragraphe ou d'une liste à puces.
-                        <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
-                          ex: fix(diff): handle binary files<br />- avoid utf8 decoding crash
+                      <div className="ai-feature-card">
+                        <div className="ai-feature-card-header">
+                          <span>🔀 Pull Requests</span>
+                        </div>
+                        <div className="ai-feature-card-desc">
+                          Dans la modale de création de PR, cliquez sur <strong>Rédiger avec Chef AI</strong> pour synthétiser automatiquement tous les commits de la branche en un titre et description Markdown.
+                        </div>
+                      </div>
+                      <div className="ai-feature-card">
+                        <div className="ai-feature-card-header">
+                          <span>⚡ Résolution de Conflits</span>
+                        </div>
+                        <div className="ai-feature-card-desc">
+                          Lors d'un conflit de fusion ou rebase, cliquez sur <strong>Expliquer avec Chef AI</strong> dans le visualiseur 3-way pour comprendre la divergence et la marche à suivre.
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
+
+                  {/* 3. Sécurité & Confidentialité */}
+                  <div className="ai-privacy-note">
+                    <ShieldLockIcon size={18} style={{ color: "var(--add)", marginTop: 2, flexShrink: 0 }} />
+                    <div>
+                      <strong style={{ color: "var(--text)" }}>Sécurité & Respect de la vie privée :</strong> Seuls les fichiers stagés (ou le diff spécifique) sont analysés. Les fichiers volumineux ou générés (<code>pnpm-lock.yaml</code>, <code>Cargo.lock</code>, binaires) sont automatiquement ignorés pour préserver le contexte et la mémoire. Avec le modèle <strong>Local Embarqué</strong>, 100% du calcul s'exécute sur votre machine sans aucune connexion externe.
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
 
