@@ -304,6 +304,8 @@ export function setPrViewedFiles(repoPath: string, prNumber: number, files: stri
 }
 
 const AI_CONFIG_KEY = "gitchef.aiConfig";
+const AI_API_KEY_SESSION = "gitchef.aiApiKey";
+let memoryApiKey = "";
 
 export const DEFAULT_AI_CONFIG: AiConfig = {
   provider: "embedded",
@@ -315,11 +317,42 @@ export const DEFAULT_AI_CONFIG: AiConfig = {
 };
 
 export function getAiConfig(): AiConfig {
-  return { ...DEFAULT_AI_CONFIG, ...read<Partial<AiConfig>>(AI_CONFIG_KEY, {}) };
+  const config = { ...DEFAULT_AI_CONFIG, ...read<Partial<AiConfig>>(AI_CONFIG_KEY, {}) };
+  // Keep api_key in memory/sessionStorage only so sensitive credentials
+  // are never persisted in plaintext in permanent localStorage.
+  if (memoryApiKey) {
+    config.api_key = memoryApiKey;
+  } else {
+    try {
+      const sessionKey = sessionStorage.getItem(AI_API_KEY_SESSION);
+      if (sessionKey) {
+        config.api_key = sessionKey;
+        memoryApiKey = sessionKey;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return config;
 }
 
 export function setAiConfig(config: AiConfig): void {
-  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
+  if (config.api_key !== undefined) {
+    memoryApiKey = config.api_key ?? "";
+    try {
+      if (config.api_key) {
+        sessionStorage.setItem(AI_API_KEY_SESSION, config.api_key);
+      } else {
+        sessionStorage.removeItem(AI_API_KEY_SESSION);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Strip api_key before persisting to localStorage
+  const { api_key: _omitted, ...safeConfig } = config;
+  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(safeConfig));
   notifyPrefs();
 }
 

@@ -43,6 +43,48 @@ pub fn generate_commit(
     Ok(client::parse_commit_message(&raw_response))
 }
 
+/// Resolves a ref name or commit hash to a git2::Commit.
+/// Handles direct hashes/branches, local refs, and remote-tracking branches (e.g. "origin/main").
+fn resolve_commit<'a>(repo: &'a Repository, name: &str) -> AppResult<git2::Commit<'a>> {
+    // 1. Direct revparse
+    if let Ok(obj) = repo.revparse_single(name) {
+        if let Ok(commit) = obj.peel_to_commit() {
+            return Ok(commit);
+        }
+    }
+
+    // 2. Try common remote prefixes for short branch names like "main"
+    for remote in &["origin", "upstream"] {
+        let remote_ref = format!("{remote}/{name}");
+        if let Ok(obj) = repo.revparse_single(&remote_ref) {
+            if let Ok(commit) = obj.peel_to_commit() {
+                return Ok(commit);
+            }
+        }
+        let full_remote_ref = format!("refs/remotes/{remote}/{name}");
+        if let Ok(obj) = repo.revparse_single(&full_remote_ref) {
+            if let Ok(commit) = obj.peel_to_commit() {
+                return Ok(commit);
+            }
+        }
+    }
+
+    // 3. Search all remote branches
+    if let Ok(branches) = repo.branches(Some(git2::BranchType::Remote)) {
+        for branch in branches.flatten() {
+            if let Ok(Some(branch_name)) = branch.0.name() {
+                if branch_name.ends_with(&format!("/{name}")) {
+                    if let Ok(commit) = branch.0.get().peel_to_commit() {
+                        return Ok(commit);
+                    }
+                }
+            }
+        }
+    }
+
+    Err(AppError::Msg(format!("Could not resolve ref '{name}' to a valid commit")))
+}
+
 /// Generates a Pull Request title and description between base and head refs.
 pub fn generate_pr(
     app: &AppHandle,
@@ -51,24 +93,22 @@ pub fn generate_pr(
     head: &str,
     config: &AiConfig,
 ) -> AppResult<GeneratedPr> {
-    let base_obj = repo
-        .revparse_single(base)
+    let base_commit = resolve_commit(repo, base)
         .map_err(|e| AppError::Msg(format!("Could not resolve base ref '{base}': {e}")))?;
-    let head_obj = repo
-        .revparse_single(head)
+    let head_commit = resolve_commit(repo, head)
         .map_err(|e| AppError::Msg(format!("Could not resolve head ref '{head}': {e}")))?;
 
-    let base_commit = base_obj
-        .peel_to_commit()
-        .map_err(|e| AppError::Msg(format!("Base ref '{base}' is not a commit: {e}")))?;
-    let head_commit = head_obj
-        .peel_to_commit()
-        .map_err(|e| AppError::Msg(format!("Head ref '{head}' is not a commit: {e}")))?;
+    // Calculate merge base to avoid reversed/polluted diffs when base branch advanced
+    let merge_base_oid = match repo.merge_base(base_commit.id(), head_commit.id()) {
+        Ok(oid) => oid,
+        Err(_) => base_commit.id(),
+    };
+    let merge_base_commit = repo.find_commit(merge_base_oid)?;
 
     let mut walk = repo.revwalk()?;
     walk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)?;
     walk.push(head_commit.id())?;
-    let _ = walk.hide(base_commit.id());
+    let _ = walk.hide(merge_base_oid);
 
     let mut commit_summaries = Vec::new();
     for oid in walk {
@@ -84,7 +124,7 @@ pub fn generate_pr(
         }
     }
 
-    let base_tree = base_commit.tree()?;
+    let base_tree = merge_base_commit.tree()?;
     let head_tree = head_commit.tree()?;
     let mut opts = git2::DiffOptions::new();
     let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut opts))?;

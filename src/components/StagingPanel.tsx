@@ -360,8 +360,9 @@ export default function StagingPanel({
     } else {
       setType("");
       setScope("");
-      if (style === "title_only" && res.subject) {
-        setMessage(res.subject);
+      const firstLine = res.full_message.split("\n")[0].trim();
+      if (style === "title_only") {
+        setMessage(firstLine);
       } else {
         setMessage(res.full_message);
       }

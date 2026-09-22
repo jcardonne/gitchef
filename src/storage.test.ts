@@ -196,6 +196,7 @@ describe("malformed persisted values", () => {
       provider: "custom",
       endpoint: "http://localhost:8080",
       model: "qwen2.5-coder:1.5b",
+      api_key: "sk-secret-key-123",
       temperature: 0.1,
       commit_style: "title_and_body",
     });
@@ -203,7 +204,12 @@ describe("malformed persisted values", () => {
     expect(updated.provider).toBe("custom");
     expect(updated.endpoint).toBe("http://localhost:8080");
     expect(updated.model).toBe("qwen2.5-coder:1.5b");
+    expect(updated.api_key).toBe("sk-secret-key-123");
     expect(updated.commit_style).toBe("title_and_body");
+
+    // api_key must NOT be persisted in localStorage in plaintext
+    const rawLocal = localStorage.getItem("gitchef.aiConfig");
+    expect(rawLocal).not.toContain("sk-secret-key-123");
   });
 });
 

@@ -92,34 +92,39 @@ pub fn prepare_diff_for_llm(files: &[FileDiff]) -> String {
     let mut skipped_noisy: Vec<&str> = Vec::new();
     let max_summary_budget = MAX_DIFF_CHARS / 3;
     let mut omitted_summary_files = 0;
+    const TRUNCATION_RESERVE: usize = 120;
+    let max_hunk_budget = MAX_DIFF_CHARS.saturating_sub(TRUNCATION_RESERVE);
 
     for file in files {
         if is_noisy_file(&file.path) {
             skipped_noisy.push(&file.path);
             continue;
         }
-        if out.len() > max_summary_budget {
+
+        let summary_line = if file.binary || file.oversized {
+            format!("- {} (binary/oversized)\n", file.path)
+        } else {
+            let mut adds = 0;
+            let mut dels = 0;
+            for hunk in &file.hunks {
+                for line in &hunk.lines {
+                    match line.origin.as_str() {
+                        "+" => adds += 1,
+                        "-" => dels += 1,
+                        _ => {}
+                    }
+                }
+            }
+            format!("- {} (+{}, -{})\n", file.path, adds, dels)
+        };
+
+        if out.len() + summary_line.len() > max_summary_budget {
             omitted_summary_files += 1;
             relevant_files.push(file);
             continue;
         }
-        if file.binary || file.oversized {
-            out.push_str(&format!("- {} (binary/oversized)\n", file.path));
-            continue;
-        }
 
-        let mut adds = 0;
-        let mut dels = 0;
-        for hunk in &file.hunks {
-            for line in &hunk.lines {
-                match line.origin.as_str() {
-                    "+" => adds += 1,
-                    "-" => dels += 1,
-                    _ => {}
-                }
-            }
-        }
-        out.push_str(&format!("- {} (+{}, -{})\n", file.path, adds, dels));
+        out.push_str(&summary_line);
         relevant_files.push(file);
     }
 
@@ -147,7 +152,7 @@ pub fn prepare_diff_for_llm(files: &[FileDiff]) -> String {
         }
 
         let file_header = format!("--- {}\n", file.path);
-        if out.len() + file_header.len() > MAX_DIFF_CHARS {
+        if out.len() + file_header.len() > max_hunk_budget {
             budget_exhausted = true;
             truncated_files.push(&file.path);
             continue;
@@ -161,7 +166,7 @@ pub fn prepare_diff_for_llm(files: &[FileDiff]) -> String {
 
             // Short hunk header
             let hunk_header = format!("{}\n", hunk.header.trim());
-            if out.len() + hunk_header.len() > MAX_DIFF_CHARS {
+            if out.len() + hunk_header.len() > max_hunk_budget {
                 budget_exhausted = true;
                 break;
             }
@@ -174,7 +179,7 @@ pub fn prepare_diff_for_llm(files: &[FileDiff]) -> String {
                 }
 
                 let line_str = format!("{}{}\n", line.origin, cap_line(line.content.trim_end()));
-                if out.len() + line_str.len() > MAX_DIFF_CHARS {
+                if out.len() + line_str.len() > max_hunk_budget {
                     budget_exhausted = true;
                     break;
                 }
@@ -271,7 +276,7 @@ mod tests {
         let files = vec![make_test_diff("src/large.rs", &additions, &[])];
 
         let summary = prepare_diff_for_llm(&files);
-        assert!(summary.len() <= MAX_DIFF_CHARS + 200);
+        assert!(summary.len() <= MAX_DIFF_CHARS);
         assert!(summary.contains("truncated"));
     }
 }

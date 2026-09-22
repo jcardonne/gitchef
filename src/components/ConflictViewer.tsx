@@ -136,11 +136,11 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
     if (!file || aiLoading) return;
     const conflicts = file.segments.filter((s) => s.kind === "conflict");
     if (conflicts.length === 0) return;
-    const targetPath = path;
+    const id = reqId.current;
     const oursText = conflicts.map((c) => (c.kind === "conflict" ? c.ours.join("\n") : "")).join("\n---\n");
     const theirsText = conflicts.map((c) => (c.kind === "conflict" ? c.theirs.join("\n") : "")).join("\n---\n");
     const res = await explainConflict(path, oursText, theirsText);
-    if (res && path === targetPath) setAiExplanation(res);
+    if (res && reqId.current === id) setAiExplanation(res);
   };
 
   // Walk the segments; a running index ties each conflict block to its slot in

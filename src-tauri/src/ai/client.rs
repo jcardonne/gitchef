@@ -59,20 +59,62 @@ fn create_agent() -> ureq::Agent {
 
 fn validate_endpoint(endpoint: &str) -> AppResult<String> {
     let trimmed = endpoint.trim().trim_end_matches('/');
-    let normalized = if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
-        format!("http://{trimmed}")
+    if trimmed.is_empty() {
+        return Err(crate::error::AppError::Msg(
+            "Endpoint URL cannot be empty".into(),
+        ));
+    }
+
+    let (scheme, rest) = if let Some(stripped) = trimmed.strip_prefix("https://") {
+        ("https", stripped)
+    } else if let Some(stripped) = trimmed.strip_prefix("http://") {
+        ("http", stripped)
+    } else if trimmed.starts_with("localhost") || trimmed.starts_with("127.0.0.1") {
+        ("http", trimmed)
     } else {
-        trimmed.to_string()
+        ("https", trimmed)
     };
 
-    let lower = normalized.to_lowercase();
-    if lower.contains("169.254.169.254")
-        || lower.contains("metadata.google.internal")
-        || lower.contains("fd00:ec2::254")
+    let normalized = format!("{scheme}://{rest}");
+
+    // Extract host (strip port and path)
+    let host_and_port = rest.split('/').next().unwrap_or(rest);
+    let host = if host_and_port.starts_with('[') {
+        host_and_port
+            .split(']')
+            .next()
+            .unwrap_or(host_and_port)
+            .trim_start_matches('[')
+    } else {
+        host_and_port.split(':').next().unwrap_or(host_and_port)
+    };
+    let host_lower = host.trim().to_lowercase();
+
+    // 1. Block cloud metadata services and link-local addresses
+    if host_lower == "169.254.169.254"
+        || host_lower == "metadata.google.internal"
+        || host_lower == "metadata"
+        || host_lower == "fd00:ec2::254"
+        || host_lower.ends_with(".internal")
+        || host_lower.starts_with("169.254.")
     {
         return Err(crate::error::AppError::Msg(
             "Access to cloud metadata endpoints is restricted for security.".into(),
         ));
+    }
+
+    // 2. HTTP is strictly restricted to local loopback (Ollama, LM Studio)
+    if scheme == "http" {
+        let is_loopback = host_lower == "localhost"
+            || host_lower == "127.0.0.1"
+            || host_lower == "::1"
+            || host_lower == "0.0.0.0";
+
+        if !is_loopback {
+            return Err(crate::error::AppError::Msg(
+                "Unencrypted HTTP endpoints are only permitted for local loopback (localhost / 127.0.0.1). Please use HTTPS for remote endpoints.".into(),
+            ));
+        }
     }
 
     Ok(normalized)
@@ -542,5 +584,24 @@ mod tests {
             parsed.body,
             "## Summary\nAdds v2 endpoints.\n\n## Changes\n- new routes"
         );
+    }
+
+    #[test]
+    fn test_validate_endpoint_security() {
+        // Valid loopback
+        assert!(validate_endpoint("http://127.0.0.1:11434").is_ok());
+        assert!(validate_endpoint("http://localhost:1234").is_ok());
+
+        // Valid remote https
+        assert!(validate_endpoint("https://api.openai.com/v1").is_ok());
+        assert!(validate_endpoint("https://api.groq.com/openai/v1").is_ok());
+
+        // Insecure remote HTTP blocked
+        assert!(validate_endpoint("http://192.168.1.1/admin").is_err());
+        assert!(validate_endpoint("http://evil-ai.example.com").is_err());
+
+        // Cloud metadata blocked
+        assert!(validate_endpoint("http://169.254.169.254/latest").is_err());
+        assert!(validate_endpoint("http://metadata.google.internal").is_err());
     }
 }
