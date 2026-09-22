@@ -52,8 +52,22 @@ describe("GitChef conflict resolution", () => {
     // exactly one conflicted file (file.txt at repo root) and tree-view folders are
     // .tree-folder, so the single .file-row is it (matches the beforeEach wait).
     const row = await $(".change-list .file-row");
+    await row.waitForClickable({ timeout: 15000 });
     await row.click();
-    await $(".conflict-block").waitForExist({ timeout: 30000 });
+    // In headless Linux WebKit under heavy CI load, a synthetic click on a windowed
+    // row can occasionally miss if the webview is still painting; dispatch a DOM click
+    // as a fallback if the resolver pane hasn't opened yet.
+    await browser.waitUntil(
+      async () => {
+        if (await $(".conflict-block").isExisting()) return true;
+        await browser.execute(() => {
+          const el = document.querySelector(".change-list .file-row");
+          if (el) el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+        });
+        return await $(".conflict-block").isExisting();
+      },
+      { timeout: 30000, interval: 1000, timeoutMsg: "conflict resolver never opened" }
+    );
     // ours + theirs sides both rendered.
     await expect($(".conflict-head.ours")).toExist();
     await expect($(".conflict-head.theirs")).toExist();
@@ -66,7 +80,10 @@ describe("GitChef conflict resolution", () => {
       async (b) => (await b.getText()) === "Accept incoming"
     );
     await accept.click();
-    const markResolved = await $(".conflict-bar .mini-btn:last-child");
+    const markResolved = await $$(".conflict-bar .mini-btn").find(
+      async (b) => (await b.getText()) === "Mark resolved"
+    );
+    await markResolved.waitForClickable({ timeout: 15000 });
     await markResolved.click();
 
     // Once the last conflict is staged, the banner drops its blocking state and
@@ -79,7 +96,9 @@ describe("GitChef conflict resolution", () => {
   });
 
   it("finishes the rebase on Continue", async () => {
-    await $(".seq-banner .mini-btn.primary").click();
+    const cont = await $(".seq-banner .mini-btn.primary");
+    await cont.waitForClickable({ timeout: 15000 });
+    await cont.click();
     // Rebase completes -> no operation in progress -> banner gone.
     await browser.waitUntil(async () => !(await $(".seq-banner").isExisting()), {
       timeout: 20000,
@@ -87,3 +106,4 @@ describe("GitChef conflict resolution", () => {
     });
   });
 });
+

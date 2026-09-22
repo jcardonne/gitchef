@@ -647,7 +647,7 @@ fn ai_generate_commit(
     ai::generate_commit(&app, &open(&repo)?, staged_only, &config, current_message.as_deref())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn ai_cancel_generation() -> AppResult<()> {
     ai::cancel_generation();
     Ok(())

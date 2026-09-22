@@ -63,7 +63,8 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
         setChoices(new Array(n).fill(undefined));
         setLoading(false);
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("Failed to load conflict blocks:", err);
         if (id !== reqId.current) return;
         setLoading(false);
       });
