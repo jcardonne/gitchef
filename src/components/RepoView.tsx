@@ -2781,6 +2781,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
           provider={repo.provider}
           baseDefault={prBaseDefault}
           bases={baseCandidates}
+          headBranch={repo.head || "HEAD"}
           onSubmit={submitPr}
           onClose={() => setPrOpen(false)}
         />

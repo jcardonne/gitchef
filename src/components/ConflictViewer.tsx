@@ -5,6 +5,7 @@ import { useRepo } from "../repoContext";
 import { useFind, type FindApi } from "../useFind";
 import FindBar from "./FindBar";
 import { renderCode } from "./CodeLine";
+import { useChefAi } from "../useChefAi";
 
 // One choice per conflict block, in document order. "both" = ours then theirs;
 // "both_reversed" = theirs then ours (toggled by the bar).
@@ -32,17 +33,20 @@ interface Props {
 // ever shows up.
 export default function ConflictViewer({ path, onResolved, findOpen, onFindClose }: Props) {
   const { repoPath, busy, run } = useRepo();
+  const { loading: aiLoading, explainConflict } = useChefAi();
   const [file, setFile] = useState<ConflictFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [choices, setChoices] = useState<(Choice | undefined)[]>([]);
   // Order applied when "Accept both" is clicked (current-first vs incoming-first).
   const [reverseBoth, setReverseBoth] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
   const reqId = useRef(0);
 
   useEffect(() => {
     const id = ++reqId.current; // a newer path bumps this; stale responses bail
     setLoading(true);
     setFile(null);
+    setAiExplanation(null);
     api
       .conflictBlocks(repoPath, path)
       .then((f) => {
@@ -122,6 +126,16 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
       onResolved();
     }, "resolve");
 
+  const handleExplainConflict = async () => {
+    if (!file || aiLoading) return;
+    const conflicts = file.segments.filter((s) => s.kind === "conflict");
+    if (conflicts.length === 0) return;
+    const oursText = conflicts.map((c) => (c.kind === "conflict" ? c.ours.join("\n") : "")).join("\n---\n");
+    const theirsText = conflicts.map((c) => (c.kind === "conflict" ? c.theirs.join("\n") : "")).join("\n---\n");
+    const res = await explainConflict(path, oursText, theirsText);
+    if (res) setAiExplanation(res);
+  };
+
   // Walk the segments; a running index ties each conflict block to its slot in
   // `choices` (keyed by conflict-block document order).
   let ci = -1;
@@ -141,11 +155,50 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
         >
           Both: {reverseBoth ? "incoming first" : "current first"}
         </button>
+        <button
+          type="button"
+          className="chef-ai-btn"
+          style={{ marginLeft: "8px" }}
+          disabled={aiLoading || !file}
+          onClick={handleExplainConflict}
+          title="Explain this conflict using Chef AI"
+        >
+          {aiLoading ? (
+            <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
+              <path d="M8 2a6 6 0 0 1 6 6" />
+            </svg>
+          ) : (
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" />
+              <path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" />
+            </svg>
+          )}
+          <span>{aiLoading ? "Analyzing…" : "Chef AI Explain"}</span>
+        </button>
         <span className="conflict-spacer" />
         <button className="mini-btn" disabled={!ready} onClick={() => resolve(choices as string[])}>
           Mark resolved
         </button>
       </div>
+      {aiExplanation && (
+        <div className="conflict-ai-box">
+          <div className="conflict-ai-head">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" />
+            </svg>
+            <span>Chef AI Analysis</span>
+            <button
+              onClick={() => setAiExplanation(null)}
+              style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--text-dim)", fontSize: "14px" }}
+              title="Close explanation"
+            >
+              ✕
+            </button>
+          </div>
+          <div>{aiExplanation}</div>
+        </div>
+      )}
       <div className="diff">
         {findOpen && <FindBar api={find} onClose={onFindClose} />}
         <div className="diff-scroll" ref={scrollRef}>

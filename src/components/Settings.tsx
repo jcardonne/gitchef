@@ -1,12 +1,13 @@
 import { useState, type ReactNode } from "react";
 import { useEscape } from "../useEscape";
 import { PALETTES, getDensity, setDensity, type Palette, type Theme, type Density } from "../theme";
-import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, getFetchIntervalMinutes, setFetchIntervalMinutes, notifyPrefs, type PullAction, type GraphColumnVisibility } from "../storage";
+import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, getFetchIntervalMinutes, setFetchIntervalMinutes, notifyPrefs, getAiConfig, setAiConfig, type PullAction, type GraphColumnVisibility } from "../storage";
 import { SHORTCUT_SECTIONS, comboHint, keyLabel } from "../shortcuts";
 import { GRAPH_COLUMNS } from "./GraphView";
 import { useKeycapPresses } from "../useKeycapPresses";
 import { checkForUpdates } from "../updater";
 import * as api from "../api";
+import type { AiConfig, AiStatus } from "../types";
 
 interface Props {
   theme: Theme;
@@ -16,7 +17,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Section = "appearance" | "general" | "keyboard" | "about";
+type Section = "general" | "appearance" | "ai" | "keyboard" | "about";
 
 /// 24-grid stroke glyph used before field titles and option labels.
 const gi = (path: ReactNode) => (
@@ -36,6 +37,7 @@ const TITLE = {
   fetch: gi(<><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 4v4h-4" /></>),
   author: gi(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>),
   updates: gi(<><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 21v-5h5" /></>),
+  ai: gi(<path d="M12 2l2.4 7.2 7.6 1.1-5.5 5.4 1.3 7.6-6.8-3.6-6.8 3.6 1.3-7.6-5.5-5.4 7.6-1.1L12 2z" />),
   links: gi(<><path d="M9 15l6-6" /><path d="M8 12a3.5 3.5 0 0 1 0-5l2-2a3.5 3.5 0 0 1 5 5l-1 1" /><path d="M16 12a3.5 3.5 0 0 1 0 5l-2 2a3.5 3.5 0 0 1-5-5l1-1" /></>),
   license: gi(<><rect x="4" y="2.5" width="16" height="19" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>),
   credits: gi(<path d="M12 20s-7-4.35-9.5-8.5C1 8 2.5 4 6.5 4c2 0 3.5 1.2 4.5 2.7C12 5.2 13.5 4 15.5 4c4 0 5.5 4 4 7.5C19 15.65 12 20 12 20z" />),
@@ -92,6 +94,7 @@ const icon = (path: ReactNode) => (
 const SECTIONS: { id: Section; label: string; icon: ReactNode }[] = [
   { id: "general", label: "General", icon: icon(<><path d="M2 4.5h6M11.5 4.5h2.5M2 11.5h2.5M8 11.5h6" /><circle cx="9.5" cy="4.5" r="1.8" /><circle cx="5" cy="11.5" r="1.8" /></>) },
   { id: "appearance", label: "Appearance", icon: icon(<path d="M8 2.5C5.5 5.5 4 7.3 4 9.3a4 4 0 0 0 8 0c0-2-1.5-3.8-4-6.8z" />) },
+  { id: "ai", label: "Chef AI", icon: icon(<><path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" /><path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" /></>) },
   { id: "keyboard", label: "Keyboard", icon: icon(<><rect x="1.5" y="4" width="13" height="8" rx="1.5" /><path d="M4 7h0M7 7h0M10 7h0M12.5 7h0M5.5 9.5h5" /></>) },
   { id: "about", label: "About", icon: icon(<><circle cx="8" cy="8" r="6.3" /><path d="M8 7.3v4M8 5.3h0" /></>) },
 ];
@@ -108,7 +111,34 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
   const [fetchInterval, setFetchState] = useState(getFetchIntervalMinutes);
   const [checkState, setCheckState] = useState<"idle" | "checking" | "up-to-date" | "unsupported" | "error">("idle");
   const [available, setAvailable] = useState<{ version: string; install: () => Promise<void> } | null>(null);
+  const [aiConfig, setAiConfigState] = useState<AiConfig>(getAiConfig);
+  const [aiTestStatus, setAiTestStatus] = useState<AiStatus | null>(null);
+  const [testingAi, setTestingAi] = useState(false);
   useKeycapPresses(section === "keyboard");
+
+  const updateAi = (partial: Partial<AiConfig>) => {
+    const next = { ...aiConfig, ...partial };
+    setAiConfig(next);
+    setAiConfigState(next);
+  };
+
+  const testAi = async () => {
+    setTestingAi(true);
+    setAiTestStatus(null);
+    try {
+      const res = await api.aiTestConnection(aiConfig);
+      setAiTestStatus(res);
+    } catch (e) {
+      setAiTestStatus({
+        ok: false,
+        message: String(e),
+        latency_ms: 0,
+        models: [],
+      });
+    } finally {
+      setTestingAi(false);
+    }
+  };
 
   const changeDensity = (d: Density) => {
     setDensity(d);
@@ -297,6 +327,111 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                       {c.icon}<span>{c.label}</span>
                     </button>
                   ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {section === "ai" && (
+            <>
+              <div className="settings-field">
+                <div className="settings-field-label">{TITLE.ai}<span>Provider</span></div>
+                <div className="settings-field-hint">Choose between a local model runner (Ollama) or custom server / cloud.</div>
+                <div className="mode-seg">
+                  <button
+                    className={aiConfig.provider === "ollama" ? "active" : ""}
+                    onClick={() => updateAi({ provider: "ollama", endpoint: "http://127.0.0.1:11434" })}
+                  >
+                    <span>Ollama (Local)</span>
+                  </button>
+                  <button
+                    className={aiConfig.provider === "custom" ? "active" : ""}
+                    onClick={() => updateAi({ provider: "custom" })}
+                  >
+                    <span>Custom / OpenAI compatible</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="settings-field">
+                <div className="settings-field-label"><span>Endpoint URL</span></div>
+                <div className="settings-field-hint">HTTP API host (default for Ollama: http://127.0.0.1:11434).</div>
+                <input
+                  className="ai-input"
+                  value={aiConfig.endpoint}
+                  onChange={(e) => updateAi({ endpoint: e.target.value })}
+                  placeholder="http://127.0.0.1:11434"
+                />
+              </div>
+
+              <div className="settings-field">
+                <div className="settings-field-label"><span>Model</span></div>
+                <div className="settings-field-hint">Select or type the model tag. Click a chip for quick setup.</div>
+                <input
+                  className="ai-input"
+                  value={aiConfig.model}
+                  onChange={(e) => updateAi({ model: e.target.value })}
+                  placeholder="qwen2.5-coder:0.5b"
+                />
+                <div className="ai-chip-group">
+                  {[
+                    { tag: "qwen2.5-coder:0.5b", label: "Qwen 2.5 Coder 0.5B (~350MB, Raspberry Pi / Potato PC)", title: "Ultra lightweight" },
+                    { tag: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B (~980MB, Recommended)", title: "High accuracy" },
+                    { tag: "llama3.2:1b", label: "Llama 3.2 1B (~750MB)", title: "Fast text summarizer" },
+                  ].map((m) => (
+                    <button
+                      key={m.tag}
+                      type="button"
+                      className={`ai-chip${aiConfig.model === m.tag ? " active" : ""}`}
+                      onClick={() => updateAi({ model: m.tag })}
+                      title={m.title}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {aiConfig.provider !== "ollama" && (
+                <div className="settings-field">
+                  <div className="settings-field-label"><span>API Key (Optional)</span></div>
+                  <div className="settings-field-hint">Required only if using a cloud or secured endpoint (e.g. OpenAI, Groq).</div>
+                  <input
+                    type="password"
+                    className="ai-input"
+                    value={aiConfig.api_key || ""}
+                    onChange={(e) => updateAi({ api_key: e.target.value })}
+                    placeholder="sk-..."
+                  />
+                </div>
+              )}
+
+              <div className="settings-field">
+                <button className="about-action-btn" onClick={testAi} disabled={testingAi}>
+                  {testingAi ? "Testing connection..." : "Test Connection"}
+                </button>
+                {aiTestStatus && (
+                  <div className={`ai-status-box ${aiTestStatus.ok ? "ok" : "error"}`}>
+                    {aiTestStatus.ok ? "✓ " : "⚠ "}
+                    {aiTestStatus.message}
+                  </div>
+                )}
+              </div>
+
+              <div className="ai-info-card">
+                <div className="ai-info-title">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6" />
+                    <line x1="8" y1="5" x2="8" y2="8" />
+                    <line x1="8" y1="11" x2="8.01" y2="11" />
+                  </svg>
+                  <span>Quick Start for Raspberry Pi or Low-End PC</span>
+                </div>
+                <div className="ai-info-body">
+                  To run a local model that takes only <strong>~350 MB RAM</strong> and responds in 1 second without GPU:
+                  <div>
+                    <code className="ai-info-code">ollama run qwen2.5-coder:0.5b</code>
+                  </div>
                 </div>
               </div>
             </>

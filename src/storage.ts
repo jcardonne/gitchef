@@ -1,7 +1,7 @@
 // Lightweight persistence for recents + the open-tab session, backed by the
 // webview's localStorage. Pure frontend - no backend round-trips.
 
-import type { TabColor, ForgeRepo } from "./types";
+import type { TabColor, ForgeRepo, AiConfig } from "./types";
 
 const RECENTS_KEY = "gitchef.recents";
 const SESSION_KEY = "gitchef.session";
@@ -302,3 +302,23 @@ export function setPrViewedFiles(repoPath: string, prNumber: number, files: stri
     // quota exceeded or disabled
   }
 }
+
+const AI_CONFIG_KEY = "gitchef.aiConfig";
+
+export const DEFAULT_AI_CONFIG: AiConfig = {
+  provider: "ollama",
+  endpoint: "http://127.0.0.1:11434",
+  model: "qwen2.5-coder:0.5b",
+  api_key: "",
+  temperature: 0.2,
+};
+
+export function getAiConfig(): AiConfig {
+  return { ...DEFAULT_AI_CONFIG, ...read<Partial<AiConfig>>(AI_CONFIG_KEY, {}) };
+}
+
+export function setAiConfig(config: AiConfig): void {
+  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(config));
+  notifyPrefs();
+}
+

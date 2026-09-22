@@ -183,4 +183,24 @@ describe("malformed persisted values", () => {
     localStorage.setItem("gitchef.prViewed./repo.42", "not valid json");
     expect(store.getPrViewedFiles("/repo", 42)).toEqual([]);
   });
+
+  it("stores and retrieves ai configuration with defaults", () => {
+    localStorage.removeItem("gitchef.aiConfig");
+    const cfg = store.getAiConfig();
+    expect(cfg.provider).toBe("ollama");
+    expect(cfg.endpoint).toBe("http://127.0.0.1:11434");
+    expect(cfg.model).toBe("qwen2.5-coder:0.5b");
+
+    store.setAiConfig({
+      provider: "custom",
+      endpoint: "http://localhost:8080",
+      model: "qwen2.5-coder:1.5b",
+      temperature: 0.1,
+    });
+    const updated = store.getAiConfig();
+    expect(updated.provider).toBe("custom");
+    expect(updated.endpoint).toBe("http://localhost:8080");
+    expect(updated.model).toBe("qwen2.5-coder:1.5b");
+  });
 });
+

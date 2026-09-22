@@ -28,6 +28,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { label: "Stage all (or selection)", combo: ["mod", "shift", "S"] },
       { label: "Unstage all (or selection)", combo: ["mod", "shift", "U"] },
       { label: "Commit", combo: ["mod", "Enter"] },
+      { label: "Chef AI commit message", combo: ["mod", "I"] },
     ],
   },
   {

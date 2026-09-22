@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useEscape } from "../useEscape";
+import { useChefAi } from "../useChefAi";
 
 /// Form to open a PR (GitHub) / MR (GitLab) for the current branch via the
 /// gh/glab CLI. The source branch is the checked-out one (handled backend-side);
@@ -8,12 +9,14 @@ export default function CreatePrModal({
   provider,
   baseDefault,
   bases,
+  headBranch = "HEAD",
   onSubmit,
   onClose,
 }: {
   provider: "github" | "gitlab";
   baseDefault: string;
   bases: string[];
+  headBranch?: string;
   onSubmit: (title: string, body: string, base: string) => void;
   onClose: () => void;
 }) {
@@ -21,8 +24,17 @@ export default function CreatePrModal({
   const [body, setBody] = useState("");
   const [base, setBase] = useState(baseDefault);
   const label = provider === "gitlab" ? "Merge Request" : "Pull Request";
+  const { loading: aiLoading, generatePr } = useChefAi();
 
   useEscape(onClose);
+
+  const handleGeneratePr = async () => {
+    if (aiLoading) return;
+    const res = await generatePr(base, headBranch);
+    if (!res) return;
+    setTitle(res.title);
+    setBody(res.body);
+  };
 
   const submit = () => {
     if (!title.trim() || !base) return;
@@ -33,15 +45,30 @@ export default function CreatePrModal({
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal pr-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Create {label}</h3>
-        <label className="pr-field">
-          <span>Title</span>
-          <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={`${label} title`} />
-        </label>
-        <label className="pr-field">
-          <span>Description</span>
-          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} placeholder="Optional description" />
-        </label>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <h3 style={{ margin: 0 }}>Create {label}</h3>
+          <button
+            type="button"
+            className="chef-ai-btn"
+            disabled={aiLoading || !base}
+            onClick={handleGeneratePr}
+            title="Draft PR title & description using Chef AI"
+          >
+            {aiLoading ? (
+              <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
+                <path d="M8 2a6 6 0 0 1 6 6" />
+              </svg>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" />
+                <path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" />
+              </svg>
+            )}
+            <span>{aiLoading ? "Drafting…" : "Draft with Chef AI"}</span>
+          </button>
+        </div>
+
         <label className="pr-field">
           <span>Base branch</span>
           <select value={base} onChange={(e) => setBase(e.target.value)}>
@@ -51,6 +78,14 @@ export default function CreatePrModal({
               </option>
             ))}
           </select>
+        </label>
+        <label className="pr-field">
+          <span>Title</span>
+          <input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={`${label} title`} />
+        </label>
+        <label className="pr-field">
+          <span>Description</span>
+          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={6} placeholder="Optional description" />
         </label>
         <div className="modal-actions">
           <button onClick={onClose}>Cancel</button>

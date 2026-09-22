@@ -23,6 +23,10 @@ import type {
   WorkStats,
   StashInfo,
   WorktreeInfo,
+  AiConfig,
+  AiStatus,
+  GeneratedCommit,
+  GeneratedPr,
 } from "./types";
 
 /// Native folder picker - the "connect to my repos" entry point.
@@ -268,3 +272,14 @@ export const pushTag = (repo: string, remote: string, name: string) =>
   invoke<string>("push_tag", { repo, remote, name });
 export const deleteRemoteTag = (repo: string, remote: string, name: string) =>
   invoke<string>("delete_remote_tag", { repo, remote, name });
+
+// --- Chef AI ---
+export const aiTestConnection = (config: AiConfig) =>
+  invoke<AiStatus>("ai_test_connection", { config });
+export const aiGenerateCommit = (repo: string, stagedOnly: boolean, config: AiConfig) =>
+  invoke<GeneratedCommit>("ai_generate_commit", { repo, stagedOnly, config });
+export const aiGeneratePr = (repo: string, base: string, head: string, config: AiConfig) =>
+  invoke<GeneratedPr>("ai_generate_pr", { repo, base, head, config });
+export const aiExplainConflict = (repo: string, path: string, ours: string, theirs: string, config: AiConfig) =>
+  invoke<string>("ai_explain_conflict", { repo, path, ours, theirs, config });
+

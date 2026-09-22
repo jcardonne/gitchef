@@ -331,3 +331,34 @@ export interface TodoItem {
   summary: string;
   message: string | null;
 }
+
+export type AiProvider = "ollama" | "custom" | "openai";
+
+export interface AiConfig {
+  provider: AiProvider;
+  endpoint: string;
+  model: string;
+  api_key?: string | null;
+  temperature?: number | null;
+}
+
+export interface AiStatus {
+  ok: boolean;
+  message: string;
+  latency_ms: number;
+  models: string[];
+}
+
+export interface GeneratedCommit {
+  full_message: string;
+  commit_type: string | null;
+  scope: string | null;
+  subject: string;
+  body: string | null;
+}
+
+export interface GeneratedPr {
+  title: string;
+  body: string;
+}
+
