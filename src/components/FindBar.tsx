@@ -31,14 +31,10 @@ export default function FindBar({ api, onClose }: { api: FindApi; onClose: () =>
         spellCheck={false}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => {
-          const mod = e.metaKey || e.ctrlKey;
           if (e.key === "Escape") {
             e.preventDefault();
             onClose();
           } else if (e.key === "Enter") {
-            e.preventDefault();
-            step(e.shiftKey ? -1 : 1);
-          } else if (mod && e.key.toLowerCase() === "g") {
             e.preventDefault();
             step(e.shiftKey ? -1 : 1);
           }

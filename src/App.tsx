@@ -111,15 +111,24 @@ export default function App() {
     setActivePath(order[(cur + dir + order.length) % order.length]);
   };
 
+  const activePathRef = useRef(activePath);
+  activePathRef.current = activePath;
+  const closeTabRef = useRef(closeTab);
+  closeTabRef.current = closeTab;
+  const pickAndOpenRef = useRef(pickAndOpen);
+  pickAndOpenRef.current = pickAndOpen;
+
   // Native macOS system menu bar actions
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let disposed = false;
+
     listen<string>("menu-action", (event) => {
       const action = event.payload;
       if (action === "open_repo" || action === "new_tab") {
-        void pickAndOpen();
+        void pickAndOpenRef.current();
       } else if (action === "close_tab") {
-        if (activePath) closeTab(activePath);
+        if (activePathRef.current) closeTabRef.current(activePathRef.current);
       } else if (action === "close_window") {
         void getCurrentWindow().close();
       } else if (action === "settings") {
@@ -133,15 +142,18 @@ export default function App() {
       } else if (action === "report_issue") {
         void api.openUrl("https://github.com/jcardonne/gitchef/issues/new");
       }
-    }).then((un) => {
-      unlisten = un;
-    }).catch(console.error);
+    })
+      .then((un) => {
+        if (disposed) un();
+        else unlisten = un;
+      })
+      .catch(console.error);
 
     return () => {
+      disposed = true;
       if (unlisten) unlisten();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activePath, tabs]);
+  }, []);
 
   // Tab keyboard shortcuts (Cmd on macOS / Ctrl elsewhere).
   useEffect(() => {
@@ -160,9 +172,6 @@ export default function App() {
       } else if (mod && key === "w") {
         e.preventDefault();
         if (activePath) closeTab(activePath);
-      } else if (mod && (key === "b" || (e.shiftKey && key === "s"))) {
-        e.preventDefault();
-        window.dispatchEvent(new CustomEvent("gitchef:toggle-sidebar"));
       } else if (mod && (key === "/" || key === ":")) {
         e.preventDefault();
         setShortcutsOpen((v) => !v);

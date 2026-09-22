@@ -143,9 +143,12 @@ export default function GraphView({
     window.addEventListener("gitchef:prefs", sync);
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     media.addEventListener("change", sync);
+    const observer = new MutationObserver(() => sync());
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => {
       window.removeEventListener("gitchef:prefs", sync);
       media.removeEventListener("change", sync);
+      observer.disconnect();
     };
   }, []);
 
@@ -581,14 +584,10 @@ export default function GraphView({
             placeholder="Search author / sha / message…"
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              const mod = e.metaKey || e.ctrlKey;
               if (e.key === "Escape") {
                 e.preventDefault();
                 closeSearch();
               } else if (e.key === "Enter") {
-                e.preventDefault();
-                step(e.shiftKey ? -1 : 1);
-              } else if (mod && e.key.toLowerCase() === "g") {
                 e.preventDefault();
                 step(e.shiftKey ? -1 : 1);
               }
