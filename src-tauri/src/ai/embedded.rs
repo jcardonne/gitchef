@@ -357,10 +357,9 @@ pub fn generate(
 
     let mut output = String::new();
     let mut decoder = encoding_rs::UTF_8.new_decoder();
-    let mut current_pos = n_prompt as i32;
     let max_new_tokens = 512;
 
-    for _ in 0..max_new_tokens {
+    for current_pos in (n_prompt as i32..).take(max_new_tokens) {
         let token = sampler.sample(&ctx, batch.n_tokens() - 1);
         sampler.accept(token);
 
@@ -379,7 +378,6 @@ pub fn generate(
             .map_err(|e| AppError::Msg(format!("Batch add step error: {e}")))?;
         ctx.decode(&mut batch)
             .map_err(|e| AppError::Msg(format!("Decode step error: {e}")))?;
-        current_pos += 1;
     }
 
     Ok(output.trim().to_string())
