@@ -6033,6 +6033,7 @@ button {
   font-size: 12px;
   line-height: 1.5;
   color: var(--text);
+  white-space: pre-wrap;
 }
 
 .conflict-ai-head {
