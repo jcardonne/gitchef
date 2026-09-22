@@ -14,7 +14,9 @@ import {
   OllamaLogo,
   OpenAiLogo,
   MetaLogo,
-  MetalGpuIcon,
+  GroqLogo,
+  LmStudioLogo,
+  AppleLogo,
   RamIcon,
   ShieldLockIcon,
 } from "./AiLogos";
@@ -546,8 +548,8 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     </div>
 
                     <div className="ai-specs-row">
-                      <span className="ai-spec-pill" title="Accélération GPU Metal sur macOS et multithread CPU">
-                        <MetalGpuIcon size={14} style={{ color: "#f59e0b" }} />
+                      <span className="ai-spec-pill" title="Accélération GPU Metal sur Apple Silicon et multithread CPU">
+                        <AppleLogo size={13} style={{ color: "var(--text)" }} />
                         <span>~150 ms (Metal GPU) / 1-2s (CPU)</span>
                       </span>
                       <span className="ai-spec-pill" title="Empreinte mémoire vive minimale">
@@ -752,8 +754,8 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     <div className="ai-chip-group" style={{ marginBottom: 12 }}>
                       {[
                         { label: "OpenAI (gpt-4o-mini)", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini", icon: <OpenAiLogo size={13} /> },
-                        { label: "Groq (Llama 3.1 8B)", endpoint: "https://api.groq.com/openai/v1", model: "llama-3.1-8b-instant", icon: <MetaLogo size={13} /> },
-                        { label: "LM Studio Local (1234)", endpoint: "http://127.0.0.1:1234/v1", model: "local-model", icon: <MetalGpuIcon size={13} /> },
+                        { label: "Groq (Llama 3.1 8B)", endpoint: "https://api.groq.com/openai/v1", model: "llama-3.1-8b-instant", icon: <GroqLogo size={13} /> },
+                        { label: "LM Studio Local (1234)", endpoint: "http://127.0.0.1:1234/v1", model: "local-model", icon: <LmStudioLogo size={13} /> },
                       ].map((p) => (
                         <button
                           key={p.label}
