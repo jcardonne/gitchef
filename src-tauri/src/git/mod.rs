@@ -16,7 +16,15 @@ pub mod submodule;
 pub mod worktree;
 
 use crate::error::{AppError, AppResult};
+use serde::Serialize;
 use std::path::Path;
+
+#[derive(Clone, Serialize)]
+pub struct GitOutputEvent {
+    pub repo: String,
+    pub stream: String,
+    pub text: String,
+}
 
 /// Working directory of a repo (errors for bare repos).
 pub fn workdir(repo: &git2::Repository) -> AppResult<&Path> {
@@ -60,6 +68,67 @@ pub fn run_git(dir: &Path, args: &[&str]) -> AppResult<String> {
             err.into_owned()
         };
         Err(AppError::Msg(format!("git {}: {}", args.join(" "), msg.trim())))
+    }
+}
+
+/// Run a user-visible Git operation and emit stdout/stderr as lines while it runs.
+/// This keeps hook diagnostics visible instead of reducing them to a final toast.
+pub fn run_git_stream(
+    app: &tauri::AppHandle,
+    dir: &Path,
+    args: &[&str],
+) -> AppResult<String> {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    use std::sync::mpsc;
+    use tauri::Emitter;
+
+    let mut child = Command::new("git")
+        .current_dir(dir)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdout = child.stdout.take().ok_or_else(|| AppError::Msg("failed to open git stdout".into()))?;
+    let stderr = child.stderr.take().ok_or_else(|| AppError::Msg("failed to open git stderr".into()))?;
+    let repo = dir.to_string_lossy().into_owned();
+    let (tx, rx) = mpsc::channel::<(&'static str, String)>();
+    fn forward<R: std::io::Read + Send + 'static>(
+        stream: &'static str,
+        reader: R,
+        tx: mpsc::Sender<(&'static str, String)>,
+    ) {
+        std::thread::spawn(move || {
+            for line in BufReader::new(reader).lines() {
+                match line {
+                    Ok(text) => { let _ = tx.send((stream, format!("{text}\n"))); }
+                    Err(_) => break,
+                }
+            }
+        });
+    }
+    forward("stdout", stdout, tx.clone());
+    forward("stderr", stderr, tx.clone());
+    drop(tx);
+    let mut output = String::new();
+    let mut stderr_output = String::new();
+    for (stream, text) in rx {
+        output.push_str(&text);
+        if stream == "stderr" {
+            stderr_output.push_str(&text);
+        }
+        let _ = app.emit("git-output", GitOutputEvent {
+            repo: repo.clone(),
+            stream: stream.to_string(),
+            text,
+        });
+    }
+    let status = child.wait()?;
+    if status.success() {
+        Ok(output)
+    } else {
+        let detail = if stderr_output.trim().is_empty() { output.trim() } else { stderr_output.trim() };
+        Err(AppError::Msg(format!("git {}: {detail}", args.join(" "))))
     }
 }
 
