@@ -28,14 +28,24 @@ export default function CreatePrModal({
   const {
     loading: aiLoading,
     generatePr,
+    cancel: cancelAi,
     showDownloadModal,
     setShowDownloadModal,
   } = useChefAi();
 
-  useEscape(onClose);
+  useEscape(() => {
+    if (aiLoading) {
+      cancelAi();
+    } else {
+      onClose();
+    }
+  });
 
   const handleGeneratePr = async () => {
-    if (aiLoading) return;
+    if (aiLoading) {
+      cancelAi();
+      return;
+    }
     const res = await generatePr(base, headBranch);
     if (!res) return;
     setTitle(res.title);
@@ -55,23 +65,29 @@ export default function CreatePrModal({
           <h3 style={{ margin: 0 }}>Create {label}</h3>
           <button
             type="button"
-            className="chef-ai-btn"
-            disabled={aiLoading || !base}
-            onClick={handleGeneratePr}
-            title="Draft PR title & description using Chef AI"
+            className={`chef-ai-btn${aiLoading ? " loading" : ""}`}
+            disabled={!aiLoading && !base}
+            onClick={aiLoading ? cancelAi : handleGeneratePr}
+            title={aiLoading ? "Cancel drafting (Esc)" : "Draft PR title & description using Chef AI"}
           >
             {aiLoading ? (
-              <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-                <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
-                <path d="M8 2a6 6 0 0 1 6 6" />
-              </svg>
+              <>
+                <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
+                  <path d="M8 2a6 6 0 0 1 6 6" />
+                </svg>
+                <span>Drafting…</span>
+                <span className="chef-ai-cancel-x" title="Cancel (Esc)">✕</span>
+              </>
             ) : (
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" />
-                <path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" />
-              </svg>
+              <>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" />
+                  <path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" />
+                </svg>
+                <span>Draft with Chef AI</span>
+              </>
             )}
-            <span>{aiLoading ? "Drafting…" : "Draft with Chef AI"}</span>
           </button>
         </div>
 

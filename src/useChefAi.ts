@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import * as api from "./api";
 import { getAiConfig, setAiConfig } from "./storage";
 import type { AiConfig, GeneratedCommit, GeneratedPr } from "./types";
@@ -10,10 +10,17 @@ export function useChefAi() {
   const [loading, setLoading] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => Promise<void>) | null>(null);
+  const cancelIdRef = useRef(0);
 
   const updateConfig = useCallback((next: AiConfig) => {
     setAiConfig(next);
     setConfigState(next);
+  }, []);
+
+  const cancel = useCallback(() => {
+    cancelIdRef.current += 1;
+    setLoading(false);
+    api.aiCancelGeneration().catch(() => {});
   }, []);
 
   const checkEmbeddedReady = useCallback(async (): Promise<boolean> => {
@@ -34,23 +41,29 @@ export function useChefAi() {
   }, []);
 
   const generateCommit = useCallback(
-    async (stagedOnly = true): Promise<GeneratedCommit | null> => {
+    async (stagedOnly = true, currentMessage?: string | null): Promise<GeneratedCommit | null> => {
       const cfg = getAiConfig();
       if (cfg.provider === "embedded") {
         const ready = await checkEmbeddedReady();
         if (!ready) {
           setPendingAction(() => async () => {
-            await generateCommit(stagedOnly);
+            await generateCommit(stagedOnly, currentMessage);
           });
           return null;
         }
       }
+      const reqId = ++cancelIdRef.current;
       setLoading(true);
       try {
-        const result = await api.aiGenerateCommit(repoPath, stagedOnly, cfg);
+        const result = await api.aiGenerateCommit(repoPath, stagedOnly, cfg, currentMessage);
+        if (reqId !== cancelIdRef.current) return null;
         return result;
       } catch (err) {
+        if (reqId !== cancelIdRef.current) return null;
         const msg = String(err);
+        if (msg.includes("cancelled")) {
+          return null;
+        }
         if (msg.includes("Chef AI model is not installed")) {
           setShowDownloadModal(true);
           return null;
@@ -67,7 +80,9 @@ export function useChefAi() {
         }
         return null;
       } finally {
-        setLoading(false);
+        if (reqId === cancelIdRef.current) {
+          setLoading(false);
+        }
       }
     },
     [repoPath, notify, checkEmbeddedReady]
@@ -82,12 +97,18 @@ export function useChefAi() {
           return null;
         }
       }
+      const reqId = ++cancelIdRef.current;
       setLoading(true);
       try {
         const result = await api.aiGeneratePr(repoPath, base, head, cfg);
+        if (reqId !== cancelIdRef.current) return null;
         return result;
       } catch (err) {
+        if (reqId !== cancelIdRef.current) return null;
         const msg = String(err);
+        if (msg.includes("cancelled")) {
+          return null;
+        }
         if (msg.includes("Chef AI model is not installed")) {
           setShowDownloadModal(true);
           return null;
@@ -95,7 +116,9 @@ export function useChefAi() {
         notify(`Chef AI: ${msg}`, true);
         return null;
       } finally {
-        setLoading(false);
+        if (reqId === cancelIdRef.current) {
+          setLoading(false);
+        }
       }
     },
     [repoPath, notify, checkEmbeddedReady]
@@ -110,12 +133,18 @@ export function useChefAi() {
           return null;
         }
       }
+      const reqId = ++cancelIdRef.current;
       setLoading(true);
       try {
         const result = await api.aiExplainConflict(repoPath, path, ours, theirs, cfg);
+        if (reqId !== cancelIdRef.current) return null;
         return result;
       } catch (err) {
+        if (reqId !== cancelIdRef.current) return null;
         const msg = String(err);
+        if (msg.includes("cancelled")) {
+          return null;
+        }
         if (msg.includes("Chef AI model is not installed")) {
           setShowDownloadModal(true);
           return null;
@@ -123,7 +152,9 @@ export function useChefAi() {
         notify(`Chef AI: ${msg}`, true);
         return null;
       } finally {
-        setLoading(false);
+        if (reqId === cancelIdRef.current) {
+          setLoading(false);
+        }
       }
     },
     [repoPath, notify, checkEmbeddedReady]
@@ -144,6 +175,7 @@ export function useChefAi() {
     generateCommit,
     generatePr,
     explainConflict,
+    cancel,
     showDownloadModal,
     setShowDownloadModal,
     handleDownloadSuccess,

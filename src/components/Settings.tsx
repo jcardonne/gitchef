@@ -917,7 +917,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                       <div className="ai-feature-card">
                         <div className="ai-feature-card-header">
                           <span className="ai-feature-title">✨ Commit Messages</span>
-                          <span className="ai-feature-badge">Staging • ⌘I</span>
+                          <span className="ai-feature-badge">Staging • {comboHint(["mod", "I"])}</span>
                         </div>
                         <div className="ai-feature-card-desc">
                           Generate conventional commit messages from staged changes.

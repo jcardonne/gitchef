@@ -37,6 +37,7 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
   const {
     loading: aiLoading,
     explainConflict,
+    cancel: cancelAi,
     showDownloadModal,
     setShowDownloadModal,
   } = useChefAi();
@@ -133,7 +134,11 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
     }, "resolve");
 
   const handleExplainConflict = async () => {
-    if (!file || aiLoading) return;
+    if (aiLoading) {
+      cancelAi();
+      return;
+    }
+    if (!file) return;
     const conflicts = file.segments.filter((s) => s.kind === "conflict");
     if (conflicts.length === 0) return;
     const id = reqId.current;
@@ -142,6 +147,18 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
     const res = await explainConflict(path, oursText, theirsText);
     if (res && reqId.current === id) setAiExplanation(res);
   };
+
+  useEffect(() => {
+    if (!aiLoading) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancelAi();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [aiLoading, cancelAi]);
 
   // Walk the segments; a running index ties each conflict block to its slot in
   // `choices` (keyed by conflict-block document order).
@@ -164,24 +181,30 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
         </button>
         <button
           type="button"
-          className="chef-ai-btn"
+          className={`chef-ai-btn${aiLoading ? " loading" : ""}`}
           style={{ marginLeft: "8px" }}
-          disabled={aiLoading || !file}
+          disabled={!aiLoading && !file}
           onClick={handleExplainConflict}
-          title="Explain this conflict using Chef AI"
+          title={aiLoading ? "Cancel analysis (Esc)" : "Explain this conflict using Chef AI"}
         >
           {aiLoading ? (
-            <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
-              <path d="M8 2a6 6 0 0 1 6 6" />
-            </svg>
+            <>
+              <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
+                <path d="M8 2a6 6 0 0 1 6 6" />
+              </svg>
+              <span>Analyzing…</span>
+              <span className="chef-ai-cancel-x" title="Cancel (Esc)">✕</span>
+            </>
           ) : (
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" />
-              <path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" />
-            </svg>
+            <>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" />
+                <path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" />
+              </svg>
+              <span>Chef AI Explain</span>
+            </>
           )}
-          <span>{aiLoading ? "Analyzing…" : "Chef AI Explain"}</span>
         </button>
         <span className="conflict-spacer" />
         <button className="mini-btn" disabled={!ready} onClick={() => resolve(choices as string[])}>

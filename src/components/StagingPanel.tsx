@@ -59,6 +59,7 @@ export default function StagingPanel({
   const {
     loading: aiLoading,
     generateCommit,
+    cancel: cancelAi,
     showDownloadModal,
     setShowDownloadModal,
     handleDownloadSuccess,
@@ -338,14 +339,18 @@ export default function StagingPanel({
   };
 
   const handleChefAiCommit = async () => {
-    if (aiLoading) return;
+    if (aiLoading) {
+      cancelAi();
+      return;
+    }
     const hasStaged = status.staged.length > 0;
     const isAmending = amend && canAmend;
     if (!hasStaged && !isAmending) {
       notify("Stage changes first to generate a commit message with Chef AI.", true);
       return;
     }
-    const res = await generateCommit(!isAmending || hasStaged);
+    const currentDraft = (composedSubject || message).trim();
+    const res = await generateCommit(!isAmending || hasStaged, currentDraft || null);
     if (!res) return;
     const cfg = getAiConfig();
     const style = cfg.commit_style || "title_only";
@@ -375,6 +380,11 @@ export default function StagingPanel({
   useEffect(() => {
     if (!isActive || suppressShortcuts) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && aiLoading) {
+        e.preventDefault();
+        cancelAi();
+        return;
+      }
       if (!(e.metaKey || e.ctrlKey)) return;
       const k = e.key.toLowerCase();
       if (k === "enter") {
@@ -394,7 +404,7 @@ export default function StagingPanel({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isActive, suppressShortcuts, handleCommit, handleChefAiCommit, stageFiles, unstageFiles, selUnstaged, selStaged, status]);
+  }, [isActive, suppressShortcuts, aiLoading, cancelAi, handleCommit, handleChefAiCommit, stageFiles, unstageFiles, selUnstaged, selStaged, status]);
 
   const sectionCount = (visible: number, total: number) =>
     hasSearch ? `${visible}/${total}` : String(total);
@@ -587,30 +597,53 @@ export default function StagingPanel({
             onChange={(e) => setScope(e.target.value)}
             title="Optional scope, e.g. api"
           />
-          <button
-            type="button"
-            className="chef-ai-btn"
-            disabled={aiLoading || (!status.staged.length && !(amend && canAmend))}
-            onClick={handleChefAiCommit}
-            title={
-              !status.staged.length && !(amend && canAmend)
-                ? "Stage changes first to generate a commit message"
-                : `Generate commit message with Chef AI (${comboHint(["mod", "I"])})`
-            }
-          >
-            {aiLoading ? (
-              <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-                <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
-                <path d="M8 2a6 6 0 0 1 6 6" />
-              </svg>
-            ) : (
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" />
-                <path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" />
-              </svg>
-            )}
-            <span>{aiLoading ? "Cooking…" : "Chef AI"}</span>
-          </button>
+          {(() => {
+            const hasDraft = Boolean(message.trim() || type);
+            return (
+              <button
+                type="button"
+                className={`chef-ai-btn${aiLoading ? " loading" : ""}`}
+                disabled={!aiLoading && !status.staged.length && !(amend && canAmend)}
+                onClick={handleChefAiCommit}
+                title={
+                  aiLoading
+                    ? "Cancel generation (Esc)"
+                    : !status.staged.length && !(amend && canAmend)
+                    ? "Stage changes first to generate a commit message"
+                    : hasDraft
+                    ? `Generate alternative commit message (${comboHint(["mod", "I"])})`
+                    : `Generate commit message with Chef AI (${comboHint(["mod", "I"])})`
+                }
+              >
+                {aiLoading ? (
+                  <>
+                    <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                      <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
+                      <path d="M8 2a6 6 0 0 1 6 6" />
+                    </svg>
+                    <span>Cooking…</span>
+                    <span className="chef-ai-cancel-x" title="Cancel (Esc)">✕</span>
+                  </>
+                ) : hasDraft ? (
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M2 8a6 6 0 1 1 1.76 4.24l-2.26 1.76" />
+                      <path d="M1.5 10v4h4" />
+                    </svg>
+                    <span>Re-roll</span>
+                  </>
+                ) : (
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" />
+                      <path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" />
+                    </svg>
+                    <span>Chef AI</span>
+                  </>
+                )}
+              </button>
+            );
+          })()}
         </div>
         <textarea
           ref={messageRef}

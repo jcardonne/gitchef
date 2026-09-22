@@ -5914,6 +5914,36 @@ button {
   cursor: not-allowed;
 }
 
+.chef-ai-btn.loading {
+  cursor: pointer;
+  opacity: 0.95;
+}
+
+.chef-ai-btn.loading:hover {
+  background: color-mix(in srgb, var(--del) 15%, var(--accent));
+  border-color: var(--del);
+  color: #fff;
+}
+
+.chef-ai-cancel-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  margin-left: 2px;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.chef-ai-btn.loading:hover .chef-ai-cancel-x {
+  background: var(--del);
+  color: #fff;
+}
+
 .chef-ai-btn .spinner {
   animation: spin 0.8s linear infinite;
 }
