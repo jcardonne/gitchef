@@ -39,6 +39,8 @@ thiserror = "2"
 # one event. macOS backend is FSEvents (no openssl), so it cross-compiles like the
 # rest.
 notify-debouncer-mini = "0.4"
+llama-cpp-2 = "0.1.156"
+encoding_rs = "0.8.41"
 
 [profile.dev]
 incremental = true

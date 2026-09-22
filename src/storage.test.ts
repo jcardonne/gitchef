@@ -183,4 +183,33 @@ describe("malformed persisted values", () => {
     localStorage.setItem("gitchef.prViewed./repo.42", "not valid json");
     expect(store.getPrViewedFiles("/repo", 42)).toEqual([]);
   });
+
+  it("stores and retrieves ai configuration with defaults", () => {
+    localStorage.removeItem("gitchef.aiConfig");
+    const cfg = store.getAiConfig();
+    expect(cfg.provider).toBe("embedded");
+    expect(cfg.endpoint).toBe("http://127.0.0.1:11434");
+    expect(cfg.model).toBe("qwen2.5-coder:0.5b");
+    expect(cfg.commit_style).toBe("title_only");
+
+    store.setAiConfig({
+      provider: "custom",
+      endpoint: "http://localhost:8080",
+      model: "qwen2.5-coder:1.5b",
+      api_key: "sk-secret-key-123",
+      temperature: 0.1,
+      commit_style: "title_and_body",
+    });
+    const updated = store.getAiConfig();
+    expect(updated.provider).toBe("custom");
+    expect(updated.endpoint).toBe("http://localhost:8080");
+    expect(updated.model).toBe("qwen2.5-coder:1.5b");
+    expect(updated.api_key).toBe("sk-secret-key-123");
+    expect(updated.commit_style).toBe("title_and_body");
+
+    // api_key must NOT be persisted in localStorage in plaintext
+    const rawLocal = localStorage.getItem("gitchef.aiConfig");
+    expect(rawLocal).not.toContain("sk-secret-key-123");
+  });
 });
+

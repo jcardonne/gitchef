@@ -1,12 +1,25 @@
-import { useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useEscape } from "../useEscape";
 import { PALETTES, getDensity, setDensity, type Palette, type Theme, type Density } from "../theme";
-import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, getFetchIntervalMinutes, setFetchIntervalMinutes, notifyPrefs, type PullAction, type GraphColumnVisibility } from "../storage";
+import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, getFetchIntervalMinutes, setFetchIntervalMinutes, notifyPrefs, getAiConfig, setAiConfig, type PullAction, type GraphColumnVisibility } from "../storage";
 import { SHORTCUT_SECTIONS, comboHint, keyLabel } from "../shortcuts";
 import { GRAPH_COLUMNS } from "./GraphView";
 import { useKeycapPresses } from "../useKeycapPresses";
 import { checkForUpdates } from "../updater";
 import * as api from "../api";
+import type { AiConfig, AiStatus, DownloadProgressEvent, EmbeddedModelStatus } from "../types";
+import {
+  QwenLogo,
+  OllamaLogo,
+  OpenAiLogo,
+  MetaLogo,
+  GroqLogo,
+  LmStudioLogo,
+  AppleLogo,
+  RamIcon,
+  ShieldLockIcon,
+} from "./AiLogos";
 
 interface Props {
   theme: Theme;
@@ -16,7 +29,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Section = "appearance" | "general" | "keyboard" | "about";
+type Section = "general" | "appearance" | "ai" | "keyboard" | "about";
 
 /// 24-grid stroke glyph used before field titles and option labels.
 const gi = (path: ReactNode) => (
@@ -36,6 +49,7 @@ const TITLE = {
   fetch: gi(<><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 4v4h-4" /></>),
   author: gi(<><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>),
   updates: gi(<><path d="M3 12a9 9 0 0 1 15-6.7L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15 6.7L3 16" /><path d="M3 21v-5h5" /></>),
+  ai: gi(<path d="M12 2l2.4 7.2 7.6 1.1-5.5 5.4 1.3 7.6-6.8-3.6-6.8 3.6 1.3-7.6-5.5-5.4 7.6-1.1L12 2z" />),
   links: gi(<><path d="M9 15l6-6" /><path d="M8 12a3.5 3.5 0 0 1 0-5l2-2a3.5 3.5 0 0 1 5 5l-1 1" /><path d="M16 12a3.5 3.5 0 0 1 0 5l-2 2a3.5 3.5 0 0 1-5-5l1-1" /></>),
   license: gi(<><rect x="4" y="2.5" width="16" height="19" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>),
   credits: gi(<path d="M12 20s-7-4.35-9.5-8.5C1 8 2.5 4 6.5 4c2 0 3.5 1.2 4.5 2.7C12 5.2 13.5 4 15.5 4c4 0 5.5 4 4 7.5C19 15.65 12 20 12 20z" />),
@@ -92,6 +106,7 @@ const icon = (path: ReactNode) => (
 const SECTIONS: { id: Section; label: string; icon: ReactNode }[] = [
   { id: "general", label: "General", icon: icon(<><path d="M2 4.5h6M11.5 4.5h2.5M2 11.5h2.5M8 11.5h6" /><circle cx="9.5" cy="4.5" r="1.8" /><circle cx="5" cy="11.5" r="1.8" /></>) },
   { id: "appearance", label: "Appearance", icon: icon(<path d="M8 2.5C5.5 5.5 4 7.3 4 9.3a4 4 0 0 0 8 0c0-2-1.5-3.8-4-6.8z" />) },
+  { id: "ai", label: "Chef AI", icon: icon(<><path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" /><path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" /></>) },
   { id: "keyboard", label: "Keyboard", icon: icon(<><rect x="1.5" y="4" width="13" height="8" rx="1.5" /><path d="M4 7h0M7 7h0M10 7h0M12.5 7h0M5.5 9.5h5" /></>) },
   { id: "about", label: "About", icon: icon(<><circle cx="8" cy="8" r="6.3" /><path d="M8 7.3v4M8 5.3h0" /></>) },
 ];
@@ -108,7 +123,138 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
   const [fetchInterval, setFetchState] = useState(getFetchIntervalMinutes);
   const [checkState, setCheckState] = useState<"idle" | "checking" | "up-to-date" | "unsupported" | "error">("idle");
   const [available, setAvailable] = useState<{ version: string; install: () => Promise<void> } | null>(null);
+  const [aiConfig, setAiConfigState] = useState<AiConfig>(getAiConfig);
+  const [aiTestStatus, setAiTestStatus] = useState<AiStatus | null>(null);
+  const [testingAi, setTestingAi] = useState(false);
+  const [embeddedStatus, setEmbeddedStatus] = useState<EmbeddedModelStatus | null>(null);
+  const [embeddedProgress, setEmbeddedProgress] = useState<DownloadProgressEvent | null>(null);
+  const [isStartingDownload, setIsStartingDownload] = useState(false);
+  const [aiSubTab, setAiSubTab] = useState<"model" | "settings">("model");
   useKeycapPresses(section === "keyboard");
+
+  const fetchEmbeddedStatus = async () => {
+    try {
+      const res = await api.aiGetEmbeddedStatus();
+      setEmbeddedStatus(res);
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (section !== "ai") return;
+    fetchEmbeddedStatus();
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    listen<DownloadProgressEvent>("chef://model-download-progress", (event) => {
+      setEmbeddedProgress(event.payload);
+      if (event.payload.done || event.payload.error) {
+        fetchEmbeddedStatus();
+      }
+    })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [section]);
+
+  const [ollamaOnline, setOllamaOnline] = useState<boolean | null>(null);
+
+  const checkOllamaStatus = useCallback(async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:11434/api/tags", { method: "GET" });
+      setOllamaOnline(res.ok);
+    } catch {
+      setOllamaOnline(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (section === "ai" && aiConfig.provider === "ollama") {
+      checkOllamaStatus();
+    }
+  }, [section, aiConfig.provider, checkOllamaStatus]);
+
+  const handleDownloadEmbedded = async () => {
+    setIsStartingDownload(true);
+    try {
+      await api.aiDownloadEmbeddedModel();
+      await fetchEmbeddedStatus();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsStartingDownload(false);
+    }
+  };
+
+  const handleCancelDownload = async () => {
+    try {
+      await api.aiCancelEmbeddedDownload();
+      setEmbeddedProgress(null);
+      await fetchEmbeddedStatus();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteEmbedded = async () => {
+    if (!window.confirm("Are you sure you want to delete the local Chef AI model (491 MB)? You can redownload it at any time.")) {
+      return;
+    }
+    try {
+      await api.aiDeleteEmbeddedModel();
+      await fetchEmbeddedStatus();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const isDownloading = embeddedStatus?.downloading || (embeddedProgress && !embeddedProgress.done && !embeddedProgress.error);
+  const percent = embeddedProgress
+    ? Math.round(embeddedProgress.progress_percent)
+    : embeddedStatus?.progress_percent
+    ? Math.round(embeddedStatus.progress_percent)
+    : 0;
+
+  const formatMb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
+  const formatSpeed = (bytesPerSec: number) => {
+    if (bytesPerSec > 1024 * 1024) {
+      return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+    }
+    return `${Math.round(bytesPerSec / 1024)} KB/s`;
+  };
+
+  const updateAi = (partial: Partial<AiConfig>) => {
+    const next = { ...aiConfig, ...partial };
+    setAiConfig(next);
+    setAiConfigState(next);
+  };
+
+  const testAi = async () => {
+    setTestingAi(true);
+    setAiTestStatus(null);
+    try {
+      const res = await api.aiTestConnection(aiConfig);
+      setAiTestStatus(res);
+    } catch (e) {
+      setAiTestStatus({
+        ok: false,
+        message: String(e),
+        latency_ms: 0,
+        models: [],
+      });
+    } finally {
+      setTestingAi(false);
+    }
+  };
 
   const changeDensity = (d: Density) => {
     setDensity(d);
@@ -299,6 +445,511 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                   ))}
                 </div>
               </div>
+            </>
+          )}
+
+          {section === "ai" && (
+            <>
+              {/* Chef AI Sub-tabs */}
+              <div className="ai-subtabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={aiSubTab === "model"}
+                  className={`ai-subtab-btn${aiSubTab === "model" ? " active" : ""}`}
+                  onClick={() => setAiSubTab("model")}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="4" y="4" width="16" height="16" rx="2" />
+                    <rect x="9" y="9" width="6" height="6" />
+                    <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3" />
+                  </svg>
+                  <span>Modèle</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={aiSubTab === "settings"}
+                  className={`ai-subtab-btn${aiSubTab === "settings" ? " active" : ""}`}
+                  onClick={() => setAiSubTab("settings")}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                  <span>Paramètres</span>
+                </button>
+              </div>
+
+              {aiSubTab === "model" && (
+                <>
+                  {/* 1. Provider Cards */}
+                  <div className="settings-field">
+                    <div className="settings-field-label">{TITLE.ai}<span>Moteur d'IA (Provider)</span></div>
+                <div className="settings-field-hint">
+                  Sélectionnez le moteur d'intelligence artificielle utilisé pour vos commits, PRs et explications de conflits.
+                </div>
+                <div className="ai-provider-grid">
+                  <div
+                    className={`ai-provider-card${aiConfig.provider === "embedded" ? " active" : ""}`}
+                    onClick={() => updateAi({ provider: "embedded" })}
+                  >
+                    <div className="ai-provider-card-top">
+                      <QwenLogo size={24} />
+                      <span className="ai-badge recommended">1-Clic • 0 Config</span>
+                    </div>
+                    <div className="ai-provider-title">Local Embarqué</div>
+                    <div className="ai-provider-desc">
+                      Qwen 2.5 Coder 0.5B natif. 100% privé, sans Ollama ni ligne de commande.
+                    </div>
+                  </div>
+
+                  <div
+                    className={`ai-provider-card${aiConfig.provider === "ollama" ? " active" : ""}`}
+                    onClick={() => updateAi({ provider: "ollama", endpoint: "http://127.0.0.1:11434" })}
+                  >
+                    <div className="ai-provider-card-top">
+                      <OllamaLogo size={24} />
+                      <span className="ai-badge">Serveur local</span>
+                    </div>
+                    <div className="ai-provider-title">Ollama</div>
+                    <div className="ai-provider-desc">
+                      Connectez votre instance Ollama locale (Qwen, Llama 3.2, DeepSeek...).
+                    </div>
+                  </div>
+
+                  <div
+                    className={`ai-provider-card${aiConfig.provider === "custom" ? " active" : ""}`}
+                    onClick={() => updateAi({ provider: "custom" })}
+                  >
+                    <div className="ai-provider-card-top">
+                      <OpenAiLogo size={24} />
+                      <span className="ai-badge">API / Cloud</span>
+                    </div>
+                    <div className="ai-provider-title">Custom / OpenAI</div>
+                    <div className="ai-provider-desc">
+                      OpenAI (GPT-4o), Groq, LM Studio ou tout serveur compatible OpenAI.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Provider Details */}
+              {aiConfig.provider === "embedded" && (
+                <div className="settings-field">
+                  <div className="settings-field-label">
+                    <span>Modèle Local Intégré</span>
+                  </div>
+                  <div className="settings-field-hint">
+                    Exécution native directement dans GitChef via <code>llama-cpp</code> sans dépendance tierce.
+                  </div>
+
+                  <div className="ai-hero-card">
+                    <div className="ai-hero-header">
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <QwenLogo size={32} />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>Qwen 2.5 Coder 0.5B Instruct</div>
+                          <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "monospace" }}>
+                            GGUF Q4_K_M • 491 Mo
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          padding: "3px 10px",
+                          borderRadius: 12,
+                          background: embeddedStatus?.installed
+                            ? "color-mix(in srgb, var(--add) 18%, transparent)"
+                            : isDownloading
+                            ? "color-mix(in srgb, var(--accent) 18%, transparent)"
+                            : "var(--border)",
+                          color: embeddedStatus?.installed
+                            ? "var(--add)"
+                            : isDownloading
+                            ? "var(--accent)"
+                            : "var(--muted)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {embeddedStatus?.installed
+                          ? "● Installé & Prêt"
+                          : isDownloading
+                          ? "● Téléchargement..."
+                          : "○ Non installé"}
+                      </span>
+                    </div>
+
+                    <div className="ai-specs-row">
+                      <span className="ai-spec-pill" title="Accélération GPU Metal sur Apple Silicon et multithread CPU">
+                        <AppleLogo size={13} style={{ color: "var(--text)" }} />
+                        <span>~150 ms (Metal GPU) / 1-2s (CPU)</span>
+                      </span>
+                      <span className="ai-spec-pill" title="Empreinte mémoire vive minimale">
+                        <RamIcon size={14} style={{ color: "var(--accent)" }} />
+                        <span>&lt; 450 Mo RAM (Raspberry Pi OK)</span>
+                      </span>
+                      <span className="ai-spec-pill" title="Aucune donnée ne quitte votre ordinateur">
+                        <ShieldLockIcon size={14} style={{ color: "var(--add)" }} />
+                        <span>100% Hors-ligne & Privé</span>
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 12 }}>
+                      Modèle ultra-performant et économe taillé pour rédiger les commits conventionnels, les résumés de Pull Requests et analyser les conflits Git.
+                    </div>
+
+                    {isDownloading && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div
+                          style={{
+                            height: 6,
+                            background: "var(--bg)",
+                            borderRadius: 3,
+                            overflow: "hidden",
+                            marginBottom: 6,
+                          }}
+                        >
+                          <div
+                            style={{
+                              height: "100%",
+                              width: `${percent}%`,
+                              background: "linear-gradient(90deg, var(--accent), #a855f7)",
+                              transition: "width 0.2s ease",
+                            }}
+                          />
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)" }}>
+                          <span>
+                            {formatMb(embeddedProgress?.bytes_downloaded ?? 0)} Mo / {formatMb(embeddedProgress?.total_bytes ?? 515000000)} Mo ({percent}%)
+                          </span>
+                          <span>{formatSpeed(embeddedProgress?.speed_bytes_per_sec ?? 0)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {embeddedStatus?.error && (
+                      <div className="ai-status-box error" style={{ marginBottom: 10 }}>
+                        ⚠ {embeddedStatus.error}
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      {!embeddedStatus?.installed && !isDownloading && (
+                        <button
+                          className="about-action-btn"
+                          onClick={handleDownloadEmbedded}
+                          disabled={isStartingDownload}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                        >
+                          <QwenLogo size={15} />
+                          <span>{isStartingDownload ? "Démarrage..." : "Télécharger le modèle (491 Mo)"}</span>
+                        </button>
+                      )}
+                      {isDownloading && (
+                        <button
+                          className="mini-btn"
+                          style={{ padding: "6px 12px" }}
+                          onClick={handleCancelDownload}
+                        >
+                          Annuler le téléchargement
+                        </button>
+                      )}
+                      {embeddedStatus?.installed && (
+                        <>
+                          <button
+                            className="about-action-btn"
+                            onClick={testAi}
+                            disabled={testingAi}
+                          >
+                            {testingAi ? "Test de l'inférence en cours..." : "Tester l'inférence locale"}
+                          </button>
+                          <button
+                            className="mini-btn"
+                            style={{ padding: "6px 12px", color: "var(--del)" }}
+                            onClick={handleDeleteEmbedded}
+                            title="Supprime le fichier du disque pour libérer 491 Mo"
+                          >
+                            Supprimer le modèle
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {aiConfig.provider === "ollama" && (
+                <>
+                  <div className="settings-field">
+                    <div className="settings-field-label">
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <OllamaLogo size={16} />
+                        <span>Connexion Ollama</span>
+                      </div>
+                      <span
+                        style={{
+                          marginLeft: "auto",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: ollamaOnline ? "var(--add)" : "var(--del)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: "50%",
+                            background: ollamaOnline ? "var(--add)" : "var(--del)",
+                          }}
+                        />
+                        {ollamaOnline === null
+                          ? "Vérification..."
+                          : ollamaOnline
+                          ? "Ollama actif"
+                          : "Non détecté"}
+                      </span>
+                    </div>
+                    <div className="settings-field-hint">Hôte HTTP de l'API locale Ollama (port par défaut 11434).</div>
+                    <input
+                      className="ai-input"
+                      value={aiConfig.endpoint}
+                      onChange={(e) => updateAi({ endpoint: e.target.value })}
+                      placeholder="http://127.0.0.1:11434"
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <div className="settings-field-label"><span>Modèle Ollama</span></div>
+                    <div className="settings-field-hint">Sélectionnez un modèle recommandé ou tapez le tag :</div>
+                    <input
+                      className="ai-input"
+                      value={aiConfig.model}
+                      onChange={(e) => updateAi({ model: e.target.value })}
+                      placeholder="qwen2.5-coder:0.5b"
+                    />
+                    <div className="ai-chip-group">
+                      {[
+                        { tag: "qwen2.5-coder:0.5b", label: "Qwen 2.5 Coder 0.5B (~350Mo, Ultra-léger)", icon: <QwenLogo size={13} /> },
+                        { tag: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B (~980Mo, Recommandé)", icon: <QwenLogo size={13} /> },
+                        { tag: "llama3.2:1b", label: "Llama 3.2 1B (~750Mo, Rapide)", icon: <MetaLogo size={13} /> },
+                      ].map((m) => (
+                        <button
+                          key={m.tag}
+                          type="button"
+                          className={`ai-chip${aiConfig.model === m.tag ? " active" : ""}`}
+                          onClick={() => updateAi({ model: m.tag })}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+                        >
+                          {m.icon}
+                          <span>{m.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="settings-field">
+                    <button className="about-action-btn" onClick={testAi} disabled={testingAi}>
+                      {testingAi ? "Test de connexion..." : "Tester la connexion Ollama"}
+                    </button>
+                  </div>
+
+                  {!ollamaOnline && (
+                    <div className="ai-info-card">
+                      <div className="ai-info-title">
+                        <OllamaLogo size={15} />
+                        <span>Lancer Ollama en arrière-plan</span>
+                      </div>
+                      <div className="ai-info-body">
+                        Si Ollama n'est pas encore démarré, lancez cette commande dans votre terminal :
+                        <div>
+                          <code className="ai-info-code">ollama run {aiConfig.model || "qwen2.5-coder:0.5b"}</code>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {aiConfig.provider === "custom" && (
+                <>
+                  <div className="settings-field">
+                    <div className="settings-field-label">
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <OpenAiLogo size={16} />
+                        <span>Configuration Endpoint & Clé</span>
+                      </div>
+                    </div>
+                    <div className="settings-field-hint">Présélections rapides pour vos fournisseurs préférés :</div>
+                    <div className="ai-chip-group" style={{ marginBottom: 12 }}>
+                      {[
+                        { label: "OpenAI (gpt-4o-mini)", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini", icon: <OpenAiLogo size={13} /> },
+                        { label: "Groq (Llama 3.1 8B)", endpoint: "https://api.groq.com/openai/v1", model: "llama-3.1-8b-instant", icon: <GroqLogo size={13} /> },
+                        { label: "LM Studio Local (1234)", endpoint: "http://127.0.0.1:1234/v1", model: "local-model", icon: <LmStudioLogo size={13} /> },
+                      ].map((p) => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          className="ai-chip"
+                          onClick={() => updateAi({ endpoint: p.endpoint, model: p.model })}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+                        >
+                          {p.icon}
+                          <span>{p.label}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 500 }}>Endpoint URL</div>
+                        <input
+                          className="ai-input"
+                          value={aiConfig.endpoint}
+                          onChange={(e) => updateAi({ endpoint: e.target.value })}
+                          placeholder="https://api.openai.com/v1"
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 500 }}>Identifiant du modèle</div>
+                        <input
+                          className="ai-input"
+                          value={aiConfig.model}
+                          onChange={(e) => updateAi({ model: e.target.value })}
+                          placeholder="gpt-4o-mini"
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 500 }}>Clé d'API (Optionnelle si serveur local)</div>
+                        <input
+                          type="password"
+                          className="ai-input"
+                          value={aiConfig.api_key || ""}
+                          onChange={(e) => updateAi({ api_key: e.target.value })}
+                          placeholder="sk-..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="settings-field">
+                    <button className="about-action-btn" onClick={testAi} disabled={testingAi}>
+                      {testingAi ? "Test de connexion..." : "Tester la connexion API"}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Status Box if test result */}
+              {aiTestStatus && (
+                <div className={`ai-status-box ${aiTestStatus.ok ? "ok" : "error"}`}>
+                  {aiTestStatus.ok ? "✓ " : "⚠ "}
+                  {aiTestStatus.message}
+                </div>
+              )}
+
+                </>
+              )}
+
+              {aiSubTab === "settings" && (
+                <>
+                  {/* 1. Format du Message de Commit */}
+                  <div className="settings-field">
+                    <div className="settings-field-label">
+                      <span>Format du Message de Commit</span>
+                    </div>
+                    <div className="settings-field-hint">
+                      Choisissez la structure générée lors de l'utilisation du bouton ✨ ou de <code>Cmd/Ctrl + I</code>.
+                    </div>
+
+                    <div className="ai-style-grid">
+                      <div
+                        className={`ai-style-card${(aiConfig.commit_style || "title_only") === "title_only" ? " active" : ""}`}
+                        onClick={() => updateAi({ commit_style: "title_only" })}
+                      >
+                        <div className="ai-radio-dot" />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
+                            Titre seul (Concis)
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
+                            Une seule ligne conventionnelle sous 72 caractères.
+                            <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
+                              ex: feat(auth): add refresh token handling
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        className={`ai-style-card${aiConfig.commit_style === "title_and_body" ? " active" : ""}`}
+                        onClick={() => updateAi({ commit_style: "title_and_body" })}
+                      >
+                        <div className="ai-radio-dot" />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
+                            Titre & Description (Détaillé)
+                          </div>
+                          <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
+                            Titre conventionnel suivi d'un paragraphe ou d'une liste à puces.
+                            <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
+                              ex: fix(diff): handle binary files<br />- avoid utf8 decoding crash
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. Fonctionnalités & Intégrations Chef AI */}
+                  <div className="settings-field" style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
+                    <div className="settings-field-label">
+                      <span>Fonctionnalités & Intégrations Chef AI</span>
+                    </div>
+                    <div className="settings-field-hint">
+                      Chef AI s'intègre naturellement dans les vues clés de GitChef :
+                    </div>
+                    <div className="ai-features-grid">
+                      <div className="ai-feature-card">
+                        <div className="ai-feature-card-header">
+                          <span>✨ Messages de Commit</span>
+                        </div>
+                        <div className="ai-feature-card-desc">
+                          Dans le panneau Staging, cliquez sur <strong>✨</strong> ou appuyez sur <code>Cmd/Ctrl + I</code> pour générer un message conventionnel précis basé sur vos fichiers indexés.
+                        </div>
+                      </div>
+                      <div className="ai-feature-card">
+                        <div className="ai-feature-card-header">
+                          <span>🔀 Pull Requests</span>
+                        </div>
+                        <div className="ai-feature-card-desc">
+                          Dans la modale de création de PR, cliquez sur <strong>Rédiger avec Chef AI</strong> pour synthétiser automatiquement tous les commits de la branche en un titre et description Markdown.
+                        </div>
+                      </div>
+                      <div className="ai-feature-card">
+                        <div className="ai-feature-card-header">
+                          <span>⚡ Résolution de Conflits</span>
+                        </div>
+                        <div className="ai-feature-card-desc">
+                          Lors d'un conflit de fusion ou rebase, cliquez sur <strong>Expliquer avec Chef AI</strong> dans le visualiseur 3-way pour comprendre la divergence et la marche à suivre.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3. Sécurité & Confidentialité */}
+                  <div className="ai-privacy-note">
+                    <ShieldLockIcon size={18} style={{ color: "var(--add)", marginTop: 2, flexShrink: 0 }} />
+                    <div>
+                      <strong style={{ color: "var(--text)" }}>Sécurité & Respect de la vie privée :</strong> Seuls les fichiers stagés (ou le diff spécifique) sont analysés. Les fichiers volumineux ou générés (<code>pnpm-lock.yaml</code>, <code>Cargo.lock</code>, binaires) sont automatiquement ignorés pour préserver le contexte et la mémoire. Avec le modèle <strong>Local Embarqué</strong>, 100% du calcul s'exécute sur votre machine sans aucune connexion externe.
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
 

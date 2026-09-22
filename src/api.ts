@@ -23,6 +23,11 @@ import type {
   WorkStats,
   StashInfo,
   WorktreeInfo,
+  AiConfig,
+  AiStatus,
+  EmbeddedModelStatus,
+  GeneratedCommit,
+  GeneratedPr,
 } from "./types";
 
 /// Native folder picker - the "connect to my repos" entry point.
@@ -268,3 +273,22 @@ export const pushTag = (repo: string, remote: string, name: string) =>
   invoke<string>("push_tag", { repo, remote, name });
 export const deleteRemoteTag = (repo: string, remote: string, name: string) =>
   invoke<string>("delete_remote_tag", { repo, remote, name });
+
+// --- Chef AI ---
+export const aiTestConnection = (config: AiConfig) =>
+  invoke<AiStatus>("ai_test_connection", { config });
+export const aiGetEmbeddedStatus = () =>
+  invoke<EmbeddedModelStatus>("ai_get_embedded_status");
+export const aiDownloadEmbeddedModel = () =>
+  invoke<void>("ai_download_embedded_model");
+export const aiCancelEmbeddedDownload = () =>
+  invoke<void>("ai_cancel_embedded_download");
+export const aiDeleteEmbeddedModel = () =>
+  invoke<void>("ai_delete_embedded_model");
+export const aiGenerateCommit = (repo: string, stagedOnly: boolean, config: AiConfig) =>
+  invoke<GeneratedCommit>("ai_generate_commit", { repo, stagedOnly, config });
+export const aiGeneratePr = (repo: string, base: string, head: string, config: AiConfig) =>
+  invoke<GeneratedPr>("ai_generate_pr", { repo, base, head, config });
+export const aiExplainConflict = (repo: string, path: string, ours: string, theirs: string, config: AiConfig) =>
+  invoke<string>("ai_explain_conflict", { repo, path, ours, theirs, config });
+
