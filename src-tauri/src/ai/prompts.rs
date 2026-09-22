@@ -64,10 +64,20 @@ Provide a 2-3 sentence explanation:
 Keep it extremely concise and direct."#;
 
 /// Builds the user prompt for commit message generation.
-pub fn build_commit_user_prompt(diff_summary: &str) -> String {
-    format!(
-        "Please generate a Conventional Commit message for these changes:\n\n{diff_summary}"
-    )
+pub fn build_commit_user_prompt(diff_summary: &str, current_message: Option<&str>) -> String {
+    if let Some(prev) = current_message.filter(|s| !s.trim().is_empty()) {
+        format!(
+            "Please generate an alternative Conventional Commit message for these changes.\n\
+             Provide a different phrasing or focus than this previous draft: \"{}\"\n\n\
+             {}",
+            prev.lines().next().unwrap_or("").trim(),
+            diff_summary
+        )
+    } else {
+        format!(
+            "Please generate a Conventional Commit message for these changes:\n\n{diff_summary}"
+        )
+    }
 }
 
 /// Builds the user prompt for PR generation.

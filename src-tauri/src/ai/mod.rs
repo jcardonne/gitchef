@@ -10,13 +10,20 @@ use crate::git::diff;
 use git2::{Repository, Sort};
 use tauri::AppHandle;
 
+/// Cancels any in-progress Chef AI inference.
+pub fn cancel_generation() {
+    embedded::cancel_generation();
+}
+
 /// Generates a Conventional Commit message from staged changes (or unstaged changes if
-/// staged_only is false and nothing is staged).
+/// staged_only is false and nothing is staged). Supports providing current_message to request
+/// an alternative phrasing (re-roll).
 pub fn generate_commit(
     app: &AppHandle,
     repo: &Repository,
     staged_only: bool,
     config: &AiConfig,
+    current_message: Option<&str>,
 ) -> AppResult<GeneratedCommit> {
     let mut files = diff::staged_diff(repo)?;
     if files.is_empty() {
@@ -36,10 +43,16 @@ pub fn generate_commit(
     }
 
     let diff_summary = diff_filter::prepare_diff_for_llm(&files);
-    let user_prompt = prompts::build_commit_user_prompt(&diff_summary);
+    let user_prompt = prompts::build_commit_user_prompt(&diff_summary, current_message);
     let system_prompt = prompts::build_commit_system_prompt(config.commit_style.as_deref());
 
-    let raw_response = client::generate_chat(app, config, &system_prompt, &user_prompt)?;
+    let mut cfg = config.clone();
+    if current_message.is_some() {
+        // Slightly bump temperature to encourage alternative wording on re-roll
+        cfg.temperature = Some((cfg.temperature.unwrap_or(0.2) + 0.35).min(1.0));
+    }
+
+    let raw_response = client::generate_chat(app, &cfg, &system_prompt, &user_prompt)?;
     Ok(client::parse_commit_message(&raw_response))
 }
 

@@ -124,15 +124,15 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
             </svg>
           </div>
           <div>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Chef AI — Assistant Local 1-Clic</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Chef AI — 1-Click Local Assistant</h3>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>
-              Modèle embarqué ultra-léger • 100% privé
+              Ultra-lightweight embedded model • 100% private
             </div>
           </div>
         </div>
 
         <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--text-dim)", margin: "14px 0" }}>
-          Chef AI génère des messages de commit conventionnels, rédige vos Pull Requests et explique vos conflits Git sans nécessiter d’outils tiers comme Ollama.
+          Chef AI generates conventional commits, drafts PRs, and explains merge conflicts with zero external tools or dependencies.
         </div>
 
         <div
@@ -149,20 +149,20 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--muted)" }}>Modèle</span>
+            <span style={{ color: "var(--muted)" }}>Model</span>
             <span style={{ fontWeight: 600 }}>Qwen 2.5 Coder 0.5B Instruct</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--muted)" }}>Taille téléchargement</span>
-            <span>~468 Mo (format GGUF Q4_K_M)</span>
+            <span style={{ color: "var(--muted)" }}>Download size</span>
+            <span>~468 MB (GGUF Q4_K_M)</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--muted)" }}>Mémoire requise</span>
-            <span>&lt; 450 Mo RAM (rapide sur tout PC / Raspberry Pi)</span>
+            <span style={{ color: "var(--muted)" }}>Memory footprint</span>
+            <span>&lt; 450 MB RAM (fast on any machine)</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--muted)" }}>Confidentialité</span>
-            <span style={{ color: "var(--green, #22c55e)", fontWeight: 600 }}>100% Hors-ligne / Zéro cloud</span>
+            <span style={{ color: "var(--muted)" }}>Privacy</span>
+            <span style={{ color: "var(--green, #22c55e)", fontWeight: 600 }}>100% Offline / Zero cloud</span>
           </div>
         </div>
 
@@ -185,7 +185,7 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
         {isDownloading ? (
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 6 }}>
-              <span style={{ fontWeight: 600 }}>Téléchargement en cours...</span>
+              <span style={{ fontWeight: 600 }}>Downloading model...</span>
               <span style={{ color: "var(--accent)" }}>{percent}%</span>
             </div>
             <div
@@ -218,8 +218,8 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
             >
               <span>
                 {progress
-                  ? `${formatMb(progress.bytes_downloaded)} Mo / ${formatMb(progress.total_bytes)} Mo`
-                  : "Préparation..."}
+                  ? `${formatMb(progress.bytes_downloaded)} MB / ${formatMb(progress.total_bytes)} MB`
+                  : "Preparing..."}
               </span>
               <span>{progress && progress.speed_bytes_per_sec > 0 ? formatSpeed(progress.speed_bytes_per_sec) : ""}</span>
             </div>
@@ -229,12 +229,12 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
         <div className="modal-actions" style={{ marginTop: 18 }}>
           {isDownloading ? (
             <button type="button" onClick={handleCancel}>
-              Annuler
+              Cancel
             </button>
           ) : (
             <>
               <button type="button" onClick={onClose}>
-                Plus tard
+                Maybe Later
               </button>
               <button
                 type="button"
@@ -257,14 +257,14 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
                       <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
                       <path d="M8 2a6 6 0 0 1 6 6" />
                     </svg>
-                    <span>Lancement...</span>
+                    <span>Starting...</span>
                   </>
                 ) : (
                   <>
                     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M8 2v9M4.5 7.5L8 11l3.5-3.5M2.5 13.5h11" />
                     </svg>
-                    <span>Télécharger et Activer en 1-Clic</span>
+                    <span>Download &amp; Enable (1-Click)</span>
                   </>
                 )}
               </button>

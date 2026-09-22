@@ -66,6 +66,15 @@ static DOWNLOAD_STATE: LazyLock<Mutex<DownloadState>> = LazyLock::new(|| {
 });
 
 static INFERENCE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+static CANCEL_INFERENCE: LazyLock<AtomicBool> = LazyLock::new(|| AtomicBool::new(false));
+
+pub fn cancel_generation() {
+    CANCEL_INFERENCE.store(true, Ordering::SeqCst);
+}
+
+pub fn is_cancelled() -> bool {
+    CANCEL_INFERENCE.load(Ordering::Relaxed)
+}
 
 /// Returns the models directory inside the app data directory.
 pub fn models_dir(app: &AppHandle) -> AppResult<PathBuf> {
@@ -359,7 +368,13 @@ pub fn generate(
     let mut decoder = encoding_rs::UTF_8.new_decoder();
     let max_new_tokens = 512;
 
+    // Reset cancellation flag before inference starts
+    CANCEL_INFERENCE.store(false, Ordering::SeqCst);
+
     for current_pos in (n_prompt as i32..).take(max_new_tokens) {
+        if is_cancelled() {
+            return Err(AppError::Msg("Generation cancelled by user".into()));
+        }
         let token = sampler.sample(&ctx, batch.n_tokens() - 1);
         sampler.accept(token);
 

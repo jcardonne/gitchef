@@ -5914,6 +5914,36 @@ button {
   cursor: not-allowed;
 }
 
+.chef-ai-btn.loading {
+  cursor: pointer;
+  opacity: 0.95;
+}
+
+.chef-ai-btn.loading:hover {
+  background: color-mix(in srgb, var(--del) 15%, var(--accent));
+  border-color: var(--del);
+  color: #fff;
+}
+
+.chef-ai-cancel-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  margin-left: 2px;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.chef-ai-btn.loading:hover .chef-ai-cancel-x {
+  background: var(--del);
+  color: #fff;
+}
+
 .chef-ai-btn .spinner {
   animation: spin 0.8s linear infinite;
 }
@@ -6033,6 +6063,7 @@ button {
   font-size: 12px;
   line-height: 1.5;
   color: var(--text);
+  white-space: pre-wrap;
 }
 
 .conflict-ai-head {
@@ -6254,7 +6285,7 @@ button {
 .ai-features-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
   margin-top: 10px;
 }
 
@@ -6267,7 +6298,7 @@ button {
 .ai-feature-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding: 12px 14px;
   border-radius: 8px;
   border: 1px solid var(--border);
@@ -6277,16 +6308,33 @@ button {
 .ai-feature-card-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+}
+
+.ai-feature-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12.5px;
   font-weight: 600;
   color: var(--text);
 }
 
+.ai-feature-badge {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
 .ai-feature-card-desc {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-dim);
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
 .ai-privacy-note {
@@ -6297,7 +6345,7 @@ button {
   border-radius: 8px;
   background: color-mix(in srgb, var(--accent) 6%, var(--bg-elev));
   border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
-  margin-top: 14px;
+  margin-top: 16px;
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-dim);
