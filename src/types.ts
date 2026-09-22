@@ -375,6 +375,7 @@ export interface GeneratedCommit {
   scope: string | null;
   subject: string;
   body: string | null;
+  breaking: boolean;
 }
 
 export interface GeneratedPr {

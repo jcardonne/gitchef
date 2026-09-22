@@ -86,14 +86,21 @@ pub fn prepare_diff_for_llm(files: &[FileDiff]) -> String {
 
     let mut out = String::with_capacity(MAX_DIFF_CHARS);
 
-    // 1. High-level summary of all changed files
+    // 1. High-level summary of modified files
     out.push_str("Modified files:\n");
     let mut relevant_files: Vec<&FileDiff> = Vec::new();
     let mut skipped_noisy: Vec<&str> = Vec::new();
+    let max_summary_budget = MAX_DIFF_CHARS / 3;
+    let mut omitted_summary_files = 0;
 
     for file in files {
         if is_noisy_file(&file.path) {
             skipped_noisy.push(&file.path);
+            continue;
+        }
+        if out.len() > max_summary_budget {
+            omitted_summary_files += 1;
+            relevant_files.push(file);
             continue;
         }
         if file.binary || file.oversized {
@@ -114,6 +121,10 @@ pub fn prepare_diff_for_llm(files: &[FileDiff]) -> String {
         }
         out.push_str(&format!("- {} (+{}, -{})\n", file.path, adds, dels));
         relevant_files.push(file);
+    }
+
+    if omitted_summary_files > 0 {
+        out.push_str(&format!("- (...and {omitted_summary_files} more changed files)\n"));
     }
 
     if !skipped_noisy.is_empty() {

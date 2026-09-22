@@ -40,6 +40,7 @@ pub struct GeneratedCommit {
     pub scope: Option<String>,
     pub subject: String,
     pub body: Option<String>,
+    pub breaking: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -54,13 +55,25 @@ fn create_agent() -> ureq::Agent {
         .build()
 }
 
-fn normalize_endpoint(endpoint: &str) -> String {
+fn validate_endpoint(endpoint: &str) -> AppResult<String> {
     let trimmed = endpoint.trim().trim_end_matches('/');
-    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+    let normalized = if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
         format!("http://{trimmed}")
     } else {
         trimmed.to_string()
+    };
+
+    let lower = normalized.to_lowercase();
+    if lower.contains("169.254.169.254")
+        || lower.contains("metadata.google.internal")
+        || lower.contains("fd00:ec2::254")
+    {
+        return Err(crate::error::AppError::Msg(
+            "Access to cloud metadata endpoints is restricted for security.".into(),
+        ));
     }
+
+    Ok(normalized)
 }
 
 /// Tests connectivity to the configured AI provider and lists installed/available models.
@@ -96,7 +109,17 @@ pub fn test_connection(app: &tauri::AppHandle, config: &AiConfig) -> AppResult<A
         }
     }
 
-    let base_url = normalize_endpoint(&config.endpoint);
+    let base_url = match validate_endpoint(&config.endpoint) {
+        Ok(u) => u,
+        Err(e) => {
+            return Ok(AiStatus {
+                ok: false,
+                message: e.to_string(),
+                latency_ms: 0,
+                models: Vec::new(),
+            });
+        }
+    };
     let agent = create_agent();
 
     if config.provider == "ollama" {
@@ -236,7 +259,7 @@ pub fn generate_chat(
         return super::embedded::generate(app, system_prompt, user_prompt, temperature);
     }
 
-    let base_url = normalize_endpoint(&config.endpoint);
+    let base_url = validate_endpoint(&config.endpoint)?;
     let agent = create_agent();
 
     if config.provider == "ollama" {
@@ -382,12 +405,14 @@ pub fn parse_commit_message(raw: &str) -> GeneratedCommit {
     let mut commit_type = None;
     let mut scope = None;
     let mut subject = first_line.to_string();
+    let mut breaking = false;
 
     if let Some(colon_pos) = first_line.find(':') {
         let prefix = first_line[..colon_pos].trim();
         let rest = first_line[colon_pos + 1..].trim();
 
         // Check if prefix ends with '!' for breaking change
+        breaking = prefix.ends_with('!');
         let prefix_clean = prefix.strip_suffix('!').unwrap_or(prefix);
 
         if let Some(open_paren) = prefix_clean.find('(') {
@@ -420,6 +445,7 @@ pub fn parse_commit_message(raw: &str) -> GeneratedCommit {
         scope,
         subject,
         body,
+        breaking,
     }
 }
 
@@ -489,6 +515,20 @@ mod tests {
         assert_eq!(parsed.scope.as_deref(), Some("graph"));
         assert_eq!(parsed.subject, "optimize lane layout");
         assert_eq!(parsed.body.as_deref(), Some("reduce memory overhead"));
+    }
+
+    #[test]
+    fn test_parse_commit_breaking() {
+        let msg = "feat(api)!: drop legacy v1 endpoints\n\nBREAKING CHANGE: v1 routes are removed";
+        let parsed = parse_commit_message(msg);
+        assert_eq!(parsed.commit_type.as_deref(), Some("feat"));
+        assert_eq!(parsed.scope.as_deref(), Some("api"));
+        assert_eq!(parsed.subject, "drop legacy v1 endpoints");
+        assert!(parsed.breaking);
+        assert_eq!(
+            parsed.body.as_deref(),
+            Some("BREAKING CHANGE: v1 routes are removed")
+        );
     }
 
     #[test]

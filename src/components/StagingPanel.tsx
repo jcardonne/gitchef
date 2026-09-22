@@ -347,11 +347,13 @@ export default function StagingPanel({
     }
     const res = await generateCommit(!isAmending || hasStaged);
     if (!res) return;
-    if (res.commit_type && COMMIT_TYPES.includes(res.commit_type)) {
+    if (res.commit_type && !res.breaking && COMMIT_TYPES.includes(res.commit_type)) {
       setType(res.commit_type);
       setScope(res.scope || "");
       setMessage(res.body ? `${res.subject}\n\n${res.body}` : res.subject);
     } else {
+      setType("");
+      setScope("");
       setMessage(res.full_message);
     }
   };
