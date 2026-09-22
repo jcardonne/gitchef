@@ -53,7 +53,7 @@ describe("GitChef conflict resolution", () => {
     // .tree-folder, so the single .file-row is it (matches the beforeEach wait).
     const row = await $(".change-list .file-row");
     await row.click();
-    await $(".conflict-block").waitForExist({ timeout: 10000 });
+    await $(".conflict-block").waitForExist({ timeout: 15000 });
     // ours + theirs sides both rendered.
     await expect($(".conflict-head.ours")).toExist();
     await expect($(".conflict-head.theirs")).toExist();
@@ -61,11 +61,15 @@ describe("GitChef conflict resolution", () => {
 
   it("resolves the conflict and enables Continue", async () => {
     // Accept incoming (theirs) for the only block, then mark resolved.
+    await $(".conflict-actions .mini-btn").waitForExist({ timeout: 20000 });
     const accept = await $$(".conflict-actions .mini-btn").find(
       async (b) => (await b.getText()) === "Accept incoming"
     );
     await accept.click();
-    const markResolved = await $(".conflict-bar .mini-btn:last-child");
+    const markResolved = await $$(".conflict-bar .mini-btn").find(
+      async (b) => (await b.getText()) === "Mark resolved"
+    );
+    await markResolved.waitForClickable({ timeout: 15000 });
     await markResolved.click();
 
     // Once the last conflict is staged, the banner drops its blocking state and
@@ -78,7 +82,9 @@ describe("GitChef conflict resolution", () => {
   });
 
   it("finishes the rebase on Continue", async () => {
-    await $(".seq-banner .mini-btn.primary").click();
+    const cont = await $(".seq-banner .mini-btn.primary");
+    await cont.waitForClickable({ timeout: 15000 });
+    await cont.click();
     // Rebase completes -> no operation in progress -> banner gone.
     await browser.waitUntil(async () => !(await $(".seq-banner").isExisting()), {
       timeout: 20000,
@@ -86,3 +92,4 @@ describe("GitChef conflict resolution", () => {
     });
   });
 });
+

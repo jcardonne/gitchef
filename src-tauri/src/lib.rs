@@ -642,8 +642,15 @@ fn ai_generate_commit(
     repo: String,
     staged_only: bool,
     config: ai::AiConfig,
+    current_message: Option<String>,
 ) -> AppResult<ai::GeneratedCommit> {
-    ai::generate_commit(&app, &open(&repo)?, staged_only, &config)
+    ai::generate_commit(&app, &open(&repo)?, staged_only, &config, current_message.as_deref())
+}
+
+#[tauri::command(async)]
+fn ai_cancel_generation() -> AppResult<()> {
+    ai::cancel_generation();
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -849,6 +856,7 @@ pub fn run() {
             ai_download_embedded_model,
             ai_cancel_embedded_download,
             ai_delete_embedded_model,
+            ai_cancel_generation,
             ai_generate_commit,
             ai_generate_pr,
             ai_explain_conflict,

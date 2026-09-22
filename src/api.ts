@@ -285,8 +285,10 @@ export const aiCancelEmbeddedDownload = () =>
   invoke<void>("ai_cancel_embedded_download");
 export const aiDeleteEmbeddedModel = () =>
   invoke<void>("ai_delete_embedded_model");
-export const aiGenerateCommit = (repo: string, stagedOnly: boolean, config: AiConfig) =>
-  invoke<GeneratedCommit>("ai_generate_commit", { repo, stagedOnly, config });
+export const aiCancelGeneration = () =>
+  invoke<void>("ai_cancel_generation");
+export const aiGenerateCommit = (repo: string, stagedOnly: boolean, config: AiConfig, currentMessage?: string | null) =>
+  invoke<GeneratedCommit>("ai_generate_commit", { repo, stagedOnly, config, currentMessage: currentMessage ?? null });
 export const aiGeneratePr = (repo: string, base: string, head: string, config: AiConfig) =>
   invoke<GeneratedPr>("ai_generate_pr", { repo, base, head, config });
 export const aiExplainConflict = (repo: string, path: string, ours: string, theirs: string, config: AiConfig) =>
