@@ -354,12 +354,15 @@ export interface DownloadProgressEvent {
   error?: string | null;
 }
 
+export type CommitStyle = "title_only" | "title_and_body";
+
 export interface AiConfig {
   provider: AiProvider;
   endpoint: string;
   model: string;
   api_key?: string | null;
   temperature?: number | null;
+  commit_style?: CommitStyle;
 }
 
 export interface AiStatus {

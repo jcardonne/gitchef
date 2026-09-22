@@ -3,7 +3,7 @@ import { confirm, save } from "@tauri-apps/plugin-dialog";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import * as api from "../api";
 import type { FileStatus, StatusResult } from "../types";
-import { getChangesView, setChangesView, getStagingCollapsed, setStagingCollapsed, type ChangesView } from "../storage";
+import { getChangesView, setChangesView, getStagingCollapsed, setStagingCollapsed, getAiConfig, type ChangesView } from "../storage";
 import { useRepo, type RefreshOpts } from "../repoContext";
 import ChangeList from "./ChangeList";
 import { comboHint } from "../shortcuts";
@@ -347,14 +347,24 @@ export default function StagingPanel({
     }
     const res = await generateCommit(!isAmending || hasStaged);
     if (!res) return;
+    const cfg = getAiConfig();
+    const style = cfg.commit_style || "title_only";
     if (res.commit_type && !res.breaking && COMMIT_TYPES.includes(res.commit_type)) {
       setType(res.commit_type);
       setScope(res.scope || "");
-      setMessage(res.body ? `${res.subject}\n\n${res.body}` : res.subject);
+      if (style === "title_only") {
+        setMessage(res.subject);
+      } else {
+        setMessage(res.body ? `${res.subject}\n\n${res.body}` : res.subject);
+      }
     } else {
       setType("");
       setScope("");
-      setMessage(res.full_message);
+      if (style === "title_only" && res.subject) {
+        setMessage(res.subject);
+      } else {
+        setMessage(res.full_message);
+      }
     }
   };
 

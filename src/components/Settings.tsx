@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useEscape } from "../useEscape";
 import { PALETTES, getDensity, setDensity, type Palette, type Theme, type Density } from "../theme";
@@ -9,6 +9,15 @@ import { useKeycapPresses } from "../useKeycapPresses";
 import { checkForUpdates } from "../updater";
 import * as api from "../api";
 import type { AiConfig, AiStatus, DownloadProgressEvent, EmbeddedModelStatus } from "../types";
+import {
+  QwenLogo,
+  OllamaLogo,
+  OpenAiLogo,
+  MetaLogo,
+  MetalGpuIcon,
+  RamIcon,
+  ShieldLockIcon,
+} from "./AiLogos";
 
 interface Props {
   theme: Theme;
@@ -153,6 +162,23 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
       unlisten?.();
     };
   }, [section]);
+
+  const [ollamaOnline, setOllamaOnline] = useState<boolean | null>(null);
+
+  const checkOllamaStatus = useCallback(async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:11434/api/tags", { method: "GET" });
+      setOllamaOnline(res.ok);
+    } catch {
+      setOllamaOnline(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (section === "ai" && aiConfig.provider === "ollama") {
+      checkOllamaStatus();
+    }
+  }, [section, aiConfig.provider, checkOllamaStatus]);
 
   const handleDownloadEmbedded = async () => {
     setIsStartingDownload(true);
@@ -421,172 +447,238 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
 
           {section === "ai" && (
             <>
+              {/* 1. Provider Cards */}
               <div className="settings-field">
-                <div className="settings-field-label">{TITLE.ai}<span>Provider</span></div>
-                <div className="settings-field-hint">Choose between the built-in 1-click model, Ollama, or a custom API.</div>
-                <div className="mode-seg">
-                  <button
-                    className={aiConfig.provider === "embedded" ? "active" : ""}
+                <div className="settings-field-label">{TITLE.ai}<span>Moteur d'IA (Provider)</span></div>
+                <div className="settings-field-hint">
+                  Sélectionnez le moteur d'intelligence artificielle utilisé pour vos commits, PRs et explications de conflits.
+                </div>
+                <div className="ai-provider-grid">
+                  <div
+                    className={`ai-provider-card${aiConfig.provider === "embedded" ? " active" : ""}`}
                     onClick={() => updateAi({ provider: "embedded" })}
                   >
-                    <span>Embedded (1-Click)</span>
-                  </button>
-                  <button
-                    className={aiConfig.provider === "ollama" ? "active" : ""}
-                    onClick={() => updateAi({ provider: "ollama", endpoint: "http://127.0.0.1:11434" })}
-                  >
-                    <span>Ollama (Local)</span>
-                  </button>
-                  <button
-                    className={aiConfig.provider === "custom" ? "active" : ""}
-                    onClick={() => updateAi({ provider: "custom" })}
-                  >
-                    <span>Custom / OpenAI</span>
-                  </button>
-                </div>
-              </div>
-
-              {aiConfig.provider === "embedded" ? (
-                <>
-                  <div className="settings-field">
-                    <div className="settings-field-label"><span>Local Engine</span></div>
-                    <div className="settings-field-hint">
-                      Runs 100% locally on your machine with Metal GPU or CPU acceleration. No external dependencies, server, or Ollama required.
+                    <div className="ai-provider-card-top">
+                      <QwenLogo size={24} />
+                      <span className="ai-badge recommended">1-Clic • 0 Config</span>
                     </div>
-
-                    <div
-                      style={{
-                        marginTop: 10,
-                        padding: "14px 16px",
-                        background: "var(--bg-elev)",
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontWeight: 600, fontSize: 13 }}>Qwen 2.5 Coder 0.5B Instruct</span>
-                          <span
-                            style={{
-                              fontSize: 11,
-                              padding: "2px 7px",
-                              borderRadius: 10,
-                              background: embeddedStatus?.installed
-                                ? "color-mix(in srgb, var(--add) 18%, transparent)"
-                                : isDownloading
-                                ? "color-mix(in srgb, var(--accent) 18%, transparent)"
-                                : "var(--border)",
-                              color: embeddedStatus?.installed
-                                ? "var(--add)"
-                                : isDownloading
-                                ? "var(--accent)"
-                                : "var(--muted)",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {embeddedStatus?.installed
-                              ? "Installed"
-                              : isDownloading
-                              ? "Downloading..."
-                              : "Not Installed"}
-                          </span>
-                        </div>
-                        <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "monospace" }}>491 MB (GGUF Q4_K_M)</span>
-                      </div>
-
-                      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 12 }}>
-                        Ultra-fast local model optimized for Git commit messages, Pull Request summaries, and conflict explanations. Takes &lt;450 MB RAM.
-                      </div>
-
-                      {isDownloading && (
-                        <div style={{ marginBottom: 12 }}>
-                          <div
-                            style={{
-                              height: 6,
-                              background: "var(--bg)",
-                              borderRadius: 3,
-                              overflow: "hidden",
-                              marginBottom: 6,
-                            }}
-                          >
-                            <div
-                              style={{
-                                height: "100%",
-                                width: `${percent}%`,
-                                background: "var(--accent)",
-                                transition: "width 0.2s ease",
-                              }}
-                            />
-                          </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)" }}>
-                            <span>
-                              {formatMb(embeddedProgress?.bytes_downloaded ?? 0)} MB / {formatMb(embeddedProgress?.total_bytes ?? 515000000)} MB ({percent}%)
-                            </span>
-                            <span>{formatSpeed(embeddedProgress?.speed_bytes_per_sec ?? 0)}</span>
-                          </div>
-                        </div>
-                      )}
-
-                      {embeddedStatus?.error && (
-                        <div className="ai-status-box error" style={{ marginBottom: 10 }}>
-                          ⚠ {embeddedStatus.error}
-                        </div>
-                      )}
-
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        {!embeddedStatus?.installed && !isDownloading && (
-                          <button
-                            className="about-action-btn"
-                            onClick={handleDownloadEmbedded}
-                            disabled={isStartingDownload}
-                          >
-                            {isStartingDownload ? "Starting..." : "Download Model (491 MB)"}
-                          </button>
-                        )}
-                        {isDownloading && (
-                          <button
-                            className="mini-btn"
-                            style={{ padding: "6px 12px" }}
-                            onClick={handleCancelDownload}
-                          >
-                            Cancel Download
-                          </button>
-                        )}
-                        {embeddedStatus?.installed && (
-                          <>
-                            <button
-                              className="about-action-btn"
-                              onClick={testAi}
-                              disabled={testingAi}
-                            >
-                              {testingAi ? "Testing inference..." : "Test Local Inference"}
-                            </button>
-                            <button
-                              className="mini-btn"
-                              style={{ padding: "6px 12px", color: "var(--del)" }}
-                              onClick={handleDeleteEmbedded}
-                              title="Delete model file from disk to free 491 MB"
-                            >
-                              Delete Model
-                            </button>
-                          </>
-                        )}
-                      </div>
+                    <div className="ai-provider-title">Local Embarqué</div>
+                    <div className="ai-provider-desc">
+                      Qwen 2.5 Coder 0.5B natif. 100% privé, sans Ollama ni ligne de commande.
                     </div>
                   </div>
 
-                  {aiTestStatus && (
-                    <div className={`ai-status-box ${aiTestStatus.ok ? "ok" : "error"}`}>
-                      {aiTestStatus.ok ? "✓ " : "⚠ "}
-                      {aiTestStatus.message}
+                  <div
+                    className={`ai-provider-card${aiConfig.provider === "ollama" ? " active" : ""}`}
+                    onClick={() => updateAi({ provider: "ollama", endpoint: "http://127.0.0.1:11434" })}
+                  >
+                    <div className="ai-provider-card-top">
+                      <OllamaLogo size={24} />
+                      <span className="ai-badge">Serveur local</span>
                     </div>
-                  )}
-                </>
-              ) : (
+                    <div className="ai-provider-title">Ollama</div>
+                    <div className="ai-provider-desc">
+                      Connectez votre instance Ollama locale (Qwen, Llama 3.2, DeepSeek...).
+                    </div>
+                  </div>
+
+                  <div
+                    className={`ai-provider-card${aiConfig.provider === "custom" ? " active" : ""}`}
+                    onClick={() => updateAi({ provider: "custom" })}
+                  >
+                    <div className="ai-provider-card-top">
+                      <OpenAiLogo size={24} />
+                      <span className="ai-badge">API / Cloud</span>
+                    </div>
+                    <div className="ai-provider-title">Custom / OpenAI</div>
+                    <div className="ai-provider-desc">
+                      OpenAI (GPT-4o), Groq, LM Studio ou tout serveur compatible OpenAI.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Provider Details */}
+              {aiConfig.provider === "embedded" && (
+                <div className="settings-field">
+                  <div className="settings-field-label">
+                    <span>Modèle Local Intégré</span>
+                  </div>
+                  <div className="settings-field-hint">
+                    Exécution native directement dans GitChef via <code>llama-cpp</code> sans dépendance tierce.
+                  </div>
+
+                  <div className="ai-hero-card">
+                    <div className="ai-hero-header">
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <QwenLogo size={32} />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>Qwen 2.5 Coder 0.5B Instruct</div>
+                          <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "monospace" }}>
+                            GGUF Q4_K_M • 491 Mo
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 11,
+                          padding: "3px 10px",
+                          borderRadius: 12,
+                          background: embeddedStatus?.installed
+                            ? "color-mix(in srgb, var(--add) 18%, transparent)"
+                            : isDownloading
+                            ? "color-mix(in srgb, var(--accent) 18%, transparent)"
+                            : "var(--border)",
+                          color: embeddedStatus?.installed
+                            ? "var(--add)"
+                            : isDownloading
+                            ? "var(--accent)"
+                            : "var(--muted)",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {embeddedStatus?.installed
+                          ? "● Installé & Prêt"
+                          : isDownloading
+                          ? "● Téléchargement..."
+                          : "○ Non installé"}
+                      </span>
+                    </div>
+
+                    <div className="ai-specs-row">
+                      <span className="ai-spec-pill" title="Accélération GPU Metal sur macOS et multithread CPU">
+                        <MetalGpuIcon size={14} style={{ color: "#f59e0b" }} />
+                        <span>~150 ms (Metal GPU) / 1-2s (CPU)</span>
+                      </span>
+                      <span className="ai-spec-pill" title="Empreinte mémoire vive minimale">
+                        <RamIcon size={14} style={{ color: "var(--accent)" }} />
+                        <span>&lt; 450 Mo RAM (Raspberry Pi OK)</span>
+                      </span>
+                      <span className="ai-spec-pill" title="Aucune donnée ne quitte votre ordinateur">
+                        <ShieldLockIcon size={14} style={{ color: "var(--add)" }} />
+                        <span>100% Hors-ligne & Privé</span>
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 12 }}>
+                      Modèle ultra-performant et économe taillé pour rédiger les commits conventionnels, les résumés de Pull Requests et analyser les conflits Git.
+                    </div>
+
+                    {isDownloading && (
+                      <div style={{ marginBottom: 12 }}>
+                        <div
+                          style={{
+                            height: 6,
+                            background: "var(--bg)",
+                            borderRadius: 3,
+                            overflow: "hidden",
+                            marginBottom: 6,
+                          }}
+                        >
+                          <div
+                            style={{
+                              height: "100%",
+                              width: `${percent}%`,
+                              background: "linear-gradient(90deg, var(--accent), #a855f7)",
+                              transition: "width 0.2s ease",
+                            }}
+                          />
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)" }}>
+                          <span>
+                            {formatMb(embeddedProgress?.bytes_downloaded ?? 0)} Mo / {formatMb(embeddedProgress?.total_bytes ?? 515000000)} Mo ({percent}%)
+                          </span>
+                          <span>{formatSpeed(embeddedProgress?.speed_bytes_per_sec ?? 0)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {embeddedStatus?.error && (
+                      <div className="ai-status-box error" style={{ marginBottom: 10 }}>
+                        ⚠ {embeddedStatus.error}
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      {!embeddedStatus?.installed && !isDownloading && (
+                        <button
+                          className="about-action-btn"
+                          onClick={handleDownloadEmbedded}
+                          disabled={isStartingDownload}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                        >
+                          <QwenLogo size={15} />
+                          <span>{isStartingDownload ? "Démarrage..." : "Télécharger le modèle (491 Mo)"}</span>
+                        </button>
+                      )}
+                      {isDownloading && (
+                        <button
+                          className="mini-btn"
+                          style={{ padding: "6px 12px" }}
+                          onClick={handleCancelDownload}
+                        >
+                          Annuler le téléchargement
+                        </button>
+                      )}
+                      {embeddedStatus?.installed && (
+                        <>
+                          <button
+                            className="about-action-btn"
+                            onClick={testAi}
+                            disabled={testingAi}
+                          >
+                            {testingAi ? "Test de l'inférence en cours..." : "Tester l'inférence locale"}
+                          </button>
+                          <button
+                            className="mini-btn"
+                            style={{ padding: "6px 12px", color: "var(--del)" }}
+                            onClick={handleDeleteEmbedded}
+                            title="Supprime le fichier du disque pour libérer 491 Mo"
+                          >
+                            Supprimer le modèle
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {aiConfig.provider === "ollama" && (
                 <>
                   <div className="settings-field">
-                    <div className="settings-field-label"><span>Endpoint URL</span></div>
-                    <div className="settings-field-hint">HTTP API host (default for Ollama: http://127.0.0.1:11434).</div>
+                    <div className="settings-field-label">
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <OllamaLogo size={16} />
+                        <span>Connexion Ollama</span>
+                      </div>
+                      <span
+                        style={{
+                          marginLeft: "auto",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: ollamaOnline ? "var(--add)" : "var(--del)",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: "50%",
+                            background: ollamaOnline ? "var(--add)" : "var(--del)",
+                          }}
+                        />
+                        {ollamaOnline === null
+                          ? "Vérification..."
+                          : ollamaOnline
+                          ? "Ollama actif"
+                          : "Non détecté"}
+                      </span>
+                    </div>
+                    <div className="settings-field-hint">Hôte HTTP de l'API locale Ollama (port par défaut 11434).</div>
                     <input
                       className="ai-input"
                       value={aiConfig.endpoint}
@@ -596,8 +688,8 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                   </div>
 
                   <div className="settings-field">
-                    <div className="settings-field-label"><span>Model</span></div>
-                    <div className="settings-field-hint">Select or type the model tag. Click a chip for quick setup.</div>
+                    <div className="settings-field-label"><span>Modèle Ollama</span></div>
+                    <div className="settings-field-hint">Sélectionnez un modèle recommandé ou tapez le tag :</div>
                     <input
                       className="ai-input"
                       value={aiConfig.model}
@@ -606,69 +698,171 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     />
                     <div className="ai-chip-group">
                       {[
-                        { tag: "qwen2.5-coder:0.5b", label: "Qwen 2.5 Coder 0.5B (~350MB, Raspberry Pi / Potato PC)", title: "Ultra lightweight" },
-                        { tag: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B (~980MB, Recommended)", title: "High accuracy" },
-                        { tag: "llama3.2:1b", label: "Llama 3.2 1B (~750MB)", title: "Fast text summarizer" },
+                        { tag: "qwen2.5-coder:0.5b", label: "Qwen 2.5 Coder 0.5B (~350Mo, Ultra-léger)", icon: <QwenLogo size={13} /> },
+                        { tag: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B (~980Mo, Recommandé)", icon: <QwenLogo size={13} /> },
+                        { tag: "llama3.2:1b", label: "Llama 3.2 1B (~750Mo, Rapide)", icon: <MetaLogo size={13} /> },
                       ].map((m) => (
                         <button
                           key={m.tag}
                           type="button"
                           className={`ai-chip${aiConfig.model === m.tag ? " active" : ""}`}
                           onClick={() => updateAi({ model: m.tag })}
-                          title={m.title}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
                         >
-                          {m.label}
+                          {m.icon}
+                          <span>{m.label}</span>
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  {aiConfig.provider !== "ollama" && (
-                    <div className="settings-field">
-                      <div className="settings-field-label"><span>API Key (Optional)</span></div>
-                      <div className="settings-field-hint">Required only if using a cloud or secured endpoint (e.g. OpenAI, Groq).</div>
-                      <input
-                        type="password"
-                        className="ai-input"
-                        value={aiConfig.api_key || ""}
-                        onChange={(e) => updateAi({ api_key: e.target.value })}
-                        placeholder="sk-..."
-                      />
-                    </div>
-                  )}
-
                   <div className="settings-field">
                     <button className="about-action-btn" onClick={testAi} disabled={testingAi}>
-                      {testingAi ? "Testing connection..." : "Test Connection"}
+                      {testingAi ? "Test de connexion..." : "Tester la connexion Ollama"}
                     </button>
-                    {aiTestStatus && (
-                      <div className={`ai-status-box ${aiTestStatus.ok ? "ok" : "error"}`}>
-                        {aiTestStatus.ok ? "✓ " : "⚠ "}
-                        {aiTestStatus.message}
-                      </div>
-                    )}
                   </div>
 
-                  {aiConfig.provider === "ollama" && (
+                  {!ollamaOnline && (
                     <div className="ai-info-card">
                       <div className="ai-info-title">
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                          <circle cx="8" cy="8" r="6" />
-                          <line x1="8" y1="5" x2="8" y2="8" />
-                          <line x1="8" y1="11" x2="8.01" y2="11" />
-                        </svg>
-                        <span>Quick Start for Raspberry Pi or Low-End PC</span>
+                        <OllamaLogo size={15} />
+                        <span>Lancer Ollama en arrière-plan</span>
                       </div>
                       <div className="ai-info-body">
-                        To run a local model that takes only <strong>~350 MB RAM</strong> and responds in 1 second without GPU:
+                        Si Ollama n'est pas encore démarré, lancez cette commande dans votre terminal :
                         <div>
-                          <code className="ai-info-code">ollama run qwen2.5-coder:0.5b</code>
+                          <code className="ai-info-code">ollama run {aiConfig.model || "qwen2.5-coder:0.5b"}</code>
                         </div>
                       </div>
                     </div>
                   )}
                 </>
               )}
+
+              {aiConfig.provider === "custom" && (
+                <>
+                  <div className="settings-field">
+                    <div className="settings-field-label">
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <OpenAiLogo size={16} />
+                        <span>Configuration Endpoint & Clé</span>
+                      </div>
+                    </div>
+                    <div className="settings-field-hint">Présélections rapides pour vos fournisseurs préférés :</div>
+                    <div className="ai-chip-group" style={{ marginBottom: 12 }}>
+                      {[
+                        { label: "OpenAI (gpt-4o-mini)", endpoint: "https://api.openai.com/v1", model: "gpt-4o-mini", icon: <OpenAiLogo size={13} /> },
+                        { label: "Groq (Llama 3.1 8B)", endpoint: "https://api.groq.com/openai/v1", model: "llama-3.1-8b-instant", icon: <MetaLogo size={13} /> },
+                        { label: "LM Studio Local (1234)", endpoint: "http://127.0.0.1:1234/v1", model: "local-model", icon: <MetalGpuIcon size={13} /> },
+                      ].map((p) => (
+                        <button
+                          key={p.label}
+                          type="button"
+                          className="ai-chip"
+                          onClick={() => updateAi({ endpoint: p.endpoint, model: p.model })}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+                        >
+                          {p.icon}
+                          <span>{p.label}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 500 }}>Endpoint URL</div>
+                        <input
+                          className="ai-input"
+                          value={aiConfig.endpoint}
+                          onChange={(e) => updateAi({ endpoint: e.target.value })}
+                          placeholder="https://api.openai.com/v1"
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 500 }}>Identifiant du modèle</div>
+                        <input
+                          className="ai-input"
+                          value={aiConfig.model}
+                          onChange={(e) => updateAi({ model: e.target.value })}
+                          placeholder="gpt-4o-mini"
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 12, marginBottom: 4, fontWeight: 500 }}>Clé d'API (Optionnelle si serveur local)</div>
+                        <input
+                          type="password"
+                          className="ai-input"
+                          value={aiConfig.api_key || ""}
+                          onChange={(e) => updateAi({ api_key: e.target.value })}
+                          placeholder="sk-..."
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="settings-field">
+                    <button className="about-action-btn" onClick={testAi} disabled={testingAi}>
+                      {testingAi ? "Test de connexion..." : "Tester la connexion API"}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Status Box if test result */}
+              {aiTestStatus && (
+                <div className={`ai-status-box ${aiTestStatus.ok ? "ok" : "error"}`}>
+                  {aiTestStatus.ok ? "✓ " : "⚠ "}
+                  {aiTestStatus.message}
+                </div>
+              )}
+
+              {/* 3. Universal Commit Preferences */}
+              <div className="settings-field" style={{ marginTop: 24, paddingTop: 18, borderTop: "1px solid var(--border)" }}>
+                <div className="settings-field-label">
+                  <span>Format du Message de Commit</span>
+                </div>
+                <div className="settings-field-hint">
+                  Choisissez la structure générée lors de l'utilisation du bouton ✨ ou de <code>Cmd/Ctrl + I</code>.
+                </div>
+
+                <div className="ai-style-grid">
+                  <div
+                    className={`ai-style-card${(aiConfig.commit_style || "title_only") === "title_only" ? " active" : ""}`}
+                    onClick={() => updateAi({ commit_style: "title_only" })}
+                  >
+                    <div className="ai-radio-dot" />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
+                        Titre seul (Concis)
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
+                        Une seule ligne conventionnelle sous 72 caractères.
+                        <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
+                          ex: feat(auth): add refresh token handling
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className={`ai-style-card${aiConfig.commit_style === "title_and_body" ? " active" : ""}`}
+                    onClick={() => updateAi({ commit_style: "title_and_body" })}
+                  >
+                    <div className="ai-radio-dot" />
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
+                        Titre & Description (Détaillé)
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
+                        Titre conventionnel suivi d'un paragraphe ou d'une liste à puces.
+                        <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
+                          ex: fix(diff): handle binary files<br />- avoid utf8 decoding crash
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </>
           )}
 

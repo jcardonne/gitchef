@@ -311,6 +311,7 @@ export const DEFAULT_AI_CONFIG: AiConfig = {
   model: "qwen2.5-coder:0.5b",
   api_key: "",
   temperature: 0.2,
+  commit_style: "title_only",
 };
 
 export function getAiConfig(): AiConfig {

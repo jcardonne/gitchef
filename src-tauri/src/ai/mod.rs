@@ -37,8 +37,9 @@ pub fn generate_commit(
 
     let diff_summary = diff_filter::prepare_diff_for_llm(&files);
     let user_prompt = prompts::build_commit_user_prompt(&diff_summary);
+    let system_prompt = prompts::build_commit_system_prompt(config.commit_style.as_deref());
 
-    let raw_response = client::generate_chat(app, config, prompts::COMMIT_SYSTEM_PROMPT, &user_prompt)?;
+    let raw_response = client::generate_chat(app, config, &system_prompt, &user_prompt)?;
     Ok(client::parse_commit_message(&raw_response))
 }
 

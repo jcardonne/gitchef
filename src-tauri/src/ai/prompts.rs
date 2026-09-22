@@ -1,19 +1,39 @@
-/// System prompt guiding the LLM to generate strict Conventional Commits.
-pub const COMMIT_SYSTEM_PROMPT: &str = r#"You are Chef AI, an expert Git commit message generator.
-Analyze the provided Git diff and generate a concise Conventional Commit message.
+/// Builds the system prompt guiding the LLM to generate Conventional Commits.
+pub fn build_commit_system_prompt(commit_style: Option<&str>) -> String {
+    let is_detailed = commit_style == Some("title_and_body");
+
+    if is_detailed {
+        r#"You are Chef AI, an expert Git commit message generator.
+Analyze the provided Git diff and generate a detailed Conventional Commit message.
 
 Format specification:
 <type>(<scope>): <subject>
 
-[optional body with 1-3 concise bullet points]
+<1-3 concise bullet points explaining why and what changed>
 
 Rules:
 1. Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert.
 2. Scope is optional, lowercase (e.g. auth, graph, ui, diff, settings).
 3. Subject must be in imperative present tense (e.g. "add password reset", NOT "added" or "adds").
-4. Subject must be all lowercase and must NOT end with a period.
-5. Body is optional: use 1-3 short bullet points only when explaining non-obvious details.
-6. Output ONLY the raw commit message. Do NOT add any preamble, explanation, or markdown code fences (```)."#;
+4. Subject must be all lowercase and must NOT end with a period. Keep under 72 characters.
+5. In the body, write 1-3 short, clear bullet points explaining non-obvious details and the rationale.
+6. Output ONLY the raw commit message. Do NOT add any preamble, explanation, or markdown code fences (```)."#.to_string()
+    } else {
+        r#"You are Chef AI, an expert Git commit message generator.
+Analyze the provided Git diff and generate a concise, single-line Conventional Commit message.
+
+Format specification:
+<type>(<scope>): <subject>
+
+Rules:
+1. Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert.
+2. Scope is optional, lowercase (e.g. auth, graph, ui, diff, settings).
+3. Subject must be in imperative present tense (e.g. "add password reset", NOT "added" or "adds").
+4. Subject must be all lowercase and must NOT end with a period. Keep under 72 characters.
+5. Strictly output ONLY the single subject line. Do NOT output any body, bullet points, or extra lines.
+6. Output ONLY the raw commit message. Do NOT add any preamble, explanation, or markdown code fences (```)."#.to_string()
+    }
+}
 
 /// System prompt for generating Pull Request / Merge Request titles and descriptions.
 pub const PR_SYSTEM_PROMPT: &str = r#"You are Chef AI, an expert software developer assisting with a Pull Request.

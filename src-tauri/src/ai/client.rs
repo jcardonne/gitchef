@@ -11,6 +11,7 @@ pub struct AiConfig {
     pub model: String,    // e.g. "qwen2.5-coder:0.5b"
     pub api_key: Option<String>,
     pub temperature: Option<f32>,
+    pub commit_style: Option<String>,
 }
 
 impl Default for AiConfig {
@@ -21,6 +22,7 @@ impl Default for AiConfig {
             model: "qwen2.5-coder:0.5b".to_string(),
             api_key: None,
             temperature: Some(0.2),
+            commit_style: Some("title_only".to_string()),
         }
     }
 }

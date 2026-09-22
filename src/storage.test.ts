@@ -190,17 +190,20 @@ describe("malformed persisted values", () => {
     expect(cfg.provider).toBe("embedded");
     expect(cfg.endpoint).toBe("http://127.0.0.1:11434");
     expect(cfg.model).toBe("qwen2.5-coder:0.5b");
+    expect(cfg.commit_style).toBe("title_only");
 
     store.setAiConfig({
       provider: "custom",
       endpoint: "http://localhost:8080",
       model: "qwen2.5-coder:1.5b",
       temperature: 0.1,
+      commit_style: "title_and_body",
     });
     const updated = store.getAiConfig();
     expect(updated.provider).toBe("custom");
     expect(updated.endpoint).toBe("http://localhost:8080");
     expect(updated.model).toBe("qwen2.5-coder:1.5b");
+    expect(updated.commit_style).toBe("title_and_body");
   });
 });
 
