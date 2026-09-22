@@ -195,6 +195,11 @@ fn approve_pr(repo: String, number: u64) -> AppResult<String> {
 }
 
 #[tauri::command(async)]
+fn checkout_pr(repo: String, number: u64) -> AppResult<String> {
+    forge::checkout_pr(&open(&repo)?, number)
+}
+
+#[tauri::command(async)]
 fn list_forge_repos(provider: String) -> AppResult<Vec<forge::ForgeRepo>> {
     forge::list_repos(&provider)
 }
@@ -670,6 +675,7 @@ pub fn run() {
             get_pr_diff,
             merge_pr,
             approve_pr,
+            checkout_pr,
             list_forge_repos,
             open_url,
             commit,

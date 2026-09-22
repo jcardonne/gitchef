@@ -107,6 +107,8 @@ export const mergePr = (repo: string, number: number, method?: "merge" | "squash
   invoke<string>("merge_pr", { repo, number, method: method ?? null });
 export const approvePr = (repo: string, number: number) =>
   invoke<string>("approve_pr", { repo, number });
+export const checkoutPr = (repo: string, number: number) =>
+  invoke<string>("checkout_pr", { repo, number });
 /// Open a web URL in the default browser (backend validates it's http/https).
 export const openUrl = (url: string) => invoke<void>("open_url", { url });
 

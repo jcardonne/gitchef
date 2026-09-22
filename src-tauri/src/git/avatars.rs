@@ -156,8 +156,8 @@ pub fn resolve(
 }
 
 /// Look up a cached avatar for a provider login (e.g. GitHub username or bot).
-/// Checks `@<login>`, and also checks if any no-reply email matching this login is cached.
-pub fn cached_avatar_for_login(app: &AppHandle, login: &str) -> Option<String> {
+/// Checks `@{host}:{login}` then `@{login}`, and also checks if any no-reply email matching this login is cached.
+pub fn cached_avatar_for_login(app: &AppHandle, host: Option<&str>, login: &str) -> Option<String> {
     let clean = login.trim().trim_start_matches('@').to_lowercase();
     let base = clean
         .strip_prefix("app/")
@@ -172,6 +172,15 @@ pub fn cached_avatar_for_login(app: &AppHandle, login: &str) -> Option<String> {
     if st.loaded_from.as_deref() != Some(path.as_path()) {
         st.map = load_cache(&path);
         st.loaded_from = Some(path);
+    }
+    if let Some(h) = host {
+        for key in [&format!("@{h}:{base}"), &format!("@{h}:{base}[bot]"), &format!("@{h}:{clean}")] {
+            if let Some(e) = st.map.get(key.as_str()) {
+                if fresh(e, now) && !e.url.is_empty() {
+                    return Some(e.url.clone());
+                }
+            }
+        }
     }
     for key in [&format!("@{base}"), &format!("@{base}[bot]"), &format!("@{clean}")] {
         if let Some(e) = st.map.get(key.as_str()) {
@@ -300,7 +309,6 @@ fn fetch_github(
     wanted: &HashSet<String>,
 ) -> AppResult<FetchedAvatars> {
     let token = provider_token("github", &target.host);
-    let path = encode_path(&target.path);
     let mut out = HashMap::new();
     let mut logins = HashMap::new();
     let mut remaining = wanted.len();
@@ -320,11 +328,11 @@ fn fetch_github(
     // authors the aborted head scan never got to.
     let mut backoff = None;
     if let Some(h) = head {
-        backoff = scan_commits(&path, Some(&encode_path(h)), token.as_deref(), wanted, &mut out, &mut logins, &mut remaining)?;
+        backoff = scan_commits(target, Some(&encode_path(h)), token.as_deref(), wanted, &mut out, &mut logins, &mut remaining)?;
     }
     // A rate-limited head scan means the default scan would hit the same wall.
     if remaining > 0 && backoff.is_none() {
-        backoff = scan_commits(&path, None, token.as_deref(), wanted, &mut out, &mut logins, &mut remaining)?;
+        backoff = scan_commits(target, None, token.as_deref(), wanted, &mut out, &mut logins, &mut remaining)?;
     }
     Ok((out, logins, backoff))
 }
@@ -334,7 +342,7 @@ fn fetch_github(
 /// is left to resolve, or on a Status error (rate-limit / missing ref) - keeping
 /// what it already has rather than failing the whole resolve.
 fn scan_commits(
-    path: &str,
+    target: &RemoteTarget,
     sha: Option<&str>,
     token: Option<&str>,
     wanted: &HashSet<String>,
@@ -342,6 +350,8 @@ fn scan_commits(
     logins: &mut HashMap<String, String>,
     remaining: &mut usize,
 ) -> AppResult<Option<u64>> {
+    let host = &target.host;
+    let path = encode_path(&target.path);
     for page in 1..=MAX_PAGES {
         if *remaining == 0 {
             break;
@@ -373,16 +383,20 @@ fn scan_commits(
             if let Some(ref u) = c.author {
                 if let Some(ref login) = u.login {
                     if !login.is_empty() {
-                        logins.entry(format!("@{}", login.trim().to_lowercase()))
-                            .or_insert_with(|| sized_github(&u.avatar_url));
+                        let clean = login.trim().to_lowercase();
+                        let av = sized_github(&u.avatar_url);
+                        logins.entry(format!("@{host}:{clean}")).or_insert_with(|| av.clone());
+                        logins.entry(format!("@{clean}")).or_insert(av);
                     }
                 }
             }
             if let Some(ref u) = c.committer {
                 if let Some(ref login) = u.login {
                     if !login.is_empty() {
-                        logins.entry(format!("@{}", login.trim().to_lowercase()))
-                            .or_insert_with(|| sized_github(&u.avatar_url));
+                        let clean = login.trim().to_lowercase();
+                        let av = sized_github(&u.avatar_url);
+                        logins.entry(format!("@{host}:{clean}")).or_insert_with(|| av.clone());
+                        logins.entry(format!("@{clean}")).or_insert(av);
                     }
                 }
             }
@@ -500,8 +514,10 @@ fn fetch_gitlab(
             if let Some(ref u) = n.author {
                 if let (Some(ref username), Some(ref av)) = (&u.username, &u.avatar_url) {
                     if !username.is_empty() {
-                        logins.entry(format!("@{}", username.trim().to_lowercase()))
-                            .or_insert_with(|| sized_gitlab(host, av));
+                        let clean = username.trim().to_lowercase();
+                        let sized = sized_gitlab(host, av);
+                        logins.entry(format!("@{host}:{clean}")).or_insert_with(|| sized.clone());
+                        logins.entry(format!("@{clean}")).or_insert(sized);
                     }
                 }
             }
