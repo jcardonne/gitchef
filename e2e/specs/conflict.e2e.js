@@ -54,20 +54,31 @@ describe("GitChef conflict resolution", () => {
     const row = await $(".change-list .file-row");
     await row.waitForClickable({ timeout: 15000 });
     await row.click();
-    // In headless Linux WebKit under heavy CI load, a synthetic click on a windowed
-    // row can occasionally miss if the webview is still painting; dispatch a DOM click
-    // as a fallback if the resolver pane hasn't opened yet.
-    await browser.waitUntil(
-      async () => {
-        if (await $(".conflict-block").isExisting()) return true;
-        await browser.execute(() => {
-          const el = document.querySelector(".change-list .file-row");
-          if (el) el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-        });
-        return await $(".conflict-block").isExisting();
-      },
-      { timeout: 30000, interval: 1000, timeoutMsg: "conflict resolver never opened" }
-    );
+    await browser.pause(2000);
+    const diag = await browser.execute(() => {
+      const el = document.querySelector(".change-list .file-row");
+      return {
+        rowClass: el?.className,
+        centerHTML: document.querySelector(".center")?.innerHTML?.slice(0, 600),
+        hasConflictBlock: !!document.querySelector(".conflict-block"),
+        activeTab: document.querySelector(".tab.active")?.textContent,
+        bodyText: document.body.innerText?.slice(0, 400),
+      };
+    });
+    console.error("DEBUG_DIAGNOSTIC:", JSON.stringify(diag));
+
+    if (!diag.hasConflictBlock) {
+      await browser.execute(() => {
+        const el = document.querySelector(".change-list .file-row");
+        if (el) {
+          el.focus();
+          el.click();
+        }
+      });
+      await browser.keys(["Enter"]);
+    }
+
+    await $(".conflict-block").waitForExist({ timeout: 20000 });
     // ours + theirs sides both rendered.
     await expect($(".conflict-head.ours")).toExist();
     await expect($(".conflict-head.theirs")).toExist();
