@@ -375,6 +375,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
       if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
       const k = e.key.toLowerCase();
       if (k === "f") {
+        if (activePr) return; // ponytail: PrView owns its own search/filter when active
         e.preventDefault();
         if (previewOpenRef.current) setFindOpen(true);
         else setSearchOpen(true);
@@ -391,7 +392,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isActive, modalOpen]);
+  }, [isActive, modalOpen, activePr]);
 
   const run = useCallback(
     async (fn: () => Promise<void>, action?: string) => {
@@ -1180,7 +1181,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
     // INPUT/TEXTAREA check: Cmd/Ctrl+Shift+P/L aren't text-editing keystrokes,
     // and the commit-message textarea is focused for the whole write-then-push
     // flow, so skipping on it would break the app's most common sequence.
-    if (!isActive || modalOpen) return;
+    if (!isActive || modalOpen || !!activePr) return;
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || !e.shiftKey) return;
       const k = e.key.toLowerCase();
@@ -1197,7 +1198,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isActive, onPush, onPullAction, modalOpen]);
+  }, [isActive, onPush, onPullAction, modalOpen, activePr]);
 
   // Auto-fetch: re-read the setting on a prefs change, and run a background
   // fetch on the active tab at the chosen interval. Skips a tick while an op is
@@ -2184,7 +2185,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
     // modalOpen: ReflogModal/FileHistoryModal register their own window Escape
     // handlers and are not INPUT/TEXTAREA, so without this the Escape that
     // closes a modal ALSO deselects the commit and clears its file list behind it.
-    if (!isActive || rightTab !== "commit" || commitFiles.length === 0 || modalOpen) return;
+    if (!isActive || rightTab !== "commit" || commitFiles.length === 0 || modalOpen || !!activePr) return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -2208,7 +2209,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, rightTab, commitFiles, selectedPath, selectedCommit, modalOpen]);
+  }, [isActive, rightTab, commitFiles, selectedPath, selectedCommit, modalOpen, activePr]);
 
   // Escape closes an open file preview, whatever opened it. Runs in the capture
   // phase and stops propagation so it beats the commit-files handler above (which
@@ -2216,7 +2217,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
   // Bails while any modal/overlay is open so it doesn't swallow the Escape that
   // should close the modal on top (it, not the diff behind it, must win).
   useEffect(() => {
-    if (!isActive || !previewOpen || modalOpen) return;
+    if (!isActive || !previewOpen || modalOpen || !!activePr) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       const tag = (e.target as HTMLElement | null)?.tagName;
@@ -2230,7 +2231,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, previewOpen, modalOpen, findOpen]);
+  }, [isActive, previewOpen, modalOpen, findOpen, activePr]);
 
   const repoActions = useMemo(
     () => ({ repoPath: path, busy, activeAction, run, refresh, notify }),

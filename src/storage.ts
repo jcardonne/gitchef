@@ -291,3 +291,16 @@ export function getStagingCollapsed(): StagingCollapsed {
 export function setStagingCollapsed(state: StagingCollapsed): void {
   localStorage.setItem(STAGING_COLLAPSED_KEY, JSON.stringify(state));
 }
+
+export function getPrViewedFiles(repoPath: string, prNumber: number): string[] {
+  const list = read<string[]>(`gitchef.prViewed.${repoPath}.${prNumber}`, []);
+  return Array.isArray(list) ? list : [];
+}
+
+export function setPrViewedFiles(repoPath: string, prNumber: number, files: string[]): void {
+  try {
+    localStorage.setItem(`gitchef.prViewed.${repoPath}.${prNumber}`, JSON.stringify(files));
+  } catch {
+    // quota exceeded or disabled
+  }
+}

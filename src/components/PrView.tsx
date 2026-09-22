@@ -1,6 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Marked } from "marked";
+import DOMPurify from "dompurify";
+import Prism from "prismjs";
+import "../highlight";
 import type { FileDiff, PrDetails, PullRequest } from "../types";
 import * as api from "../api";
+import * as storage from "../storage";
 import { relativeTime } from "../util";
 import DiffViewer from "./DiffViewer";
 import { CheckIcon, CloseIcon, PullRequestIcon } from "../icons";
@@ -33,49 +38,95 @@ export default function PrView({
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [diffMode, setDiffMode] = useState<"unified" | "split">("unified");
   const [findOpen, setFindOpen] = useState(false);
+  const [fileFilter, setFileFilter] = useState("");
   const [mergeMenuOpen, setMergeMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Close on Escape key
+  // ponytail: monotonic request ID so fast PR switching or slow diff loading never clobbers active PR
+  const loadReq = useRef(0);
+  const mergeMenuRef = useRef<HTMLDivElement>(null);
+
+  // Persistence for viewed files per repository and PR
+  const [viewedFiles, setViewedFiles] = useState<Set<string>>(() => {
+    return new Set(storage.getPrViewedFiles(path, pr.number));
+  });
+
+  // Re-sync viewed files and reset filter/selection when switching PRs
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
-        if (activeTab === "files") {
-          e.preventDefault();
-          setFindOpen((prev) => !prev);
-        }
+    setViewedFiles(new Set(storage.getPrViewedFiles(path, pr.number)));
+    setSelectedFilePath(null);
+    setFileFilter("");
+  }, [path, pr.number]);
+
+  // Click outside to dismiss merge menu
+  useEffect(() => {
+    if (!mergeMenuOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (mergeMenuRef.current && !mergeMenuRef.current.contains(e.target as Node)) {
+        setMergeMenuOpen(false);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, activeTab]);
+    window.addEventListener("mousedown", onDocClick);
+    return () => window.removeEventListener("mousedown", onDocClick);
+  }, [mergeMenuOpen]);
+
+  const toggleViewed = (filePath: string) => {
+    setViewedFiles((prev) => {
+      const next = new Set(prev);
+      if (next.has(filePath)) {
+        next.delete(filePath);
+      } else {
+        next.add(filePath);
+      }
+      storage.setPrViewedFiles(path, pr.number, Array.from(next));
+      return next;
+    });
+  };
+
+  const toggleAllViewed = () => {
+    if (!diffs) return;
+    const allViewed = diffs.every((f) => viewedFiles.has(f.path));
+    const next = allViewed ? new Set<string>() : new Set(diffs.map((f) => f.path));
+    setViewedFiles(next);
+    storage.setPrViewedFiles(path, pr.number, Array.from(next));
+  };
 
   const loadData = async () => {
+    const req = ++loadReq.current;
     setLoading(true);
     setError(null);
     try {
       const d = await api.getPrDetails(path, pr.number);
-      setDetails(d);
+      if (loadReq.current === req) {
+        setDetails(d);
+      }
     } catch (e) {
-      setError(String(e));
+      if (loadReq.current === req) {
+        setError(String(e));
+      }
     } finally {
-      setLoading(false);
+      if (loadReq.current === req) {
+        setLoading(false);
+      }
     }
 
     setDiffLoading(true);
     try {
       const diffList = await api.getPrDiff(path, pr.number);
-      setDiffs(diffList);
-      if (diffList.length > 0 && !selectedFilePath) {
-        setSelectedFilePath(diffList[0].path);
+      if (loadReq.current === req) {
+        setDiffs(diffList);
+        if (diffList.length > 0) {
+          setSelectedFilePath((prev) => (prev && diffList.some((f) => f.path === prev) ? prev : diffList[0].path));
+        }
       }
     } catch (e) {
-      console.warn("Could not load PR diff:", e);
+      if (loadReq.current === req) {
+        console.warn("Could not load PR diff:", e);
+      }
     } finally {
-      setDiffLoading(false);
+      if (loadReq.current === req) {
+        setDiffLoading(false);
+      }
     }
   };
 
@@ -83,10 +134,66 @@ export default function PrView({
     loadData();
   }, [path, pr.number]);
 
+  // Filtered diffs according to file search
+  const filteredDiffs = useMemo(() => {
+    if (!diffs) return [];
+    if (!fileFilter.trim()) return diffs;
+    const q = fileFilter.toLowerCase().trim();
+    return diffs.filter((f) => f.path.toLowerCase().includes(q));
+  }, [diffs, fileFilter]);
+
   const selectedDiff = useMemo(() => {
-    if (!diffs || !selectedFilePath) return null;
-    return diffs.find((f) => f.path === selectedFilePath) ?? diffs[0] ?? null;
-  }, [diffs, selectedFilePath]);
+    if (!diffs || diffs.length === 0) return null;
+    if (selectedFilePath) {
+      const match = diffs.find((f) => f.path === selectedFilePath);
+      if (match) return match;
+    }
+    if (filteredDiffs.length > 0) return filteredDiffs[0];
+    return diffs[0] ?? null;
+  }, [diffs, selectedFilePath, filteredDiffs]);
+
+  // Global & tab keyboard shortcuts with proper layering
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        // Layered dismiss: merge menu -> find bar -> file filter -> close view
+        if (mergeMenuOpen) {
+          setMergeMenuOpen(false);
+        } else if (findOpen) {
+          setFindOpen(false);
+        } else if (fileFilter) {
+          setFileFilter("");
+        } else {
+          onClose();
+        }
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        if (activeTab === "files") {
+          e.preventDefault();
+          setFindOpen((prev) => !prev);
+        }
+      } else if (activeTab === "files" && !isInput && filteredDiffs.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          const currentPath = selectedDiff?.path ?? filteredDiffs[0]?.path;
+          const currentIdx = filteredDiffs.findIndex((f) => f.path === currentPath);
+          const nextIdx = (currentIdx + 1) % filteredDiffs.length;
+          setSelectedFilePath(filteredDiffs[nextIdx].path);
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          const currentPath = selectedDiff?.path ?? filteredDiffs[0]?.path;
+          const currentIdx = filteredDiffs.findIndex((f) => f.path === currentPath);
+          const prevIdx = (currentIdx - 1 + filteredDiffs.length) % filteredDiffs.length;
+          setSelectedFilePath(filteredDiffs[prevIdx].path);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, activeTab, filteredDiffs, selectedDiff, fileFilter, mergeMenuOpen, findOpen]);
 
   const handleApprove = async () => {
     setBusy(true);
@@ -121,30 +228,47 @@ export default function PrView({
     return relativeTime(sec);
   };
 
+  const prWebUrl = details?.url || pr.url;
+
   return (
     <div className="pr-view-root">
       {/* Top action / back bar */}
       <div className="pr-view-header">
-        <div className="pr-view-header-left">
-          <button className="pr-back-btn" onClick={onClose} title="Back to graph (Esc)">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <div className="pr-header-left">
+          <button className="pr-back-btn" onClick={onClose} title="Back to commit graph (Escape)">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M11 3L5 8l6 5" />
             </svg>
             <span>Back to graph</span>
+            <kbd className="pr-kbd-badge">Esc</kbd>
           </button>
-          <span className="pr-header-divider" />
+
           <span className={`pr-status-badge ${details?.state?.toLowerCase() || (pr.draft ? "draft" : "open")}`}>
             <PullRequestIcon size={12} />
             <span>{details?.state ? details.state.charAt(0) + details.state.slice(1).toLowerCase() : pr.draft ? "Draft" : "Open"}</span>
           </span>
-          <span className="pr-header-title">
-            <span className="pr-header-num">#{pr.number}</span>
-            <span className="pr-header-text">{details?.title || pr.title}</span>
-          </span>
+
+          <div className="pr-view-title">
+            <span
+              className="pr-title-num copyable"
+              title="Click to copy PR link"
+              onClick={() => {
+                void api.copyText(prWebUrl);
+                notify("PR link copied to clipboard");
+              }}
+            >
+              #{pr.number}
+            </span>
+            <span className="pr-title-text" title={details?.title || pr.title}>
+              {details?.title || pr.title}
+            </span>
+          </div>
         </div>
 
-        <div className="pr-view-header-right">
-          {!isCurrentBranch && (
+        <div className="pr-header-right">
+          {isCurrentBranch ? (
+            <span className="pr-current-branch-badge">Current branch</span>
+          ) : (
             <button
               className="mini-btn pr-action-btn"
               title={`Checkout '${details?.branch || pr.branch}' locally`}
@@ -165,7 +289,7 @@ export default function PrView({
             <span>Approve</span>
           </button>
 
-          <div className="pr-merge-dropdown-wrap">
+          <div className="pr-merge-dropdown-wrap" ref={mergeMenuRef}>
             <button
               className="mini-btn primary pr-action-btn"
               title="Merge options"
@@ -199,7 +323,7 @@ export default function PrView({
           <button
             className="mini-btn pr-action-btn"
             title="Open in web browser"
-            onClick={() => onOpenUrl(details?.url || pr.url)}
+            onClick={() => onOpenUrl(prWebUrl)}
           >
             <span>Open in Browser</span>
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -230,11 +354,29 @@ export default function PrView({
         </div>
 
         <div className="pr-view-branch-pill">
-          <span className="pr-branch-name base">{details?.base_branch || "main"}</span>
+          <span
+            className="pr-branch-name base copyable"
+            title="Click to copy base branch name"
+            onClick={() => {
+              void api.copyText(details?.base_branch || "main");
+              notify("Base branch copied to clipboard");
+            }}
+          >
+            {details?.base_branch || "main"}
+          </span>
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M11 8H3M8 5l-3 3 3 3" />
           </svg>
-          <span className="pr-branch-name head">{details?.branch || pr.branch}</span>
+          <span
+            className="pr-branch-name head copyable"
+            title="Click to copy branch name"
+            onClick={() => {
+              void api.copyText(details?.branch || pr.branch);
+              notify("Branch name copied to clipboard");
+            }}
+          >
+            {details?.branch || pr.branch}
+          </span>
         </div>
 
         {details && (
@@ -292,7 +434,7 @@ export default function PrView({
             </div>
             <div className="pr-error-actions">
               <button className="mini-btn" onClick={loadData}>Retry</button>
-              <button className="mini-btn primary" onClick={() => onOpenUrl(pr.url)}>Open on Web</button>
+              <button className="mini-btn primary" onClick={() => onOpenUrl(prWebUrl)}>Open on Web</button>
             </div>
           </div>
         )}
@@ -313,7 +455,7 @@ export default function PrView({
                 <div className="pr-section-header">Description</div>
                 <div className="pr-markdown-body">
                   {details.body ? (
-                    <SimpleMarkdown text={details.body} />
+                    <SimpleMarkdown text={details.body} repoUrl={prWebUrl} />
                   ) : (
                     <div className="pr-empty-hint">No description provided.</div>
                   )}
@@ -337,7 +479,7 @@ export default function PrView({
                           <span className="pr-meta-dim">{formatIsoDate(cm.created_at)}</span>
                         </div>
                         <div className="pr-comment-body">
-                          <SimpleMarkdown text={cm.body} />
+                          <SimpleMarkdown text={cm.body} repoUrl={prWebUrl} />
                         </div>
                       </div>
                     ))}
@@ -361,8 +503,10 @@ export default function PrView({
                 ) : (
                   <div className="pr-checks-list">
                     {details.checks.map((chk, idx) => {
-                      const isSuccess = chk.conclusion === "SUCCESS" || chk.status === "SUCCESS";
-                      const isFail = chk.conclusion === "FAILURE" || chk.conclusion === "ERROR" || chk.status === "FAILURE";
+                      // ponytail: normalize outcomes across GitHub CheckRun conclusion & StatusContext state
+                      const outcome = (chk.conclusion || chk.status || "").toUpperCase();
+                      const isFail = ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE"].includes(outcome);
+                      const isSuccess = ["SUCCESS", "NEUTRAL", "SKIPPED"].includes(outcome);
                       return (
                         <div key={idx} className="pr-check-row">
                           <span className={`pr-check-icon ${isSuccess ? "pass" : isFail ? "fail" : "pending"}`}>
@@ -432,7 +576,10 @@ export default function PrView({
               <>
                 <div className="pr-files-tree">
                   <div className="pr-files-tree-header">
-                    <span>Changed Files ({diffs.length})</span>
+                    <span>
+                      Files ({filteredDiffs.length}
+                      {filteredDiffs.length !== diffs.length ? ` of ${diffs.length}` : ""})
+                    </span>
                     <div className="pr-diff-mode-toggle">
                       <button
                         className={`mini-btn ${diffMode === "unified" ? "primary" : ""}`}
@@ -451,27 +598,83 @@ export default function PrView({
                     </div>
                   </div>
 
+                  {/* Viewed files progress & action */}
+                  <div className="pr-viewed-summary-bar">
+                    <div className="pr-viewed-count-label">
+                      <span>{viewedFiles.size} of {diffs.length} viewed</span>
+                      <button
+                        className="pr-viewed-toggle-all-btn"
+                        onClick={toggleAllViewed}
+                        title={diffs.every((f) => viewedFiles.has(f.path)) ? "Reset viewed marks" : "Mark all files as viewed"}
+                      >
+                        {diffs.every((f) => viewedFiles.has(f.path)) ? "Unmark all" : "Mark all"}
+                      </button>
+                    </div>
+                    <div className="pr-viewed-progress-track">
+                      <div
+                        className="pr-viewed-progress-fill"
+                        style={{ width: `${diffs.length > 0 ? (viewedFiles.size / diffs.length) * 100 : 0}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Filter input */}
+                  <div className="pr-files-filter-box">
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <circle cx="7" cy="7" r="5" />
+                      <path d="M11 11l4 4" />
+                    </svg>
+                    <input
+                      type="text"
+                      className="pr-files-filter-input"
+                      placeholder="Filter files (Esc to clear)…"
+                      value={fileFilter}
+                      onChange={(e) => setFileFilter(e.target.value)}
+                    />
+                    {fileFilter && (
+                      <button className="pr-files-filter-clear" onClick={() => setFileFilter("")} title="Clear filter">
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Files list */}
                   <div className="pr-files-list">
-                    {diffs.map((f) => {
-                      const adds = f.hunks.reduce((acc, h) => acc + h.lines.filter((l) => l.origin === "+").length, 0);
-                      const dels = f.hunks.reduce((acc, h) => acc + h.lines.filter((l) => l.origin === "-").length, 0);
-                      const isSelected = (selectedDiff?.path ?? diffs[0]?.path) === f.path;
-                      return (
-                        <div
-                          key={f.path}
-                          className={`pr-file-item ${isSelected ? "selected" : ""}`}
-                          onClick={() => setSelectedFilePath(f.path)}
-                          title={f.path}
-                        >
-                          <span className={`pr-file-status-tag ${f.status}`}>{f.status.charAt(0).toUpperCase()}</span>
-                          <span className="pr-file-path">{f.path}</span>
-                          <span className="pr-file-stats">
-                            {adds > 0 && <span className="stat-add">+{adds}</span>}
-                            {dels > 0 && <span className="stat-del">-{dels}</span>}
-                          </span>
-                        </div>
-                      );
-                    })}
+                    {filteredDiffs.length === 0 ? (
+                      <div className="pr-empty-hint small">No files matching &quot;{fileFilter}&quot;</div>
+                    ) : (
+                      filteredDiffs.map((f) => {
+                        const isViewed = viewedFiles.has(f.path);
+                        const adds = f.hunks.reduce((acc, h) => acc + h.lines.filter((l) => l.origin === "+").length, 0);
+                        const dels = f.hunks.reduce((acc, h) => acc + h.lines.filter((l) => l.origin === "-").length, 0);
+                        const isSelected = selectedDiff?.path === f.path;
+                        return (
+                          <div
+                            key={f.path}
+                            className={`pr-file-item ${isSelected ? "selected" : ""} ${isViewed ? "viewed" : ""}`}
+                            onClick={() => setSelectedFilePath(f.path)}
+                            title={f.path}
+                          >
+                            <input
+                              type="checkbox"
+                              className="pr-file-viewed-check"
+                              checked={isViewed}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                toggleViewed(f.path);
+                              }}
+                              title={isViewed ? "Mark as not viewed" : "Mark as viewed"}
+                            />
+                            <span className={`pr-file-status-tag ${f.status}`}>{f.status.charAt(0).toUpperCase()}</span>
+                            <span className="pr-file-path">{f.path}</span>
+                            <span className="pr-file-stats">
+                              {adds > 0 && <span className="stat-add">+{adds}</span>}
+                              {dels > 0 && <span className="stat-del">-{dels}</span>}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
 
@@ -521,130 +724,136 @@ export default function PrView({
   );
 }
 
-/**
- * Lightweight, safe markdown formatter for PR descriptions and comments.
- */
-function SimpleMarkdown({ text }: { text: string }) {
-  const rendered = useMemo(() => {
-    const lines = text.split("\n");
-    const elements: React.ReactNode[] = [];
-    let inCodeBlock = false;
-    let codeLines: string[] = [];
-
-    lines.forEach((line, idx) => {
-      if (line.startsWith("```")) {
-        if (inCodeBlock) {
-          elements.push(
-            <pre key={`code-${idx}`} className="md-code-block">
-              <code>{codeLines.join("\n")}</code>
-            </pre>
-          );
-          codeLines = [];
-          inCodeBlock = false;
-        } else {
-          inCodeBlock = true;
-        }
-        return;
-      }
-
-      if (inCodeBlock) {
-        codeLines.push(line);
-        return;
-      }
-
-      if (line.startsWith("### ")) {
-        elements.push(<h4 key={idx} className="md-h3">{renderInline(line.slice(4))}</h4>);
-      } else if (line.startsWith("## ")) {
-        elements.push(<h3 key={idx} className="md-h2">{renderInline(line.slice(3))}</h3>);
-      } else if (line.startsWith("# ")) {
-        elements.push(<h2 key={idx} className="md-h1">{renderInline(line.slice(2))}</h2>);
-      } else if (line.startsWith("> ")) {
-        elements.push(<blockquote key={idx} className="md-quote">{renderInline(line.slice(2))}</blockquote>);
-      } else if (line.startsWith("- [x] ") || line.startsWith("- [X] ")) {
-        elements.push(
-          <div key={idx} className="md-task checked">
-            <input type="checkbox" checked readOnly />
-            <span>{renderInline(line.slice(6))}</span>
-          </div>
-        );
-      } else if (line.startsWith("- [ ] ")) {
-        elements.push(
-          <div key={idx} className="md-task">
-            <input type="checkbox" checked={false} readOnly />
-            <span>{renderInline(line.slice(6))}</span>
-          </div>
-        );
-      } else if (line.startsWith("- ") || line.startsWith("* ")) {
-        elements.push(
-          <li key={idx} className="md-li">
-            {renderInline(line.slice(2))}
-          </li>
-        );
-      } else if (line.trim() === "") {
-        elements.push(<div key={idx} className="md-spacer" />);
-      } else {
-        elements.push(<p key={idx} className="md-p">{renderInline(line)}</p>);
-      }
-    });
-
-    if (inCodeBlock && codeLines.length > 0) {
-      elements.push(
-        <pre key="code-tail" className="md-code-block">
-          <code>{codeLines.join("\n")}</code>
-        </pre>
-      );
-    }
-
-    return elements;
-  }, [text]);
-
-  return <div className="simple-markdown">{rendered}</div>;
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
-function renderInline(str: string): React.ReactNode[] {
-  // Matches inline code `code`, bold **bold**, and links [text](url)
-  const parts: React.ReactNode[] = [];
-  let remaining = str;
-  let key = 0;
+/**
+ * Full GitHub Flavored Markdown (GFM) renderer for PR descriptions and comments:
+ * - GFM tables (with alignment, code inside tables, links)
+ * - Horizontal rules (---)
+ * - Nested lists & task lists (- [x] / - [ ])
+ * - Collapsible <details><summary> sections
+ * - Code fences highlighted via PrismJS
+ * - Markdown images ![alt](url) with click-to-open
+ * - Issue #123 & mention @username auto-linking
+ * - External link safety via Tauri api.openUrl
+ * - Sanitized via DOMPurify
+ */
+function SimpleMarkdown({ text, repoUrl }: { text: string; repoUrl?: string }) {
+  const html = useMemo(() => {
+    if (!text) return "";
+    const repoBaseUrl = repoUrl ? repoUrl.replace(/\/(?:pull|merge_requests)\/\d+.*$/, "") : "";
+    const isGithub = !repoBaseUrl || repoBaseUrl.includes("github.com");
 
-  while (remaining.length > 0) {
-    const codeMatch = remaining.match(/`([^`]+)`/);
-    const boldMatch = remaining.match(/\*\*([^*]+)\*\*/);
-    const linkMatch = remaining.match(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/);
+    const instance = new Marked({
+      gfm: true,
+      breaks: true,
+    });
 
-    const matchIndices = [
-      codeMatch ? { type: "code", index: codeMatch.index!, match: codeMatch } : null,
-      boldMatch ? { type: "bold", index: boldMatch.index!, match: boldMatch } : null,
-      linkMatch ? { type: "link", index: linkMatch.index!, match: linkMatch } : null,
-    ].filter(Boolean) as { type: string; index: number; match: RegExpMatchArray }[];
+    instance.use({
+      extensions: [
+        {
+          name: "issueRef",
+          level: "inline",
+          start(src: string) {
+            const match = /(?:^|\s)#\d+/.exec(src);
+            return match ? match.index + (match[0].startsWith(" ") ? 1 : 0) : undefined;
+          },
+          tokenizer(src: string) {
+            const match = /^#(\d+)\b/.exec(src);
+            if (match) {
+              return {
+                type: "issueRef",
+                raw: match[0],
+                num: match[1],
+              };
+            }
+          },
+          renderer(token: any) {
+            const href = repoBaseUrl ? `${repoBaseUrl}/issues/${token.num}` : "";
+            return `<a href="${href || "#"}" class="md-issue-tag" data-issue="${token.num}">#${token.num}</a>`;
+          },
+        },
+        {
+          name: "userMention",
+          level: "inline",
+          start(src: string) {
+            const match = /(?:^|\s)@[a-zA-Z0-9_\-]+/.exec(src);
+            return match ? match.index + (match[0].startsWith(" ") ? 1 : 0) : undefined;
+          },
+          tokenizer(src: string) {
+            const match = /^@([a-zA-Z0-9_\-]+)\b/.exec(src);
+            if (match) {
+              return {
+                type: "userMention",
+                raw: match[0],
+                username: match[1],
+              };
+            }
+          },
+          renderer(token: any) {
+            const href = isGithub ? `https://github.com/${token.username}` : "";
+            return `<a href="${href || "#"}" class="md-mention" data-user="${token.username}">@${token.username}</a>`;
+          },
+        },
+      ],
+      renderer: {
+        code({ text, lang }: { text: string; lang?: string }) {
+          const cleanLang = lang ? lang.split(/\s+/)[0].toLowerCase() : "";
+          const grammar = cleanLang && Prism.languages[cleanLang] ? Prism.languages[cleanLang] : null;
+          const highlighted = grammar ? Prism.highlight(text, grammar, cleanLang) : escapeHtml(text);
+          return `<pre class="md-code-block"><code class="language-${cleanLang || "text"}">${highlighted}</code></pre>`;
+        },
+        image({ href, title, text }: { href: string; title?: string | null; text: string }) {
+          const titleAttr = title || text || "Image";
+          return `<span class="md-image-card"><img src="${href}" alt="${escapeHtml(text || "")}" class="md-image" loading="lazy" title="${escapeHtml(titleAttr)} · Click to open" />${text ? `<span class="md-image-caption">${escapeHtml(text)}</span>` : ""}</span>`;
+        },
+        link({ href, title, text }: { href: string; title?: string | null; text: string }) {
+          const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+          return `<a href="${href}"${titleAttr} class="md-link" target="_blank" rel="noopener noreferrer">${text}</a>`;
+        },
+      },
+    });
 
-    if (matchIndices.length === 0) {
-      parts.push(remaining);
-      break;
+    const raw = instance.parse(text) as string;
+    return DOMPurify.sanitize(raw, {
+      ADD_ATTR: ["target", "rel", "loading", "data-issue", "data-user", "type", "checked", "disabled"],
+      ADD_TAGS: ["details", "summary", "input"],
+    });
+  }, [text, repoUrl]);
+
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const link = target.closest("a");
+    if (link) {
+      const href = link.getAttribute("href");
+      if (href && (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("mailto:"))) {
+        e.preventDefault();
+        e.stopPropagation();
+        void api.openUrl(href);
+        return;
+      }
     }
-
-    matchIndices.sort((a, b) => a.index - b.index);
-    const first = matchIndices[0];
-
-    if (first.index > 0) {
-      parts.push(remaining.slice(0, first.index));
+    const img = target.closest("img");
+    if (img && img.src) {
+      e.preventDefault();
+      e.stopPropagation();
+      void api.openUrl(img.src);
+      return;
     }
+  };
 
-    if (first.type === "code") {
-      parts.push(<code key={key++} className="md-inline-code">{first.match[1]}</code>);
-      remaining = remaining.slice(first.index + first.match[0].length);
-    } else if (first.type === "bold") {
-      parts.push(<strong key={key++}>{first.match[1]}</strong>);
-      remaining = remaining.slice(first.index + first.match[0].length);
-    } else if (first.type === "link") {
-      parts.push(
-        <a key={key++} href={first.match[2]} target="_blank" rel="noreferrer" className="md-link">
-          {first.match[1]}
-        </a>
-      );
-      remaining = remaining.slice(first.index + first.match[0].length);
-    }
-  }
-
-  return parts;
+  return (
+    <div
+      className="simple-markdown"
+      dangerouslySetInnerHTML={{ __html: html }}
+      onClick={handleClick}
+    />
+  );
 }
