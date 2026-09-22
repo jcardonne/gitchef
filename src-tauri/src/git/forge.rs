@@ -720,11 +720,17 @@ fn get_pr_gitlab(dir: &Path, number: u64) -> AppResult<PrDetails> {
     }
     let m: GlMrView = serde_json::from_str(&out)
         .map_err(|e| AppError::Msg(format!("could not parse `glab mr view` output: {e}")))?;
+    // ponytail: normalize GitLab MR state "opened" to "OPEN" so the frontend badge
+    // and merge/action guards align with GitHub's "OPEN" / "MERGED" / "CLOSED".
+    let state = match m.state.to_ascii_uppercase().as_str() {
+        "OPENED" => "OPEN".to_string(),
+        other => other.to_string(),
+    };
     Ok(PrDetails {
         number: m.iid,
         title: m.title,
         body: m.description,
-        state: m.state.to_ascii_uppercase(),
+        state,
         url: m.web_url,
         branch: m.source_branch,
         base_branch: m.target_branch,

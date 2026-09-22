@@ -46,6 +46,9 @@ struct CacheState {
     loaded_from: Option<PathBuf>,
 }
 
+type AvatarMap = HashMap<String, String>;
+type FetchedAvatars = (AvatarMap, AvatarMap, Option<u64>);
+
 /// Process-wide so concurrent tab commands don't race the read-modify-write.
 static CACHE: LazyLock<Mutex<CacheState>> =
     LazyLock::new(|| Mutex::new(CacheState { map: HashMap::new(), loaded_from: None }));
@@ -295,7 +298,7 @@ fn fetch_github(
     target: &RemoteTarget,
     head: Option<&str>,
     wanted: &HashSet<String>,
-) -> AppResult<(HashMap<String, String>, HashMap<String, String>, Option<u64>)> {
+) -> AppResult<FetchedAvatars> {
     let token = provider_token("github", &target.host);
     let path = encode_path(&target.path);
     let mut out = HashMap::new();
@@ -449,7 +452,7 @@ fn fetch_gitlab(
     target: &RemoteTarget,
     head: Option<&str>,
     wanted: &HashSet<String>,
-) -> AppResult<(HashMap<String, String>, HashMap<String, String>, Option<u64>)> {
+) -> AppResult<FetchedAvatars> {
     // Private repos (the common case) require auth; with no token there's nothing
     // to resolve, so bail to Gravatar instead of erroring.
     let token = match provider_token("gitlab", &target.host) {

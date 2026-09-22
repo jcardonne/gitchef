@@ -173,4 +173,14 @@ describe("malformed persisted values", () => {
     localStorage.setItem("gitchef.recents", JSON.stringify([{ path: "/a", name: "a" }, null, { name: "no path" }]));
     expect(store.getRecents()).toEqual([{ path: "/a", name: "a" }]);
   });
+
+  it("stores and retrieves pr viewed files cleanly", () => {
+    expect(store.getPrViewedFiles("/repo", 42)).toEqual([]);
+    store.setPrViewedFiles("/repo", 42, ["src/a.ts", "src/b.ts"]);
+    expect(store.getPrViewedFiles("/repo", 42)).toEqual(["src/a.ts", "src/b.ts"]);
+
+    // Handles malformed storage
+    localStorage.setItem("gitchef.prViewed./repo.42", "not valid json");
+    expect(store.getPrViewedFiles("/repo", 42)).toEqual([]);
+  });
 });
