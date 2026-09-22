@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useEscape } from "../useEscape";
 import { PALETTES, getDensity, setDensity, type Palette, type Theme, type Density } from "../theme";
 import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, getFetchIntervalMinutes, setFetchIntervalMinutes, notifyPrefs, getAiConfig, setAiConfig, type PullAction, type GraphColumnVisibility } from "../storage";
@@ -7,7 +8,7 @@ import { GRAPH_COLUMNS } from "./GraphView";
 import { useKeycapPresses } from "../useKeycapPresses";
 import { checkForUpdates } from "../updater";
 import * as api from "../api";
-import type { AiConfig, AiStatus } from "../types";
+import type { AiConfig, AiStatus, DownloadProgressEvent, EmbeddedModelStatus } from "../types";
 
 interface Props {
   theme: Theme;
@@ -114,7 +115,93 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
   const [aiConfig, setAiConfigState] = useState<AiConfig>(getAiConfig);
   const [aiTestStatus, setAiTestStatus] = useState<AiStatus | null>(null);
   const [testingAi, setTestingAi] = useState(false);
+  const [embeddedStatus, setEmbeddedStatus] = useState<EmbeddedModelStatus | null>(null);
+  const [embeddedProgress, setEmbeddedProgress] = useState<DownloadProgressEvent | null>(null);
+  const [isStartingDownload, setIsStartingDownload] = useState(false);
   useKeycapPresses(section === "keyboard");
+
+  const fetchEmbeddedStatus = async () => {
+    try {
+      const res = await api.aiGetEmbeddedStatus();
+      setEmbeddedStatus(res);
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (section !== "ai") return;
+    fetchEmbeddedStatus();
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    listen<DownloadProgressEvent>("chef://model-download-progress", (event) => {
+      setEmbeddedProgress(event.payload);
+      if (event.payload.done || event.payload.error) {
+        fetchEmbeddedStatus();
+      }
+    })
+      .then((fn) => {
+        if (disposed) fn();
+        else unlisten = fn;
+      })
+      .catch(() => {});
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [section]);
+
+  const handleDownloadEmbedded = async () => {
+    setIsStartingDownload(true);
+    try {
+      await api.aiDownloadEmbeddedModel();
+      await fetchEmbeddedStatus();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsStartingDownload(false);
+    }
+  };
+
+  const handleCancelDownload = async () => {
+    try {
+      await api.aiCancelEmbeddedDownload();
+      setEmbeddedProgress(null);
+      await fetchEmbeddedStatus();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDeleteEmbedded = async () => {
+    if (!window.confirm("Are you sure you want to delete the local Chef AI model (491 MB)? You can redownload it at any time.")) {
+      return;
+    }
+    try {
+      await api.aiDeleteEmbeddedModel();
+      await fetchEmbeddedStatus();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const isDownloading = embeddedStatus?.downloading || (embeddedProgress && !embeddedProgress.done && !embeddedProgress.error);
+  const percent = embeddedProgress
+    ? Math.round(embeddedProgress.progress_percent)
+    : embeddedStatus?.progress_percent
+    ? Math.round(embeddedStatus.progress_percent)
+    : 0;
+
+  const formatMb = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1);
+  const formatSpeed = (bytesPerSec: number) => {
+    if (bytesPerSec > 1024 * 1024) {
+      return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+    }
+    return `${Math.round(bytesPerSec / 1024)} KB/s`;
+  };
 
   const updateAi = (partial: Partial<AiConfig>) => {
     const next = { ...aiConfig, ...partial };
@@ -336,8 +423,14 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
             <>
               <div className="settings-field">
                 <div className="settings-field-label">{TITLE.ai}<span>Provider</span></div>
-                <div className="settings-field-hint">Choose between a local model runner (Ollama) or custom server / cloud.</div>
+                <div className="settings-field-hint">Choose between the built-in 1-click model, Ollama, or a custom API.</div>
                 <div className="mode-seg">
+                  <button
+                    className={aiConfig.provider === "embedded" ? "active" : ""}
+                    onClick={() => updateAi({ provider: "embedded" })}
+                  >
+                    <span>Embedded (1-Click)</span>
+                  </button>
                   <button
                     className={aiConfig.provider === "ollama" ? "active" : ""}
                     onClick={() => updateAi({ provider: "ollama", endpoint: "http://127.0.0.1:11434" })}
@@ -348,92 +441,234 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     className={aiConfig.provider === "custom" ? "active" : ""}
                     onClick={() => updateAi({ provider: "custom" })}
                   >
-                    <span>Custom / OpenAI compatible</span>
+                    <span>Custom / OpenAI</span>
                   </button>
                 </div>
               </div>
 
-              <div className="settings-field">
-                <div className="settings-field-label"><span>Endpoint URL</span></div>
-                <div className="settings-field-hint">HTTP API host (default for Ollama: http://127.0.0.1:11434).</div>
-                <input
-                  className="ai-input"
-                  value={aiConfig.endpoint}
-                  onChange={(e) => updateAi({ endpoint: e.target.value })}
-                  placeholder="http://127.0.0.1:11434"
-                />
-              </div>
+              {aiConfig.provider === "embedded" ? (
+                <>
+                  <div className="settings-field">
+                    <div className="settings-field-label"><span>Local Engine</span></div>
+                    <div className="settings-field-hint">
+                      Runs 100% locally on your machine with Metal GPU or CPU acceleration. No external dependencies, server, or Ollama required.
+                    </div>
 
-              <div className="settings-field">
-                <div className="settings-field-label"><span>Model</span></div>
-                <div className="settings-field-hint">Select or type the model tag. Click a chip for quick setup.</div>
-                <input
-                  className="ai-input"
-                  value={aiConfig.model}
-                  onChange={(e) => updateAi({ model: e.target.value })}
-                  placeholder="qwen2.5-coder:0.5b"
-                />
-                <div className="ai-chip-group">
-                  {[
-                    { tag: "qwen2.5-coder:0.5b", label: "Qwen 2.5 Coder 0.5B (~350MB, Raspberry Pi / Potato PC)", title: "Ultra lightweight" },
-                    { tag: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B (~980MB, Recommended)", title: "High accuracy" },
-                    { tag: "llama3.2:1b", label: "Llama 3.2 1B (~750MB)", title: "Fast text summarizer" },
-                  ].map((m) => (
-                    <button
-                      key={m.tag}
-                      type="button"
-                      className={`ai-chip${aiConfig.model === m.tag ? " active" : ""}`}
-                      onClick={() => updateAi({ model: m.tag })}
-                      title={m.title}
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: "14px 16px",
+                        background: "var(--bg-elev)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                      }}
                     >
-                      {m.label}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontWeight: 600, fontSize: 13 }}>Qwen 2.5 Coder 0.5B Instruct</span>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              padding: "2px 7px",
+                              borderRadius: 10,
+                              background: embeddedStatus?.installed
+                                ? "color-mix(in srgb, var(--add) 18%, transparent)"
+                                : isDownloading
+                                ? "color-mix(in srgb, var(--accent) 18%, transparent)"
+                                : "var(--border)",
+                              color: embeddedStatus?.installed
+                                ? "var(--add)"
+                                : isDownloading
+                                ? "var(--accent)"
+                                : "var(--muted)",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {embeddedStatus?.installed
+                              ? "Installed"
+                              : isDownloading
+                              ? "Downloading..."
+                              : "Not Installed"}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "monospace" }}>491 MB (GGUF Q4_K_M)</span>
+                      </div>
+
+                      <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5, marginBottom: 12 }}>
+                        Ultra-fast local model optimized for Git commit messages, Pull Request summaries, and conflict explanations. Takes &lt;450 MB RAM.
+                      </div>
+
+                      {isDownloading && (
+                        <div style={{ marginBottom: 12 }}>
+                          <div
+                            style={{
+                              height: 6,
+                              background: "var(--bg)",
+                              borderRadius: 3,
+                              overflow: "hidden",
+                              marginBottom: 6,
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: "100%",
+                                width: `${percent}%`,
+                                background: "var(--accent)",
+                                transition: "width 0.2s ease",
+                              }}
+                            />
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)" }}>
+                            <span>
+                              {formatMb(embeddedProgress?.bytes_downloaded ?? 0)} MB / {formatMb(embeddedProgress?.total_bytes ?? 515000000)} MB ({percent}%)
+                            </span>
+                            <span>{formatSpeed(embeddedProgress?.speed_bytes_per_sec ?? 0)}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {embeddedStatus?.error && (
+                        <div className="ai-status-box error" style={{ marginBottom: 10 }}>
+                          ⚠ {embeddedStatus.error}
+                        </div>
+                      )}
+
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        {!embeddedStatus?.installed && !isDownloading && (
+                          <button
+                            className="about-action-btn"
+                            onClick={handleDownloadEmbedded}
+                            disabled={isStartingDownload}
+                          >
+                            {isStartingDownload ? "Starting..." : "Download Model (491 MB)"}
+                          </button>
+                        )}
+                        {isDownloading && (
+                          <button
+                            className="mini-btn"
+                            style={{ padding: "6px 12px" }}
+                            onClick={handleCancelDownload}
+                          >
+                            Cancel Download
+                          </button>
+                        )}
+                        {embeddedStatus?.installed && (
+                          <>
+                            <button
+                              className="about-action-btn"
+                              onClick={testAi}
+                              disabled={testingAi}
+                            >
+                              {testingAi ? "Testing inference..." : "Test Local Inference"}
+                            </button>
+                            <button
+                              className="mini-btn"
+                              style={{ padding: "6px 12px", color: "var(--del)" }}
+                              onClick={handleDeleteEmbedded}
+                              title="Delete model file from disk to free 491 MB"
+                            >
+                              Delete Model
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {aiTestStatus && (
+                    <div className={`ai-status-box ${aiTestStatus.ok ? "ok" : "error"}`}>
+                      {aiTestStatus.ok ? "✓ " : "⚠ "}
+                      {aiTestStatus.message}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="settings-field">
+                    <div className="settings-field-label"><span>Endpoint URL</span></div>
+                    <div className="settings-field-hint">HTTP API host (default for Ollama: http://127.0.0.1:11434).</div>
+                    <input
+                      className="ai-input"
+                      value={aiConfig.endpoint}
+                      onChange={(e) => updateAi({ endpoint: e.target.value })}
+                      placeholder="http://127.0.0.1:11434"
+                    />
+                  </div>
+
+                  <div className="settings-field">
+                    <div className="settings-field-label"><span>Model</span></div>
+                    <div className="settings-field-hint">Select or type the model tag. Click a chip for quick setup.</div>
+                    <input
+                      className="ai-input"
+                      value={aiConfig.model}
+                      onChange={(e) => updateAi({ model: e.target.value })}
+                      placeholder="qwen2.5-coder:0.5b"
+                    />
+                    <div className="ai-chip-group">
+                      {[
+                        { tag: "qwen2.5-coder:0.5b", label: "Qwen 2.5 Coder 0.5B (~350MB, Raspberry Pi / Potato PC)", title: "Ultra lightweight" },
+                        { tag: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B (~980MB, Recommended)", title: "High accuracy" },
+                        { tag: "llama3.2:1b", label: "Llama 3.2 1B (~750MB)", title: "Fast text summarizer" },
+                      ].map((m) => (
+                        <button
+                          key={m.tag}
+                          type="button"
+                          className={`ai-chip${aiConfig.model === m.tag ? " active" : ""}`}
+                          onClick={() => updateAi({ model: m.tag })}
+                          title={m.title}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {aiConfig.provider !== "ollama" && (
+                    <div className="settings-field">
+                      <div className="settings-field-label"><span>API Key (Optional)</span></div>
+                      <div className="settings-field-hint">Required only if using a cloud or secured endpoint (e.g. OpenAI, Groq).</div>
+                      <input
+                        type="password"
+                        className="ai-input"
+                        value={aiConfig.api_key || ""}
+                        onChange={(e) => updateAi({ api_key: e.target.value })}
+                        placeholder="sk-..."
+                      />
+                    </div>
+                  )}
+
+                  <div className="settings-field">
+                    <button className="about-action-btn" onClick={testAi} disabled={testingAi}>
+                      {testingAi ? "Testing connection..." : "Test Connection"}
                     </button>
-                  ))}
-                </div>
-              </div>
+                    {aiTestStatus && (
+                      <div className={`ai-status-box ${aiTestStatus.ok ? "ok" : "error"}`}>
+                        {aiTestStatus.ok ? "✓ " : "⚠ "}
+                        {aiTestStatus.message}
+                      </div>
+                    )}
+                  </div>
 
-              {aiConfig.provider !== "ollama" && (
-                <div className="settings-field">
-                  <div className="settings-field-label"><span>API Key (Optional)</span></div>
-                  <div className="settings-field-hint">Required only if using a cloud or secured endpoint (e.g. OpenAI, Groq).</div>
-                  <input
-                    type="password"
-                    className="ai-input"
-                    value={aiConfig.api_key || ""}
-                    onChange={(e) => updateAi({ api_key: e.target.value })}
-                    placeholder="sk-..."
-                  />
-                </div>
+                  {aiConfig.provider === "ollama" && (
+                    <div className="ai-info-card">
+                      <div className="ai-info-title">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <circle cx="8" cy="8" r="6" />
+                          <line x1="8" y1="5" x2="8" y2="8" />
+                          <line x1="8" y1="11" x2="8.01" y2="11" />
+                        </svg>
+                        <span>Quick Start for Raspberry Pi or Low-End PC</span>
+                      </div>
+                      <div className="ai-info-body">
+                        To run a local model that takes only <strong>~350 MB RAM</strong> and responds in 1 second without GPU:
+                        <div>
+                          <code className="ai-info-code">ollama run qwen2.5-coder:0.5b</code>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
-
-              <div className="settings-field">
-                <button className="about-action-btn" onClick={testAi} disabled={testingAi}>
-                  {testingAi ? "Testing connection..." : "Test Connection"}
-                </button>
-                {aiTestStatus && (
-                  <div className={`ai-status-box ${aiTestStatus.ok ? "ok" : "error"}`}>
-                    {aiTestStatus.ok ? "✓ " : "⚠ "}
-                    {aiTestStatus.message}
-                  </div>
-                )}
-              </div>
-
-              <div className="ai-info-card">
-                <div className="ai-info-title">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="8" cy="8" r="6" />
-                    <line x1="8" y1="5" x2="8" y2="8" />
-                    <line x1="8" y1="11" x2="8.01" y2="11" />
-                  </svg>
-                  <span>Quick Start for Raspberry Pi or Low-End PC</span>
-                </div>
-                <div className="ai-info-body">
-                  To run a local model that takes only <strong>~350 MB RAM</strong> and responds in 1 second without GPU:
-                  <div>
-                    <code className="ai-info-code">ollama run qwen2.5-coder:0.5b</code>
-                  </div>
-                </div>
-              </div>
             </>
           )}
 

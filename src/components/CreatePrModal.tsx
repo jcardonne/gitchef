@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useEscape } from "../useEscape";
 import { useChefAi } from "../useChefAi";
+import ChefAiDownloadModal from "./ChefAiDownloadModal";
 
 /// Form to open a PR (GitHub) / MR (GitLab) for the current branch via the
 /// gh/glab CLI. The source branch is the checked-out one (handled backend-side);
@@ -24,7 +25,12 @@ export default function CreatePrModal({
   const [body, setBody] = useState("");
   const [base, setBase] = useState(baseDefault);
   const label = provider === "gitlab" ? "Merge Request" : "Pull Request";
-  const { loading: aiLoading, generatePr } = useChefAi();
+  const {
+    loading: aiLoading,
+    generatePr,
+    showDownloadModal,
+    setShowDownloadModal,
+  } = useChefAi();
 
   useEscape(onClose);
 
@@ -94,6 +100,13 @@ export default function CreatePrModal({
           </button>
         </div>
       </div>
+
+      {showDownloadModal && (
+        <ChefAiDownloadModal
+          onClose={() => setShowDownloadModal(false)}
+          onSuccess={handleGeneratePr}
+        />
+      )}
     </div>
   );
 }

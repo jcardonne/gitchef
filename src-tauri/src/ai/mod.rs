@@ -1,5 +1,6 @@
 pub mod client;
 pub mod diff_filter;
+pub mod embedded;
 pub mod prompts;
 
 pub use client::{AiConfig, AiStatus, GeneratedCommit, GeneratedPr};
@@ -7,10 +8,12 @@ pub use client::{AiConfig, AiStatus, GeneratedCommit, GeneratedPr};
 use crate::error::{AppError, AppResult};
 use crate::git::diff;
 use git2::{Repository, Sort};
+use tauri::AppHandle;
 
 /// Generates a Conventional Commit message from staged changes (or unstaged changes if
 /// staged_only is false and nothing is staged).
 pub fn generate_commit(
+    app: &AppHandle,
     repo: &Repository,
     staged_only: bool,
     config: &AiConfig,
@@ -35,12 +38,13 @@ pub fn generate_commit(
     let diff_summary = diff_filter::prepare_diff_for_llm(&files);
     let user_prompt = prompts::build_commit_user_prompt(&diff_summary);
 
-    let raw_response = client::generate_chat(config, prompts::COMMIT_SYSTEM_PROMPT, &user_prompt)?;
+    let raw_response = client::generate_chat(app, config, prompts::COMMIT_SYSTEM_PROMPT, &user_prompt)?;
     Ok(client::parse_commit_message(&raw_response))
 }
 
 /// Generates a Pull Request title and description between base and head refs.
 pub fn generate_pr(
+    app: &AppHandle,
     repo: &Repository,
     base: &str,
     head: &str,
@@ -88,12 +92,13 @@ pub fn generate_pr(
     let diff_summary = diff_filter::prepare_diff_for_llm(&files);
     let user_prompt = prompts::build_pr_user_prompt(base, head, &commit_summaries, &diff_summary);
 
-    let raw_response = client::generate_chat(config, prompts::PR_SYSTEM_PROMPT, &user_prompt)?;
+    let raw_response = client::generate_chat(app, config, prompts::PR_SYSTEM_PROMPT, &user_prompt)?;
     Ok(client::parse_pr_response(&raw_response))
 }
 
 /// Explains a merge conflict between ours and theirs.
 pub fn explain_conflict(
+    app: &AppHandle,
     _repo: &Repository,
     file_path: &str,
     ours: &str,
@@ -101,5 +106,5 @@ pub fn explain_conflict(
     config: &AiConfig,
 ) -> AppResult<String> {
     let user_prompt = prompts::build_conflict_user_prompt(file_path, ours, theirs);
-    client::generate_chat(config, prompts::CONFLICT_SYSTEM_PROMPT, &user_prompt)
+    client::generate_chat(app, config, prompts::CONFLICT_SYSTEM_PROMPT, &user_prompt)
 }

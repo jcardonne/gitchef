@@ -332,7 +332,27 @@ export interface TodoItem {
   message: string | null;
 }
 
-export type AiProvider = "ollama" | "custom" | "openai";
+export type AiProvider = "embedded" | "ollama" | "custom" | "openai";
+
+export interface EmbeddedModelStatus {
+  installed: boolean;
+  file_size_bytes: number;
+  expected_size_bytes: number;
+  model_path: string;
+  downloading: boolean;
+  progress_percent: number;
+  bytes_downloaded: number;
+  error?: string | null;
+}
+
+export interface DownloadProgressEvent {
+  bytes_downloaded: number;
+  total_bytes: number;
+  progress_percent: number;
+  speed_bytes_per_sec: number;
+  done: boolean;
+  error?: string | null;
+}
 
 export interface AiConfig {
   provider: AiProvider;

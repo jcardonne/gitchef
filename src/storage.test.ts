@@ -187,7 +187,7 @@ describe("malformed persisted values", () => {
   it("stores and retrieves ai configuration with defaults", () => {
     localStorage.removeItem("gitchef.aiConfig");
     const cfg = store.getAiConfig();
-    expect(cfg.provider).toBe("ollama");
+    expect(cfg.provider).toBe("embedded");
     expect(cfg.endpoint).toBe("http://127.0.0.1:11434");
     expect(cfg.model).toBe("qwen2.5-coder:0.5b");
 

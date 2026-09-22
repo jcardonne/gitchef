@@ -9,6 +9,7 @@ import ChangeList from "./ChangeList";
 import { comboHint } from "../shortcuts";
 import { affectedPaths } from "../util";
 import { useChefAi } from "../useChefAi";
+import ChefAiDownloadModal from "./ChefAiDownloadModal";
 
 /// Conventional Commits types offered by the optional prefix helper.
 const COMMIT_TYPES = ["feat", "fix", "docs", "refactor", "perf", "test", "build", "ci", "chore", "style", "revert"];
@@ -55,7 +56,13 @@ export default function StagingPanel({
   suppressShortcuts,
 }: Props) {
   const { repoPath, busy, activeAction, run, refresh, notify } = useRepo();
-  const { loading: aiLoading, generateCommit } = useChefAi();
+  const {
+    loading: aiLoading,
+    generateCommit,
+    showDownloadModal,
+    setShowDownloadModal,
+    handleDownloadSuccess,
+  } = useChefAi();
   const [view, setView] = useState<ChangesView>(getChangesView());
   const [collapsed, setCollapsed] = useState(getStagingCollapsed);
   const toggleCollapsed = (section: "unstaged" | "staged") =>
@@ -672,6 +679,13 @@ export default function StagingPanel({
           {amend && canAmend ? "Amend" : `Commit ${status.staged.length ? `(${status.staged.length})` : ""}`}
         </button>
       </div>
+
+      {showDownloadModal && (
+        <ChefAiDownloadModal
+          onClose={() => setShowDownloadModal(false)}
+          onSuccess={handleDownloadSuccess}
+        />
+      )}
     </div>
   );
 }

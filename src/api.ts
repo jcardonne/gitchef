@@ -25,6 +25,7 @@ import type {
   WorktreeInfo,
   AiConfig,
   AiStatus,
+  EmbeddedModelStatus,
   GeneratedCommit,
   GeneratedPr,
 } from "./types";
@@ -276,6 +277,14 @@ export const deleteRemoteTag = (repo: string, remote: string, name: string) =>
 // --- Chef AI ---
 export const aiTestConnection = (config: AiConfig) =>
   invoke<AiStatus>("ai_test_connection", { config });
+export const aiGetEmbeddedStatus = () =>
+  invoke<EmbeddedModelStatus>("ai_get_embedded_status");
+export const aiDownloadEmbeddedModel = () =>
+  invoke<void>("ai_download_embedded_model");
+export const aiCancelEmbeddedDownload = () =>
+  invoke<void>("ai_cancel_embedded_download");
+export const aiDeleteEmbeddedModel = () =>
+  invoke<void>("ai_delete_embedded_model");
 export const aiGenerateCommit = (repo: string, stagedOnly: boolean, config: AiConfig) =>
   invoke<GeneratedCommit>("ai_generate_commit", { repo, stagedOnly, config });
 export const aiGeneratePr = (repo: string, base: string, head: string, config: AiConfig) =>

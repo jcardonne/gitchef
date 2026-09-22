@@ -6,7 +6,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
-    pub provider: String, // "ollama" | "custom" | "openai"
+    pub provider: String, // "embedded" | "ollama" | "custom" | "openai"
     pub endpoint: String, // e.g. "http://127.0.0.1:11434"
     pub model: String,    // e.g. "qwen2.5-coder:0.5b"
     pub api_key: Option<String>,
@@ -16,7 +16,7 @@ pub struct AiConfig {
 impl Default for AiConfig {
     fn default() -> Self {
         Self {
-            provider: "ollama".to_string(),
+            provider: "embedded".to_string(),
             endpoint: "http://127.0.0.1:11434".to_string(),
             model: "qwen2.5-coder:0.5b".to_string(),
             api_key: None,
@@ -64,8 +64,38 @@ fn normalize_endpoint(endpoint: &str) -> String {
 }
 
 /// Tests connectivity to the configured AI provider and lists installed/available models.
-pub fn test_connection(config: &AiConfig) -> AppResult<AiStatus> {
+pub fn test_connection(app: &tauri::AppHandle, config: &AiConfig) -> AppResult<AiStatus> {
     let start = Instant::now();
+
+    if config.provider == "embedded" || config.provider == "local" {
+        let status = super::embedded::get_status(app)?;
+        if status.installed {
+            return Ok(AiStatus {
+                ok: true,
+                message: format!(
+                    "Chef AI Local Model Ready (Qwen 2.5 Coder 0.5B, {:.1} MB)",
+                    status.file_size_bytes as f64 / 1_000_000.0
+                ),
+                latency_ms: 0,
+                models: vec!["qwen2.5-coder:0.5b".into()],
+            });
+        } else if status.downloading {
+            return Ok(AiStatus {
+                ok: false,
+                message: format!("Downloading model ({:.0}%)...", status.progress_percent),
+                latency_ms: 0,
+                models: vec![],
+            });
+        } else {
+            return Ok(AiStatus {
+                ok: false,
+                message: "Local model not downloaded yet. Click 'Download & Enable (390 MB)' to activate 1-click AI.".into(),
+                latency_ms: 0,
+                models: vec![],
+            });
+        }
+    }
+
     let base_url = normalize_endpoint(&config.endpoint);
     let agent = create_agent();
 
@@ -195,13 +225,19 @@ pub fn test_connection(config: &AiConfig) -> AppResult<AiStatus> {
 
 /// Executes a chat completion request against the configured provider.
 pub fn generate_chat(
+    app: &tauri::AppHandle,
     config: &AiConfig,
     system_prompt: &str,
     user_prompt: &str,
 ) -> AppResult<String> {
+    let temperature = config.temperature.unwrap_or(0.2);
+
+    if config.provider == "embedded" || config.provider == "local" {
+        return super::embedded::generate(app, system_prompt, user_prompt, temperature);
+    }
+
     let base_url = normalize_endpoint(&config.endpoint);
     let agent = create_agent();
-    let temperature = config.temperature.unwrap_or(0.2);
 
     if config.provider == "ollama" {
         let chat_url = format!("{base_url}/api/chat");

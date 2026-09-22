@@ -306,7 +306,7 @@ export function setPrViewedFiles(repoPath: string, prNumber: number, files: stri
 const AI_CONFIG_KEY = "gitchef.aiConfig";
 
 export const DEFAULT_AI_CONFIG: AiConfig = {
-  provider: "ollama",
+  provider: "embedded",
   endpoint: "http://127.0.0.1:11434",
   model: "qwen2.5-coder:0.5b",
   api_key: "",

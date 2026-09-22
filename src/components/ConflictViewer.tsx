@@ -6,6 +6,7 @@ import { useFind, type FindApi } from "../useFind";
 import FindBar from "./FindBar";
 import { renderCode } from "./CodeLine";
 import { useChefAi } from "../useChefAi";
+import ChefAiDownloadModal from "./ChefAiDownloadModal";
 
 // One choice per conflict block, in document order. "both" = ours then theirs;
 // "both_reversed" = theirs then ours (toggled by the bar).
@@ -33,7 +34,12 @@ interface Props {
 // ever shows up.
 export default function ConflictViewer({ path, onResolved, findOpen, onFindClose }: Props) {
   const { repoPath, busy, run } = useRepo();
-  const { loading: aiLoading, explainConflict } = useChefAi();
+  const {
+    loading: aiLoading,
+    explainConflict,
+    showDownloadModal,
+    setShowDownloadModal,
+  } = useChefAi();
   const [file, setFile] = useState<ConflictFile | null>(null);
   const [loading, setLoading] = useState(true);
   const [choices, setChoices] = useState<(Choice | undefined)[]>([]);
@@ -227,6 +233,12 @@ export default function ConflictViewer({ path, onResolved, findOpen, onFindClose
           </div>
         </div>
       </div>
+      {showDownloadModal && (
+        <ChefAiDownloadModal
+          onClose={() => setShowDownloadModal(false)}
+          onSuccess={handleExplainConflict}
+        />
+      )}
     </div>
   );
 }
