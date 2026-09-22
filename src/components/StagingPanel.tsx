@@ -3,11 +3,13 @@ import { confirm, save } from "@tauri-apps/plugin-dialog";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import * as api from "../api";
 import type { FileStatus, StatusResult } from "../types";
-import { getChangesView, setChangesView, getStagingCollapsed, setStagingCollapsed, type ChangesView } from "../storage";
+import { getChangesView, setChangesView, getStagingCollapsed, setStagingCollapsed, getAiConfig, type ChangesView } from "../storage";
 import { useRepo, type RefreshOpts } from "../repoContext";
 import ChangeList from "./ChangeList";
 import { comboHint } from "../shortcuts";
 import { affectedPaths } from "../util";
+import { useChefAi } from "../useChefAi";
+import ChefAiDownloadModal from "./ChefAiDownloadModal";
 
 /// Conventional Commits types offered by the optional prefix helper.
 const COMMIT_TYPES = ["feat", "fix", "docs", "refactor", "perf", "test", "build", "ci", "chore", "style", "revert"];
@@ -54,6 +56,13 @@ export default function StagingPanel({
   suppressShortcuts,
 }: Props) {
   const { repoPath, busy, activeAction, run, refresh, notify } = useRepo();
+  const {
+    loading: aiLoading,
+    generateCommit,
+    showDownloadModal,
+    setShowDownloadModal,
+    handleDownloadSuccess,
+  } = useChefAi();
   const [view, setView] = useState<ChangesView>(getChangesView());
   const [collapsed, setCollapsed] = useState(getStagingCollapsed);
   const toggleCollapsed = (section: "unstaged" | "staged") =>
@@ -328,6 +337,38 @@ export default function StagingPanel({
     setScope("");
   };
 
+  const handleChefAiCommit = async () => {
+    if (aiLoading) return;
+    const hasStaged = status.staged.length > 0;
+    const isAmending = amend && canAmend;
+    if (!hasStaged && !isAmending) {
+      notify("Stage changes first to generate a commit message with Chef AI.", true);
+      return;
+    }
+    const res = await generateCommit(!isAmending || hasStaged);
+    if (!res) return;
+    const cfg = getAiConfig();
+    const style = cfg.commit_style || "title_only";
+    if (res.commit_type && !res.breaking && COMMIT_TYPES.includes(res.commit_type)) {
+      setType(res.commit_type);
+      setScope(res.scope || "");
+      if (style === "title_only") {
+        setMessage(res.subject);
+      } else {
+        setMessage(res.body ? `${res.subject}\n\n${res.body}` : res.subject);
+      }
+    } else {
+      setType("");
+      setScope("");
+      const firstLine = res.full_message.split("\n")[0].trim();
+      if (style === "title_only") {
+        setMessage(firstLine);
+      } else {
+        setMessage(res.full_message);
+      }
+    }
+  };
+
   // Keyboard: commit / stage / unstage from anywhere in the active tab (the
   // commit message + selection state live here). Modifier combos only, so they
   // never clash with typing in the message box.
@@ -346,11 +387,14 @@ export default function StagingPanel({
       } else if (e.shiftKey && k === "u") {
         e.preventDefault();
         unstageFiles(selStaged.length ? selStaged : status.staged);
+      } else if (k === "i") {
+        e.preventDefault();
+        handleChefAiCommit();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isActive, suppressShortcuts, handleCommit, stageFiles, unstageFiles, selUnstaged, selStaged, status]);
+  }, [isActive, suppressShortcuts, handleCommit, handleChefAiCommit, stageFiles, unstageFiles, selUnstaged, selStaged, status]);
 
   const sectionCount = (visible: number, total: number) =>
     hasSearch ? `${visible}/${total}` : String(total);
@@ -543,6 +587,30 @@ export default function StagingPanel({
             onChange={(e) => setScope(e.target.value)}
             title="Optional scope, e.g. api"
           />
+          <button
+            type="button"
+            className="chef-ai-btn"
+            disabled={aiLoading || (!status.staged.length && !(amend && canAmend))}
+            onClick={handleChefAiCommit}
+            title={
+              !status.staged.length && !(amend && canAmend)
+                ? "Stage changes first to generate a commit message"
+                : `Generate commit message with Chef AI (${comboHint(["mod", "I"])})`
+            }
+          >
+            {aiLoading ? (
+              <svg className="spinner" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" strokeOpacity={0.3} />
+                <path d="M8 2a6 6 0 0 1 6 6" />
+              </svg>
+            ) : (
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M8 1.5l1.2 3.8 3.8 1.2-3.8 1.2L8 11.5 6.8 7.7 3 6.5l3.8-1.2L8 1.5z" />
+                <path d="M12.5 10.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6.6-1.9z" />
+              </svg>
+            )}
+            <span>{aiLoading ? "Cooking…" : "Chef AI"}</span>
+          </button>
         </div>
         <textarea
           ref={messageRef}
@@ -624,6 +692,13 @@ export default function StagingPanel({
           {amend && canAmend ? "Amend" : `Commit ${status.staged.length ? `(${status.staged.length})` : ""}`}
         </button>
       </div>
+
+      {showDownloadModal && (
+        <ChefAiDownloadModal
+          onClose={() => setShowDownloadModal(false)}
+          onSuccess={handleDownloadSuccess}
+        />
+      )}
     </div>
   );
 }

@@ -331,3 +331,58 @@ export interface TodoItem {
   summary: string;
   message: string | null;
 }
+
+export type AiProvider = "embedded" | "ollama" | "custom" | "openai";
+
+export interface EmbeddedModelStatus {
+  installed: boolean;
+  file_size_bytes: number;
+  expected_size_bytes: number;
+  model_path: string;
+  downloading: boolean;
+  progress_percent: number;
+  bytes_downloaded: number;
+  error?: string | null;
+}
+
+export interface DownloadProgressEvent {
+  bytes_downloaded: number;
+  total_bytes: number;
+  progress_percent: number;
+  speed_bytes_per_sec: number;
+  done: boolean;
+  error?: string | null;
+}
+
+export type CommitStyle = "title_only" | "title_and_body";
+
+export interface AiConfig {
+  provider: AiProvider;
+  endpoint: string;
+  model: string;
+  api_key?: string | null;
+  temperature?: number | null;
+  commit_style?: CommitStyle;
+}
+
+export interface AiStatus {
+  ok: boolean;
+  message: string;
+  latency_ms: number;
+  models: string[];
+}
+
+export interface GeneratedCommit {
+  full_message: string;
+  commit_type: string | null;
+  scope: string | null;
+  subject: string;
+  body: string | null;
+  breaking: boolean;
+}
+
+export interface GeneratedPr {
+  title: string;
+  body: string;
+}
+

@@ -1,7 +1,7 @@
 // Lightweight persistence for recents + the open-tab session, backed by the
 // webview's localStorage. Pure frontend - no backend round-trips.
 
-import type { TabColor, ForgeRepo } from "./types";
+import type { TabColor, ForgeRepo, AiConfig } from "./types";
 
 const RECENTS_KEY = "gitchef.recents";
 const SESSION_KEY = "gitchef.session";
@@ -302,3 +302,57 @@ export function setPrViewedFiles(repoPath: string, prNumber: number, files: stri
     // quota exceeded or disabled
   }
 }
+
+const AI_CONFIG_KEY = "gitchef.aiConfig";
+const AI_API_KEY_SESSION = "gitchef.aiApiKey";
+let memoryApiKey = "";
+
+export const DEFAULT_AI_CONFIG: AiConfig = {
+  provider: "embedded",
+  endpoint: "http://127.0.0.1:11434",
+  model: "qwen2.5-coder:0.5b",
+  api_key: "",
+  temperature: 0.2,
+  commit_style: "title_only",
+};
+
+export function getAiConfig(): AiConfig {
+  const config = { ...DEFAULT_AI_CONFIG, ...read<Partial<AiConfig>>(AI_CONFIG_KEY, {}) };
+  // Keep api_key in memory/sessionStorage only so sensitive credentials
+  // are never persisted in plaintext in permanent localStorage.
+  if (memoryApiKey) {
+    config.api_key = memoryApiKey;
+  } else {
+    try {
+      const sessionKey = sessionStorage.getItem(AI_API_KEY_SESSION);
+      if (sessionKey) {
+        config.api_key = sessionKey;
+        memoryApiKey = sessionKey;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return config;
+}
+
+export function setAiConfig(config: AiConfig): void {
+  if (config.api_key !== undefined) {
+    memoryApiKey = config.api_key ?? "";
+    try {
+      if (config.api_key) {
+        sessionStorage.setItem(AI_API_KEY_SESSION, config.api_key);
+      } else {
+        sessionStorage.removeItem(AI_API_KEY_SESSION);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Strip api_key before persisting to localStorage
+  const { api_key: _omitted, ...safeConfig } = config;
+  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(safeConfig));
+  notifyPrefs();
+}
+

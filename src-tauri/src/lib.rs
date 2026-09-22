@@ -1,3 +1,4 @@
+mod ai;
 mod error;
 mod git;
 mod watch;
@@ -610,6 +611,64 @@ fn apply_lines(
     files::apply_lines(&open(&repo)?, &path, &action, &hunk_header, selected)
 }
 
+#[tauri::command(async)]
+fn ai_test_connection(app: tauri::AppHandle, config: ai::AiConfig) -> AppResult<ai::AiStatus> {
+    ai::client::test_connection(&app, &config)
+}
+
+#[tauri::command(async)]
+fn ai_get_embedded_status(app: tauri::AppHandle) -> AppResult<ai::embedded::EmbeddedModelStatus> {
+    ai::embedded::get_status(&app)
+}
+
+#[tauri::command(async)]
+fn ai_download_embedded_model(app: tauri::AppHandle) -> AppResult<()> {
+    ai::embedded::start_download(&app)
+}
+
+#[tauri::command(async)]
+fn ai_cancel_embedded_download(app: tauri::AppHandle) -> AppResult<()> {
+    ai::embedded::cancel_download(&app)
+}
+
+#[tauri::command(async)]
+fn ai_delete_embedded_model(app: tauri::AppHandle) -> AppResult<()> {
+    ai::embedded::delete_model(&app)
+}
+
+#[tauri::command(async)]
+fn ai_generate_commit(
+    app: tauri::AppHandle,
+    repo: String,
+    staged_only: bool,
+    config: ai::AiConfig,
+) -> AppResult<ai::GeneratedCommit> {
+    ai::generate_commit(&app, &open(&repo)?, staged_only, &config)
+}
+
+#[tauri::command(async)]
+fn ai_generate_pr(
+    app: tauri::AppHandle,
+    repo: String,
+    base: String,
+    head: String,
+    config: ai::AiConfig,
+) -> AppResult<ai::GeneratedPr> {
+    ai::generate_pr(&app, &open(&repo)?, &base, &head, &config)
+}
+
+#[tauri::command(async)]
+fn ai_explain_conflict(
+    app: tauri::AppHandle,
+    repo: String,
+    path: String,
+    ours: String,
+    theirs: String,
+    config: ai::AiConfig,
+) -> AppResult<String> {
+    ai::explain_conflict(&app, &open(&repo)?, &path, &ours, &theirs, &config)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // During an interactive rebase, git re-launches THIS binary as its sequence
@@ -785,6 +844,14 @@ pub fn run() {
             add_worktree,
             list_submodules,
             update_submodules,
+            ai_test_connection,
+            ai_get_embedded_status,
+            ai_download_embedded_model,
+            ai_cancel_embedded_download,
+            ai_delete_embedded_model,
+            ai_generate_commit,
+            ai_generate_pr,
+            ai_explain_conflict,
         ])
         .run(tauri::generate_context!())
         .expect("error while running GitChef");
