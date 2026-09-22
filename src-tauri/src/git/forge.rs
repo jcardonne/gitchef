@@ -104,8 +104,8 @@ pub fn list_prs(app: Option<&AppHandle>, repo: &Repository) -> AppResult<Vec<Pul
     };
     let dir = super::workdir(repo)?;
     match target.provider {
-        RemoteProvider::Github => list_github(app, dir),
-        RemoteProvider::Gitlab => list_gitlab(app, dir),
+        RemoteProvider::Github => list_github(app, &target.host, dir),
+        RemoteProvider::Gitlab => list_gitlab(app, &target.host, dir),
     }
 }
 
@@ -141,7 +141,7 @@ struct GhCheck {
     state: Option<String>,
 }
 
-fn list_github(app: Option<&AppHandle>, dir: &Path) -> AppResult<Vec<PullRequest>> {
+fn list_github(app: Option<&AppHandle>, host: &str, dir: &Path) -> AppResult<Vec<PullRequest>> {
     let out = run_cli(
         dir,
         &[
@@ -157,7 +157,7 @@ fn list_github(app: Option<&AppHandle>, dir: &Path) -> AppResult<Vec<PullRequest
             let clean_login = p.login().strip_prefix("app/").unwrap_or_else(|| p.login()).to_string();
             let author_avatar = (!clean_login.is_empty()).then(|| {
                 if let Some(app) = app {
-                    if let Some(cached) = super::avatars::cached_avatar_for_login(app, &clean_login) {
+                    if let Some(cached) = super::avatars::cached_avatar_for_login(app, Some(host), &clean_login) {
                         return cached;
                     }
                 }
@@ -245,7 +245,7 @@ struct GlAuthor {
     username: String,
 }
 
-fn list_gitlab(app: Option<&AppHandle>, dir: &Path) -> AppResult<Vec<PullRequest>> {
+fn list_gitlab(app: Option<&AppHandle>, host: &str, dir: &Path) -> AppResult<Vec<PullRequest>> {
     let out = run_cli(dir, &["glab", "mr", "list", "--output", "json"])?;
     let mrs: Vec<GlMr> = serde_json::from_str(&out)
         .map_err(|e| AppError::Msg(format!("could not parse `glab mr list` output: {e}")))?;
@@ -253,7 +253,7 @@ fn list_gitlab(app: Option<&AppHandle>, dir: &Path) -> AppResult<Vec<PullRequest
         .into_iter()
         .map(|m| {
             let author_avatar = if !m.author.username.is_empty() {
-                app.and_then(|a| super::avatars::cached_avatar_for_login(a, &m.author.username))
+                app.and_then(|a| super::avatars::cached_avatar_for_login(a, Some(host), &m.author.username))
             } else {
                 None
             };
@@ -435,8 +435,8 @@ pub fn get_pr_details(
     };
     let dir = super::workdir(repo)?;
     match target.provider {
-        RemoteProvider::Github => get_pr_github(app, dir, number),
-        RemoteProvider::Gitlab => get_pr_gitlab(dir, number),
+        RemoteProvider::Github => get_pr_github(app, &target.host, dir, number),
+        RemoteProvider::Gitlab => get_pr_gitlab(app, &target.host, dir, number),
     }
 }
 
@@ -470,8 +470,26 @@ pub fn merge_pr(repo: &Repository, number: u64, method: Option<String>) -> AppRe
                 .or_else(|_| run_cli(dir, &["gh", "pr", "merge", &num_str, flag]))
         }
         RemoteProvider::Gitlab => {
-            run_cli(dir, &["glab", "mr", "merge", &num_str])
+            let mut args = vec!["glab", "mr", "merge", &num_str, "--yes"];
+            match method.as_deref() {
+                Some("squash") => args.push("--squash"),
+                Some("rebase") => args.push("--rebase"),
+                _ => {}
+            }
+            run_cli(dir, &args)
         }
+    }
+}
+
+pub fn checkout_pr(repo: &Repository, number: u64) -> AppResult<String> {
+    let Some(target) = remote_target(repo) else {
+        return Err(AppError::Msg("no GitHub/GitLab remote for this repo".into()));
+    };
+    let dir = super::workdir(repo)?;
+    let num_str = number.to_string();
+    match target.provider {
+        RemoteProvider::Github => run_cli(dir, &["gh", "pr", "checkout", &num_str]),
+        RemoteProvider::Gitlab => run_cli(dir, &["glab", "mr", "checkout", &num_str]),
     }
 }
 
@@ -595,7 +613,7 @@ struct GhCommentView {
     created_at: String,
 }
 
-fn get_pr_github(app: Option<&AppHandle>, dir: &Path, number: u64) -> AppResult<PrDetails> {
+fn get_pr_github(app: Option<&AppHandle>, host: &str, dir: &Path, number: u64) -> AppResult<PrDetails> {
     let num_str = number.to_string();
     let out = run_cli(
         dir,
@@ -610,7 +628,7 @@ fn get_pr_github(app: Option<&AppHandle>, dir: &Path, number: u64) -> AppResult<
     let clean_login = p.author.login.strip_prefix("app/").unwrap_or_else(|| &p.author.login).to_string();
     let author_avatar = (!clean_login.is_empty()).then(|| {
         if let Some(app) = app {
-            if let Some(cached) = super::avatars::cached_avatar_for_login(app, &clean_login) {
+            if let Some(cached) = super::avatars::cached_avatar_for_login(app, Some(host), &clean_login) {
                 return cached;
             }
         }
@@ -630,7 +648,14 @@ fn get_pr_github(app: Option<&AppHandle>, dir: &Path, number: u64) -> AppResult<
 
     let reviews = p.reviews.into_iter().map(|r| {
         let r_author = r.author.login.strip_prefix("app/").unwrap_or_else(|| &r.author.login).to_string();
-        let r_avatar = (!r_author.is_empty()).then(|| format!("https://github.com/{r_author}.png?size=40"));
+        let r_avatar = (!r_author.is_empty()).then(|| {
+            if let Some(app) = app {
+                if let Some(cached) = super::avatars::cached_avatar_for_login(app, Some(host), &r_author) {
+                    return cached;
+                }
+            }
+            format!("https://github.com/{r_author}.png?size=40")
+        });
         PrReviewDetail {
             author: r_author,
             author_avatar: r_avatar,
@@ -653,7 +678,14 @@ fn get_pr_github(app: Option<&AppHandle>, dir: &Path, number: u64) -> AppResult<
 
     let comments = p.comments.into_iter().map(|c| {
         let c_author = c.author.login.strip_prefix("app/").unwrap_or_else(|| &c.author.login).to_string();
-        let c_avatar = (!c_author.is_empty()).then(|| format!("https://github.com/{c_author}.png?size=40"));
+        let c_avatar = (!c_author.is_empty()).then(|| {
+            if let Some(app) = app {
+                if let Some(cached) = super::avatars::cached_avatar_for_login(app, Some(host), &c_author) {
+                    return cached;
+                }
+            }
+            format!("https://github.com/{c_author}.png?size=40")
+        });
         PrCommentDetail {
             author: c_author,
             author_avatar: c_avatar,
@@ -688,7 +720,7 @@ fn get_pr_github(app: Option<&AppHandle>, dir: &Path, number: u64) -> AppResult<
     })
 }
 
-fn get_pr_gitlab(dir: &Path, number: u64) -> AppResult<PrDetails> {
+fn get_pr_gitlab(app: Option<&AppHandle>, host: &str, dir: &Path, number: u64) -> AppResult<PrDetails> {
     let num_str = number.to_string();
     let out = run_cli(dir, &["glab", "mr", "view", &num_str, "--output", "json"])?;
     #[derive(Deserialize)]
@@ -726,6 +758,9 @@ fn get_pr_gitlab(dir: &Path, number: u64) -> AppResult<PrDetails> {
         "OPENED" => "OPEN".to_string(),
         other => other.to_string(),
     };
+    let author_avatar = m.author.avatar_url.filter(|u| !u.is_empty()).or_else(|| {
+        app.and_then(|a| super::avatars::cached_avatar_for_login(a, Some(host), &m.author.username))
+    });
     Ok(PrDetails {
         number: m.iid,
         title: m.title,
@@ -736,7 +771,7 @@ fn get_pr_gitlab(dir: &Path, number: u64) -> AppResult<PrDetails> {
         base_branch: m.target_branch,
         draft: m.draft,
         author: m.author.username,
-        author_avatar: m.author.avatar_url,
+        author_avatar,
         created_at: m.created_at,
         updated_at: m.updated_at,
         merged_at: m.merged_at,

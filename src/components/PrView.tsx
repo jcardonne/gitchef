@@ -14,7 +14,7 @@ interface Props {
   pr: PullRequest;
   path: string;
   isCurrentBranch: boolean;
-  onCheckout: (branch: string) => void;
+  onCheckout: (number: number, branch: string) => void;
   onClose: () => void;
   onOpenUrl: (url: string) => void;
   notify: (msg: string) => void;
@@ -34,6 +34,7 @@ export default function PrView({
   const [loading, setLoading] = useState(true);
   const [diffLoading, setDiffLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [diffError, setDiffError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"overview" | "files" | "commits">("overview");
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [diffMode, setDiffMode] = useState<"unified" | "split">("unified");
@@ -50,13 +51,6 @@ export default function PrView({
   const [viewedFiles, setViewedFiles] = useState<Set<string>>(() => {
     return new Set(storage.getPrViewedFiles(path, pr.number));
   });
-
-  // Re-sync viewed files and reset filter/selection when switching PRs
-  useEffect(() => {
-    setViewedFiles(new Set(storage.getPrViewedFiles(path, pr.number)));
-    setSelectedFilePath(null);
-    setFileFilter("");
-  }, [path, pr.number]);
 
   // Click outside to dismiss merge menu
   useEffect(() => {
@@ -111,6 +105,7 @@ export default function PrView({
     }
 
     setDiffLoading(true);
+    setDiffError(null);
     try {
       const diffList = await api.getPrDiff(path, pr.number);
       if (loadReq.current === req) {
@@ -121,6 +116,7 @@ export default function PrView({
       }
     } catch (e) {
       if (loadReq.current === req) {
+        setDiffError(String(e));
         console.warn("Could not load PR diff:", e);
       }
     } finally {
@@ -130,7 +126,15 @@ export default function PrView({
     }
   };
 
+  // Re-sync viewed files, reset state, and reload when switching PRs
   useEffect(() => {
+    setDetails(null);
+    setDiffs(null);
+    setError(null);
+    setDiffError(null);
+    setViewedFiles(new Set(storage.getPrViewedFiles(path, pr.number)));
+    setSelectedFilePath(null);
+    setFileFilter("");
     loadData();
   }, [path, pr.number]);
 
@@ -151,6 +155,28 @@ export default function PrView({
     if (filteredDiffs.length > 0) return filteredDiffs[0];
     return diffs[0] ?? null;
   }, [diffs, selectedFilePath, filteredDiffs]);
+
+  // Aggregate stats from details with fallback to diff hunks if details has 0 files / 0 stats
+  const stats = useMemo(() => {
+    let files = details?.changed_files ?? 0;
+    let additions = details?.additions ?? 0;
+    let deletions = details?.deletions ?? 0;
+
+    if (diffs && (files === 0 || (additions === 0 && deletions === 0))) {
+      files = diffs.length;
+      additions = 0;
+      deletions = 0;
+      for (const f of diffs) {
+        for (const h of f.hunks) {
+          for (const l of h.lines) {
+            if (l.origin === "+") additions++;
+            else if (l.origin === "-") deletions++;
+          }
+        }
+      }
+    }
+    return { files, additions, deletions };
+  }, [details, diffs]);
 
   // Global & tab keyboard shortcuts with proper layering
   useEffect(() => {
@@ -243,10 +269,21 @@ export default function PrView({
             <kbd className="pr-kbd-badge">Esc</kbd>
           </button>
 
-          <span className={`pr-status-badge ${details?.state?.toLowerCase() || (pr.draft ? "draft" : "open")}`}>
-            <PullRequestIcon size={12} />
-            <span>{details?.state ? details.state.charAt(0) + details.state.slice(1).toLowerCase() : pr.draft ? "Draft" : "Open"}</span>
-          </span>
+          {(() => {
+            const isDraft = details ? details.draft : pr.draft;
+            const statusKind = isDraft && (details?.state === "OPEN" || !details?.state)
+              ? "draft"
+              : (details?.state?.toLowerCase() || "open");
+            const statusLabel = statusKind === "draft"
+              ? "Draft"
+              : statusKind.charAt(0).toUpperCase() + statusKind.slice(1);
+            return (
+              <span className={`pr-status-badge ${statusKind}`}>
+                <PullRequestIcon size={12} />
+                <span>{statusLabel}</span>
+              </span>
+            );
+          })()}
 
           <div className="pr-view-title">
             <span
@@ -271,9 +308,9 @@ export default function PrView({
           ) : (
             <button
               className="mini-btn pr-action-btn"
-              title={`Checkout '${details?.branch || pr.branch}' locally`}
+              title={`Checkout #${pr.number} (${details?.branch || pr.branch}) locally`}
               disabled={busy}
-              onClick={() => onCheckout(details?.branch || pr.branch)}
+              onClick={() => onCheckout(pr.number, details?.branch || pr.branch)}
             >
               Checkout branch
             </button>
@@ -381,9 +418,9 @@ export default function PrView({
 
         {details && (
           <div className="pr-diff-stat-pills">
-            <span className="pr-stat-files">{details.changed_files} files changed</span>
-            <span className="pr-stat-add">+{details.additions}</span>
-            <span className="pr-stat-del">-{details.deletions}</span>
+            <span className="pr-stat-files">{stats.files} files changed</span>
+            <span className="pr-stat-add">+{stats.additions}</span>
+            <span className="pr-stat-del">-{stats.deletions}</span>
           </div>
         )}
       </div>
@@ -687,6 +724,13 @@ export default function PrView({
                   />
                 </div>
               </>
+            ) : diffError ? (
+              <div className="pr-empty-hint error">
+                <div>Failed to load diff: {diffError}</div>
+                <button className="mini-btn" onClick={loadData} style={{ marginTop: 8 }}>
+                  Retry
+                </button>
+              </div>
             ) : (
               <div className="pr-empty-hint">No file changes in this pull request.</div>
             )}

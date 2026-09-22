@@ -1073,6 +1073,24 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
       }
     });
 
+  const onCheckoutPr = (number: number, branch: string) =>
+    run(async () => {
+      try {
+        await api.checkoutPr(path, number);
+        await reload();
+        notify(`Checked out PR #${number} (${branch})`);
+      } catch (cliErr) {
+        // Fall back to plain checkout if forge CLI is not available or failed
+        try {
+          await api.checkout(path, branch);
+          await reload();
+          notify(`Switched to ${branch}`);
+        } catch {
+          throw cliErr;
+        }
+      }
+    });
+
   const onCheckoutTag = (name: string) =>
     run(async () => {
       await api.checkout(path, name); // detaches HEAD at the tag
@@ -1657,7 +1675,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
         ? [
             MenuItem.new({
               text: `Checkout '${pr.branch}'`,
-              action: () => onCheckout(pr.branch),
+              action: () => onCheckoutPr(pr.number, pr.branch),
             }),
           ]
         : []),
@@ -2538,7 +2556,7 @@ export default function RepoView({ path, isActive, onLoaded, onOpenPath, onClose
             pr={activePr}
             path={path}
             isCurrentBranch={headBranch === activePr.branch}
-            onCheckout={onCheckout}
+            onCheckout={onCheckoutPr}
             onClose={() => setActivePr(null)}
             onOpenUrl={openPrUrl}
             notify={notify}
