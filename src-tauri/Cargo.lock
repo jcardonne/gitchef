@@ -1233,7 +1233,7 @@ dependencies = [
 
 [[package]]
 name = "gitchef"
-version = "0.42.0"
+version = "0.43.0"
 dependencies = [
  "encoding_rs",
  "git2",
