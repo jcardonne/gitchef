@@ -115,7 +115,7 @@ export default function QuickOpen({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className={"quick-open" + (open ? " open" : "")} onClick={(e) => e.stopPropagation()}>
+      <div className={"quick-open" + (open ? " open" : "")} role="dialog" aria-modal="true" aria-label="Quick open" onClick={(e) => e.stopPropagation()}>
         <input
           className="palette-input"
           autoFocus

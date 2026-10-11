@@ -34,7 +34,7 @@ import type {
   SubmoduleInfo,
   StashInfo,
 } from "../types";
-import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, imageMime, isRateLimited, rateLimitBackoffMs, relativeTime } from "../util";
+import { affectedPaths, avatarUrl, type AvatarContext, hasUncommittedChange, imageMime, isRateLimited, rateLimitBackoffMs, relativeTime, gitErrorHint } from "../util";
 import { shouldBackgroundFetch, shouldHandleRepoChange, shouldRefreshPrs, extendBackoff } from "../refreshPolicy";
 import Toolbar, { PULL_OPTIONS } from "./Toolbar";
 import Sidebar from "./Sidebar";
@@ -118,6 +118,18 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   const [undoState, setUndoState] = useState<{ label: string; sha: string; branch: string } | null>(
     null
   );
+  // The last discard, backed up as a stash so it can be restored. Cleared when
+  // restored, dismissed, or replaced by a newer discard.
+  // A recoverable destructive action: discard, file delete or stash drop. The
+  // strip shows `lead label [action]`; `restore` undoes it. Cleared when
+  // restored, dismissed, or replaced by a newer one.
+  type Recovery = { lead: string; label: string; restore: () => Promise<void> };
+  // A short queue, newest last: a later discard no longer hides the Restore for an
+  // earlier backup. The strip shows the newest and counts the rest.
+  const [recoveries, setRecoveries] = useState<Recovery[]>([]);
+  const recovery = recoveries[recoveries.length - 1] ?? null;
+  const pushRecovery = useCallback((r: Recovery) => setRecoveries((q) => [...q, r].slice(-5)), []);
+  const popRecovery = useCallback(() => setRecoveries((q) => q.slice(0, -1)), []);
   const headBranch = branches.find((b) => b.is_head)?.name ?? "HEAD";
   const doUndoRef = useRef<(() => void) | null>(null);
 
@@ -186,7 +198,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   const [selectedCommitAvatar, setSelectedCommitAvatar] = useState<string | null>(null);
   const [selectedCommitStats, setSelectedCommitStats] = useState<WorkStats | null>(null);
   const [accountAvatars, setAccountAvatars] = useState<ReadonlyMap<string, string>>(new Map());
-  const [toast, setToast] = useState<{ msg: string; error: boolean; duration: number; seq: number; closing?: boolean } | null>(null);
+  const [toast, setToast] = useState<{ msg: string; error: boolean; hint?: string; duration: number; seq: number; closing?: boolean } | null>(null);
   const [gitOutput, setGitOutput] = useState<{ stream: string; text: string }[]>([]);
   const [showGitOutput, setShowGitOutput] = useState(false);
   const [namePrompt, setNamePrompt] = useState<{
@@ -253,13 +265,37 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
     (msg: string, error = false) => {
       const duration = error ? 12000 : 4000;
       toastSeq.current += 1;
-      setToast({ msg, error, duration, seq: toastSeq.current });
+      setToast({ msg, error, hint: error ? gitErrorHint(msg) ?? undefined : undefined, duration, seq: toastSeq.current });
       window.clearTimeout(toastTimer.current);
       toastTimer.current = window.setTimeout(dismissToast, duration);
     },
     [dismissToast]
   );
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+  const offerDiscardRestore = useCallback(
+    (label: string, sha: string) =>
+      pushRecovery({
+        lead: "Discarded:",
+        label,
+        restore: async () => {
+          await api.stashPop(path, sha);
+          notify("Restored discarded changes");
+        },
+      }),
+    [path, notify]
+  );
+  const offerFileRestore = useCallback(
+    (relPath: string, backup: string) =>
+      pushRecovery({
+        lead: "Deleted:",
+        label: relPath.split("/").pop() ?? relPath,
+        restore: async () => {
+          await api.restoreDeletedFile(path, relPath, backup);
+          notify(`Restored ${relPath}`);
+        },
+      }),
+    [path, notify]
+  );
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -1229,10 +1265,10 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
         notify("Cannot force-push a detached HEAD; check out a branch first.", true);
         return;
       }
-      const ok = await confirm(`Force-push ${headBranch} to origin? This rewrites remote history.`, {
-        title: "Force push",
-        kind: "warning",
-      });
+      const ok = await confirm(
+        `Force-push ${headBranch} to origin? Commits on origin/${headBranch} that you don't have locally will be overwritten. The push is refused if someone else pushed since your last fetch.`,
+        { title: "Force push", kind: "warning", okLabel: "Force push", cancelLabel: "Cancel" }
+      );
       if (!ok) return;
       const out = await api.pushForce(path);
       await refresh();
@@ -1344,17 +1380,44 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
       const dirty = status.staged.length + status.unstaged.length > 0;
       if (dirty) {
         const ok = await confirm(
-          "Undo resets to before the operation and discards uncommitted changes. Continue?",
-          { title: "Undo", kind: "warning" }
+          "Undo resets to before the operation. Your uncommitted changes are backed up as a stash so you can restore them right after.",
+          { title: "Undo", kind: "warning", okLabel: "Undo and back up changes", cancelLabel: "Cancel" }
         );
         if (!ok) return;
       }
-      await api.resetTo(path, undoState.sha, "hard");
+      const backupSha = dirty ? await backupWorkingTree("gitchef: backup before undo") : null;
+      try {
+        await api.resetTo(path, undoState.sha, "hard");
+      } catch (e) {
+        if (backupSha) await api.stashPop(path, backupSha).catch(() => undefined);
+        await reload();
+        throw e;
+      }
       await reload();
       notify(`Undid ${undoState.label}`);
       setUndoState(null);
+      if (backupSha) {
+        const bk = backupSha;
+        pushRecovery({
+          lead: "Undo:",
+          label: "uncommitted changes backed up",
+          restore: async () => {
+            await api.stashPop(path, bk);
+            notify("Restored uncommitted changes");
+          },
+        });
+      }
     });
   doUndoRef.current = doUndo;
+  // Pop the backup stash made by a discard. A failed pop (e.g. the files changed
+  // since) keeps the stash and the bar, and the error toast says why.
+  const restoreRecovery = () =>
+    run(async () => {
+      if (!recovery) return;
+      await recovery.restore();
+      await reload();
+      popRecovery();
+    });
   // Stable identity so RebasePlan's fetch effect doesn't re-run (refetching the
   // plan) on every RepoView re-render while the modal is open.
   const closeRebasePlan = useCallback(() => setRebasePlanBase(null), []);
@@ -1441,20 +1504,55 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
       if (snap) setUndoState({ label: `revert ${sha.slice(0, 7)}`, ...snap });
     });
   };
+  // Stash the working tree (tracked + untracked) and return the new stash's sha, or
+  // null when there was nothing to stash. Compares the stash tip before and after
+  // so it does not depend on git's localized output.
+  const backupWorkingTree = async (message: string): Promise<string | null> => {
+    const before = (await api.listStashes(path))[0]?.sha ?? null;
+    await api.stashAll(path, message);
+    const after = (await api.listStashes(path))[0]?.sha ?? null;
+    return after && after !== before ? after : null;
+  };
   const resetTo = (sha: string, mode: "soft" | "mixed" | "hard") => {
     const snap = headSnapshot();
     run(async () => {
+      const dirty = status.staged.length + status.unstaged.length > 0;
       if (mode === "hard") {
-        const ok = await confirm("Hard reset discards all uncommitted changes. Continue?", {
-          title: "Reset --hard",
-          kind: "warning",
-        });
+        const ok = await confirm(
+          `Hard reset to ${sha.slice(0, 7)}? Commits after it leave this branch and stay in the reflog.${
+            dirty ? " Your uncommitted changes are backed up as a stash so you can restore them right after." : ""
+          }`,
+          { title: "Hard reset", kind: "warning", okLabel: "Hard reset", cancelLabel: "Cancel" }
+        );
         if (!ok) return;
       }
-      await api.resetTo(path, sha, mode);
+      // A hard reset throws away the working tree, so stash it first. stashAll
+      // throws when git fails, which aborts the reset before anything is lost.
+      let backupSha: string | null = null;
+      if (mode === "hard" && dirty) backupSha = await backupWorkingTree("gitchef: backup before hard reset");
+      try {
+        await api.resetTo(path, sha, mode);
+      } catch (e) {
+        // The changes are already stashed; put them back rather than leave them
+        // hidden behind an error toast.
+        if (backupSha) await api.stashPop(path, backupSha).catch(() => undefined);
+        await reload();
+        throw e;
+      }
       await reload();
       notify(`Reset (${mode}) to ${sha.slice(0, 7)}`);
       if (snap) setUndoState({ label: `reset (${mode}) to ${sha.slice(0, 7)}`, ...snap });
+      if (backupSha) {
+        const bk = backupSha;
+        pushRecovery({
+          lead: "Hard reset:",
+          label: "uncommitted changes backed up",
+          restore: async () => {
+            await api.stashPop(path, bk);
+            notify("Restored uncommitted changes");
+          },
+        });
+      }
     });
   };
   const compareWorkdir = (sha: string) =>
@@ -1761,15 +1859,25 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
       await reload();
       notify(out.trim() || "Stash popped");
     });
-  const stashDrop = (sha: string) =>
+  const stashDrop = (sha: string, message: string) =>
     run(async () => {
-      const ok = await confirm("Delete this stash? This cannot be undone.", {
+      const ok = await confirm(`Delete the stash "${message}"? You can restore it right after.`, {
         title: "Delete stash",
         kind: "warning",
+        okLabel: "Delete stash",
+        cancelLabel: "Keep stash",
       });
       if (!ok) return;
       await api.stashDrop(path, sha);
       await reload();
+      pushRecovery({
+        lead: "Deleted stash:",
+        label: message,
+        restore: async () => {
+          await api.stashRestore(path, sha, message);
+          notify("Stash restored");
+        },
+      });
       notify("Stash deleted");
     });
   const stashEdit = (sha: string, message: string) =>
@@ -1792,7 +1900,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({ text: "Apply Stash", action: () => stashApply(sha) }),
       MenuItem.new({ text: "Pop Stash", action: () => stashPop(sha) }),
-      MenuItem.new({ text: "Delete Stash", action: () => stashDrop(sha) }),
+      MenuItem.new({ text: "Delete Stash", action: () => stashDrop(sha, message) }),
       PredefinedMenuItem.new({ item: "Separator" }),
       MenuItem.new({
         text: "Edit stash message…",
@@ -2106,15 +2214,20 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   const discardAllChanges = () =>
     run(async () => {
       const ok = await confirm(
-        "Discard ALL uncommitted changes? This also deletes untracked files and cannot be undone.",
-        { title: "Discard all changes", kind: "warning" }
+        "Discard ALL uncommitted changes? Tracked files revert to the last commit and untracked files are removed from disk. A backup is kept so you can restore them right after.",
+        { title: "Discard all changes", kind: "warning", okLabel: "Discard all", cancelLabel: "Keep changes" }
       );
       if (!ok) return;
       if (status.staged.length) await api.unstagePaths(path, affectedPaths(status.staged));
       const all = affectedPaths([...status.unstaged, ...status.staged]);
-      await api.discardPaths(path, all);
+      const sha = await api.discardPathsWithBackup(path, all, "gitchef: backup before discard");
       await refresh({ history: false });
-      notify("Discarded all changes");
+      if (sha) {
+        offerDiscardRestore(`${all.length} file${all.length === 1 ? "" : "s"}`, sha);
+        notify("Discarded all changes");
+      } else {
+        notify("Discarded all changes (no backup was possible)");
+      }
     });
 
   const showWorkMenu = async () => {
@@ -2129,18 +2242,51 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
     await (await Menu.new({ items })).popup();
   };
 
+  // Wrap a partial discard (hunk or lines) so it can be restored: snapshot the file,
+  // run the discard, record the result, then offer Restore. The restore is refused
+  // by the backend if the file was edited after the discard.
+  const discardWithSnapshot = async (relPath: string, label: string, apply: () => Promise<void>) => {
+    let backup: string | null = null;
+    try {
+      backup = await api.snapshotFile(path, relPath);
+    } catch {
+      backup = null; // no snapshot possible: still discard, but say so below
+    }
+    await apply();
+    if (!backup) {
+      notify(`${label} discarded (no backup was possible)`);
+      return;
+    }
+    const bk = backup;
+    await api.finishSnapshot(path, relPath, bk);
+    pushRecovery({
+      lead: "Discarded:",
+      label: `${label} in ${relPath.split("/").pop() ?? relPath}`,
+      restore: async () => {
+        await api.restoreFileSnapshot(path, relPath, bk);
+        notify(`Restored ${label.toLowerCase()}`);
+      },
+    });
+  };
+
   // --- hunk-level staging (working-file diffs only) ---
   const applyHunkAction = (header: string, action: "stage" | "unstage" | "discard") =>
     run(async () => {
       if (!workSel) return;
       if (action === "discard") {
-        const ok = await confirm("Discard this hunk? This cannot be undone.", {
+        const ok = await confirm("Discard this hunk? A copy is kept so you can restore it right after.", {
           title: "Discard hunk",
           kind: "warning",
+          okLabel: "Discard hunk",
+          cancelLabel: "Keep hunk",
         });
         if (!ok) return;
       }
-      await api.applyHunk(path, workSel.path, action, header);
+      if (action === "discard") {
+        await discardWithSnapshot(workSel.path, "Hunk", () => api.applyHunk(path, workSel.path, action, header));
+      } else {
+        await api.applyHunk(path, workSel.path, action, header);
+      }
       // Re-fetch the same diff so remaining hunks (and their keys) stay current;
       // if the file has no changes left in this view, close the diff.
       const fresh = await api.fileDiff(path, workSel.path, workSel.staged);
@@ -2159,13 +2305,19 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
       if (!workSel || selected.length === 0) return;
       const n = selected.length;
       if (action === "discard") {
-        const ok = await confirm(`Discard ${n} selected line${n === 1 ? "" : "s"}? This cannot be undone.`, {
-          title: "Discard lines",
-          kind: "warning",
-        });
+        const ok = await confirm(
+          `Discard ${n} selected line${n === 1 ? "" : "s"}? A copy is kept so you can restore ${n === 1 ? "it" : "them"} right after.`,
+          { title: "Discard lines", kind: "warning", okLabel: "Discard lines", cancelLabel: "Keep lines" }
+        );
         if (!ok) return;
       }
-      await api.applyLines(path, workSel.path, action, header, selected);
+      if (action === "discard") {
+        await discardWithSnapshot(workSel.path, `${n} line${n === 1 ? "" : "s"}`, () =>
+          api.applyLines(path, workSel.path, action, header, selected)
+        );
+      } else {
+        await api.applyLines(path, workSel.path, action, header, selected);
+      }
       const fresh = await api.fileDiff(path, workSel.path, workSel.staged);
       if (fresh.hunks.length === 0) closeDiff();
       else setDiff(fresh);
@@ -2301,8 +2453,8 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   }, [isActive, previewOpen, modalOpen, findOpen, activePr]);
 
   const repoActions = useMemo(
-    () => ({ repoPath: path, busy, activeAction, run, refresh, notify }),
-    [path, busy, activeAction, run, refresh, notify]
+    () => ({ repoPath: path, busy, activeAction, run, refresh, notify, offerDiscardRestore, offerFileRestore }),
+    [path, busy, activeAction, run, refresh, notify, offerDiscardRestore, offerFileRestore]
   );
 
   // Defined once and reused below the `!repo` early returns too - initHere()'s
@@ -2311,6 +2463,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   const toastEl = toast && (
     <div
       key={toast.seq}
+      role={toast.error ? "alert" : "status"}
       className={`toast${toast.error ? " toast-error" : ""}${toast.closing ? " closing" : ""}`}
     >
       {toast.error && (
@@ -2329,6 +2482,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
         </div>
       )}
       <span className="toast-msg">{toast.msg}</span>
+      {toast.hint && <span className="toast-hint">{toast.hint}</span>}
       {toast.error ? (
         <div className="toast-actions">
           <button onClick={() => run(async () => (await api.copyText(toast.msg), notify("Copied")))}>
@@ -2390,6 +2544,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
   ).sort();
   const prBaseDefault = ["main", "master"].find((n) => baseCandidates.includes(n)) ?? baseCandidates[0] ?? "main";
   const paletteCommands: PaletteCommand[] = [
+    { title: "Keyboard shortcuts", run: () => window.dispatchEvent(new CustomEvent("gitchef:open-shortcuts")) },
     { title: "Go to file…", run: () => setQuickOpenOpen(true) },
     { title: "Search in files…", run: () => setGlobalSearchOpen(true) },
     { title: `${sidebarOpen ? "Hide" : "Show"} sidebar`, run: () => setSidebarOpen((v) => !v) },
@@ -2518,6 +2673,13 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
             diff={diff}
             mode={previewMode === "split" ? "split" : "unified"}
             onHunkMenu={hunkMenuEnabled ? showHunkMenu : undefined}
+            staged={!!workSel?.staged}
+            onHunkAction={
+              hunkMenuEnabled
+                ? (header, action, selected) =>
+                    selected.length > 0 ? applyLinesAction(header, action, selected) : applyHunkAction(header, action)
+                : undefined
+            }
             findOpen={findOpen}
             onFindClose={() => setFindOpen(false)}
           />
@@ -2560,6 +2722,17 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
             onDismiss={() => setUndoState(null)}
           />
         )
+      )}
+      {recovery && (
+        <UndoBar
+          lead={recovery.lead}
+          label={recoveries.length > 1 ? `${recovery.label} (+${recoveries.length - 1} earlier)` : recovery.label}
+          actionLabel="Restore"
+          actionTitle="Bring it back"
+          busy={busy}
+          onUndo={restoreRecovery}
+          onDismiss={() => popRecovery()}
+        />
       )}
 
       <div className="main">
@@ -2656,6 +2829,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
               onLoadMore={loadMore}
               avatarCtx={avatarCtx}
               prBranches={prBranchSet}
+              userEmail={repo?.user_email ?? null}
             />
           </div>
         </div>
@@ -2694,6 +2868,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
                 lastCommitMessage={lastCommitMessage}
                 isActive={isActive}
                 suppressShortcuts={modalOpen}
+                headBranch={branches.find((b) => b.is_head)?.name ?? null}
               />
             ) : (
               <div className="commit-detail-panel">

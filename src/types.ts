@@ -12,6 +12,8 @@ export interface RepoInfo {
   // Provider inferred from the primary remote's host, or null for self-hosted /
   // unknown hosts (avatars then fall back to Gravatar).
   provider: RemoteProvider | null;
+  /// `user.email` from git config, or null when unset.
+  user_email: string | null;
 }
 
 /// A user-assignable tab color. Each id maps to a `--tab-<id>` CSS variable
@@ -81,6 +83,8 @@ export interface CommitNode {
   refs: RefLabel[];
   lane: number;
   color: number;
+  /// Not on any remote-tracking ref yet (false in repos with no remote refs).
+  unpushed: boolean;
 }
 
 export interface BranchInfo {

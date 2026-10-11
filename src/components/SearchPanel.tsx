@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import * as api from "../api";
 import type { ContentSearch, FileHistoryEntry } from "../types";
-import { relativeTime } from "../util";
+import { activateOnKey, relativeTime } from "../util";
 import { useEscape } from "../useEscape";
 
 /// Match ranges of `query` in `text`, mirroring the backend flags (fixed-string
@@ -114,7 +114,7 @@ export default function SearchPanel({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="search-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="search-panel" role="dialog" aria-modal="true" aria-label="Search" onClick={(e) => e.stopPropagation()}>
         <div className="search-head">
           <div className="search-modes" role="tablist">
             <button className={`search-mode${mode === "files" ? " active" : ""}`} onClick={() => setMode("files")}>Files</button>
@@ -125,12 +125,12 @@ export default function SearchPanel({
             autoFocus
             spellCheck={false}
             value={query}
-            placeholder={mode === "files" ? "Search file contents…" : "Search history for a string…"}
+            placeholder={mode === "files" ? "Search file contents…" : "Find commits that added or removed this text…"}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <button className={`search-nav text${caseSensitive ? " active" : ""}`} onClick={() => setCaseSensitive((v) => !v)} disabled={mode === "history"} title="Match case (files only)">Aa</button>
-          <button className={`search-nav text${regex ? " active" : ""}`} onClick={() => setRegex((v) => !v)} title="Regular expression">.*</button>
-          <button className="search-nav" onClick={onClose} title="Close (Esc)">
+          <button className={`search-nav text${caseSensitive ? " active" : ""}`} onClick={() => setCaseSensitive((v) => !v)} disabled={mode === "history"} aria-pressed={caseSensitive} aria-label="Match case" title="Match case (files only)">Aa</button>
+          <button className={`search-nav text${regex ? " active" : ""}`} onClick={() => setRegex((v) => !v)} aria-pressed={regex} aria-label="Regular expression" title="Regular expression">.*</button>
+          <button className="search-nav" onClick={onClose} aria-label="Close" title="Close (Esc)">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
           </button>
         </div>
@@ -175,7 +175,7 @@ export default function SearchPanel({
           ) : (
             <div className="reflog-list">
               {commits.map((c) => (
-                <div className="reflog-item clickable" key={c.id} onClick={() => { onPickCommit(c.id); onClose(); }}>
+                <div className="reflog-item clickable" key={c.id} role="button" tabIndex={0} onClick={() => { onPickCommit(c.id); onClose(); }} onKeyDown={activateOnKey(() => { onPickCommit(c.id); onClose(); })}>
                   <div className="reflog-item-info">
                     <span className="reflog-sha">{c.short_id}</span>
                     <span className="reflog-msg" title={c.summary}>{c.summary}</span>

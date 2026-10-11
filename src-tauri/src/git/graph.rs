@@ -1,7 +1,7 @@
 use crate::error::AppResult;
 use git2::{Repository, Sort};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A ref pointing at a commit, with its type so the UI can badge it (branch /
 /// remote / tag / stash / HEAD).
@@ -49,6 +49,43 @@ pub struct CommitNode {
     pub lane: usize,
     /// Color bucket for the lane (frontend maps this to a palette entry).
     pub color: usize,
+    /// Reachable from a local branch but from no remote-tracking ref, i.e. not
+    /// shared yet. Always false when the repo has no remote refs at all, so a
+    /// local-only repo is not painted as entirely unpushed.
+    pub unpushed: bool,
+}
+
+/// Commits reachable from any local branch and from no remote ref. Empty when
+/// the repo has no remote refs. Bounded to `cap` commits since only the newest
+/// ones are ever drawn.
+fn unpushed_set(repo: &Repository, cap: usize) -> HashSet<git2::Oid> {
+    let mut out = HashSet::new();
+    let Ok(refs) = repo.references() else { return out };
+    let mut locals = Vec::new();
+    let mut remotes = Vec::new();
+    for r in refs.flatten() {
+        let Some(name) = r.name() else { continue };
+        let Ok(c) = r.peel_to_commit() else { continue };
+        if name.starts_with("refs/heads/") {
+            locals.push(c.id());
+        } else if name.starts_with("refs/remotes/") && !name.ends_with("/HEAD") {
+            remotes.push(c.id());
+        }
+    }
+    if remotes.is_empty() || locals.is_empty() {
+        return out;
+    }
+    let Ok(mut walk) = repo.revwalk() else { return out };
+    for id in locals {
+        let _ = walk.push(id);
+    }
+    for id in remotes {
+        let _ = walk.hide(id);
+    }
+    for oid in walk.flatten().take(cap) {
+        out.insert(oid);
+    }
+    out
 }
 
 /// Walk every ref, collect up to `limit` commits in topological+time order, and
@@ -85,6 +122,7 @@ pub fn commit_graph(repo: &Repository, limit: usize) -> AppResult<Vec<CommitNode
     }
     let _ = walk.push_head();
 
+    let unpushed = unpushed_set(repo, limit.saturating_mul(4));
     let mut nodes = Vec::new();
     for oid_res in walk {
         if nodes.len() >= limit {
@@ -110,6 +148,7 @@ pub fn commit_graph(repo: &Repository, limit: usize) -> AppResult<Vec<CommitNode
             refs: ref_map.get(&oid.to_string()).cloned().unwrap_or_default(),
             lane: 0,
             color: 0,
+            unpushed: unpushed.contains(&oid),
         });
     }
 
@@ -242,6 +281,34 @@ mod tests {
         assert_eq!(nodes.len(), 3);
         assert_eq!(nodes[0].id, head); // newest first
         assert_eq!(nodes[0].summary, "c");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn marks_commits_not_on_any_remote_as_unpushed() {
+        let dir = tmp("graph-unpushed");
+        init(&dir);
+        commit(&dir, "shared");
+        let shared = run_git(&dir, &["rev-parse", "HEAD"]).unwrap().trim().to_string();
+        // simulate a fetched remote branch sitting at the first commit
+        run_git(&dir, &["update-ref", "refs/remotes/origin/main", &shared]).unwrap();
+        let local_a = commit(&dir, "local a");
+        let local_b = commit(&dir, "local b");
+        let nodes = commit_graph(&Repository::open(&dir).unwrap(), 500).unwrap();
+        let flag = |id: &str| nodes.iter().find(|n| n.id == id).unwrap().unpushed;
+        assert!(flag(&local_b) && flag(&local_a), "new local commits are unpushed");
+        assert!(!flag(&shared), "the commit the remote already has is not");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_repo_with_no_remote_refs_marks_nothing_unpushed() {
+        let dir = tmp("graph-localonly");
+        init(&dir);
+        commit(&dir, "a");
+        commit(&dir, "b");
+        let nodes = commit_graph(&Repository::open(&dir).unwrap(), 500).unwrap();
+        assert!(nodes.iter().all(|n| !n.unpushed));
         std::fs::remove_dir_all(&dir).ok();
     }
 

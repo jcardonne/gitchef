@@ -7,7 +7,7 @@ import { getChangesView, setChangesView, getStagingCollapsed, setStagingCollapse
 import { useRepo, type RefreshOpts } from "../repoContext";
 import ChangeList from "./ChangeList";
 import { comboHint } from "../shortcuts";
-import { affectedPaths } from "../util";
+import { activateOnKey, affectedPaths } from "../util";
 import { useChefAi } from "../useChefAi";
 import ChefAiDownloadModal from "./ChefAiDownloadModal";
 
@@ -43,6 +43,8 @@ interface Props {
   /// App-level overlay). Commit/stage/unstage combos must stand down so they
   /// don't fire behind the overlay.
   suppressShortcuts?: boolean;
+  /// Checked-out branch name, or null when HEAD is detached. Shown above the commit box.
+  headBranch: string | null;
 }
 
 /// The commit composer + changes browser. Owns the List/Tree view, the
@@ -54,8 +56,9 @@ export default function StagingPanel({
   lastCommitMessage,
   isActive,
   suppressShortcuts,
+  headBranch,
 }: Props) {
-  const { repoPath, busy, activeAction, run, refresh, notify } = useRepo();
+  const { repoPath, busy, activeAction, run, refresh, notify, offerDiscardRestore, offerFileRestore } = useRepo();
   const {
     loading: aiLoading,
     generateCommit,
@@ -203,29 +206,42 @@ export default function StagingPanel({
       await afterMutation();
       notify("Stashed file");
     });
+  // first three file names, then a count, so the confirm names what is about to be lost
+  const fileList = (g: FileStatus[]) => {
+    const names = g.map((f) => f.path.split("/").pop() ?? f.path);
+    return names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+  };
+  // Discard through a backup stash and offer Restore; falls back to a plain
+  // discard (and says so) when git could not stash anything.
+  const discardWithBackup = async (paths: string[], label: string) => {
+    const sha = await api.discardPathsWithBackup(repoPath, paths, "gitchef: backup before discard");
+    await afterMutation({ history: false });
+    if (sha) offerDiscardRestore(label, sha);
+    else notify("Discarded (no backup was possible)");
+  };
   const discard = (group: FileStatus[]) =>
     run(async () => {
-      const ok = await confirm(`Discard changes to ${group.length} file(s)? This cannot be undone.`, {
-        title: "Discard changes",
-        kind: "warning",
-      });
+      const ok = await confirm(
+        `Discard changes to ${fileList(group)}? ${group.length === 1 ? "It reverts" : "They revert"} to the last commit. A backup is kept so you can restore right after.`,
+        { title: "Discard changes", kind: "warning", okLabel: "Discard", cancelLabel: "Keep changes" }
+      );
       if (!ok) return;
-      await api.discardPaths(repoPath, affectedPaths(group));
-      await afterMutation({ history: false });
+      await discardWithBackup(affectedPaths(group), fileList(group));
     });
   const discardAllLocalChanges = () =>
     run(async () => {
       const ok = await confirm(
-        `Discard all local changes to ${allLocalFiles.length} file(s)? This will also delete untracked files and cannot be undone.`,
+        `Discard all local changes to ${fileList(allLocalFiles)}? Tracked files revert to the last commit and untracked files are removed from disk. A backup is kept so you can restore right after.`,
         {
           title: "Discard all local changes",
           kind: "warning",
+          okLabel: "Discard all",
+          cancelLabel: "Keep changes",
         }
       );
       if (!ok) return;
       if (status.staged.length) await api.unstagePaths(repoPath, affectedPaths(status.staged));
-      await api.discardPaths(repoPath, affectedPaths([...status.unstaged, ...status.staged]));
-      await afterMutation({ history: false });
+      await discardWithBackup(affectedPaths([...status.unstaged, ...status.staged]), fileList(allLocalFiles));
     });
   const createPatch = (f: FileStatus) =>
     run(async () => {
@@ -239,13 +255,16 @@ export default function StagingPanel({
     });
   const deleteFile = (f: FileStatus) =>
     run(async () => {
-      const ok = await confirm(`Delete ${f.path}? This cannot be undone.`, {
+      const ok = await confirm(`Delete ${f.path}? A copy is kept so you can restore it right after.`, {
         title: "Delete file",
         kind: "warning",
+        okLabel: "Delete file",
+        cancelLabel: "Keep file",
       });
       if (!ok) return;
-      await api.deleteFile(repoPath, f.path);
+      const backup = await api.deleteFileWithBackup(repoPath, f.path);
       await afterMutation({ history: false });
+      offerFileRestore(f.path, backup);
       notify("File deleted");
     });
 
@@ -423,21 +442,6 @@ export default function StagingPanel({
   return (
     <div className="staging">
       <div className="changes-toolbar">
-        <button
-          className="discard-all-btn"
-          disabled={busy || !allLocalFiles.length}
-          onClick={discardAllLocalChanges}
-          title="Discard all local changes"
-          aria-label="Discard all local changes"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M3.5 4.5h9" />
-            <path d="M6 4.5V3.2h4v1.3" />
-            <path d="M5 6.5l.5 6h5l.5-6" />
-            <path d="M7 7.5v3.5" />
-            <path d="M9.5 7.5v3.5" />
-          </svg>
-        </button>
         <div className="changes-search">
           <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <circle cx="7" cy="7" r="4" />
@@ -484,7 +488,7 @@ export default function StagingPanel({
       ) : (
         <>
           <div className={`staging-section${collapsed.unstaged ? " collapsed" : ""}`}>
-            <div className="section-head" onClick={() => toggleCollapsed("unstaged")}>
+            <div className="section-head" role="button" tabIndex={0} aria-expanded={!collapsed.unstaged} onClick={() => toggleCollapsed("unstaged")} onKeyDown={activateOnKey(() => toggleCollapsed("unstaged"))}>
               <svg
                 className={`chevron${collapsed.unstaged ? "" : " open"}`}
                 width="15"
@@ -512,6 +516,14 @@ export default function StagingPanel({
                     ? "Stage visible"
                     : "Stage all"}
               </button>
+              <button
+                className="mini-btn discard-link"
+                disabled={busy || !allLocalFiles.length}
+                onClick={(e) => { e.stopPropagation(); discardAllLocalChanges(); }}
+                title={`Discard all ${allLocalFiles.length} changed file${allLocalFiles.length === 1 ? "" : "s"}, staged and unstaged (a backup is kept)`}
+              >
+                Discard all ({allLocalFiles.length})
+              </button>
             </div>
             {!collapsed.unstaged && (
               <ChangeList
@@ -531,7 +543,7 @@ export default function StagingPanel({
           </div>
 
           <div className={`staging-section${collapsed.staged ? " collapsed" : ""}`}>
-            <div className="section-head" onClick={() => toggleCollapsed("staged")}>
+            <div className="section-head" role="button" tabIndex={0} aria-expanded={!collapsed.staged} onClick={() => toggleCollapsed("staged")} onKeyDown={activateOnKey(() => toggleCollapsed("staged"))}>
               <svg
                 className={`chevron${collapsed.staged ? "" : " open"}`}
                 width="15"
@@ -580,6 +592,9 @@ export default function StagingPanel({
       )}
 
       <div className="commit-box">
+        <div className="commit-target" title={headBranch ?? "Detached HEAD"}>
+          {amend ? "Amending" : "Committing to"} <strong>{headBranch ?? "detached HEAD"}</strong>
+        </div>
         <div className="commit-type-row">
           <select value={type} onChange={(e) => setType(e.target.value)} title="Conventional Commit type (optional)">
             <option value="">type</option>
@@ -699,7 +714,7 @@ export default function StagingPanel({
           {coAuthors.map((c, i) => (
             <span className="co-author-chip" key={c + i}>
               {c}
-              <button className="co-author-remove" title="Remove co-author" onClick={() => setCoAuthors((xs) => xs.filter((_, j) => j !== i))}>×</button>
+              <button className="co-author-remove" aria-label="Remove co-author" title="Remove co-author" onClick={() => setCoAuthors((xs) => xs.filter((_, j) => j !== i))}>×</button>
             </span>
           ))}
           <input

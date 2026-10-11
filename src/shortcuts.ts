@@ -42,10 +42,26 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     ],
   },
   {
+    title: "Diff hunks (when the diff is focused)",
+    items: [
+      { label: "Next / previous hunk", combo: ["]", "["] },
+      { label: "Stage / unstage hunk (or selected lines)", combo: ["s"] },
+      { label: "Discard hunk (or selected lines)", combo: ["d"] },
+    ],
+  },
+  {
     title: "Commit graph (when focused)",
     items: [
       { label: "Move between commits", combo: ["ArrowUp", "ArrowDown"] },
       { label: "Move between commits (Vim keys)", combo: ["j", "k"] },
+    ],
+  },
+  {
+    title: "View",
+    items: [
+      { label: "Zoom in", combo: ["mod", "+"] },
+      { label: "Zoom out", combo: ["mod", "-"] },
+      { label: "Reset zoom", combo: ["mod", "0"] },
     ],
   },
   {

@@ -6,7 +6,7 @@ import "../highlight";
 import type { FileDiff, PrDetails, PullRequest } from "../types";
 import * as api from "../api";
 import * as storage from "../storage";
-import { relativeTime } from "../util";
+import { relativeTime, buttonProps } from "../util";
 import DiffViewer from "./DiffViewer";
 import { CheckIcon, CloseIcon, PullRequestIcon } from "../icons";
 
@@ -261,7 +261,7 @@ export default function PrView({
       {/* Top action / back bar */}
       <div className="pr-view-header">
         <div className="pr-header-left">
-          <button className="pr-back-btn" onClick={onClose} title="Back to commit graph (Escape)">
+          <button className="pr-back-btn" onClick={onClose} aria-label="Back to commit graph" title="Back to commit graph (Escape)">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M11 3L5 8l6 5" />
             </svg>
@@ -293,6 +293,10 @@ export default function PrView({
                 void api.copyText(prWebUrl);
                 notify("PR link copied to clipboard");
               }}
+              {...buttonProps(() => {
+                void api.copyText(prWebUrl);
+                notify("PR link copied to clipboard");
+              })}
             >
               #{pr.number}
             </span>
@@ -368,7 +372,7 @@ export default function PrView({
             </svg>
           </button>
 
-          <button className="icon-btn pr-refresh-btn" title="Refresh PR" onClick={loadData} disabled={loading}>
+          <button className="icon-btn pr-refresh-btn" aria-label="Refresh pull request" title="Refresh PR" onClick={loadData} disabled={loading}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={loading ? "spin" : ""}>
               <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3h-3" />
             </svg>
@@ -398,6 +402,10 @@ export default function PrView({
               void api.copyText(details?.base_branch || "main");
               notify("Base branch copied to clipboard");
             }}
+            {...buttonProps(() => {
+              void api.copyText(details?.base_branch || "main");
+              notify("Base branch copied to clipboard");
+            })}
           >
             {details?.base_branch || "main"}
           </span>
@@ -411,6 +419,10 @@ export default function PrView({
               void api.copyText(details?.branch || pr.branch);
               notify("Branch name copied to clipboard");
             }}
+            {...buttonProps(() => {
+              void api.copyText(details?.branch || pr.branch);
+              notify("Branch name copied to clipboard");
+            })}
           >
             {details?.branch || pr.branch}
           </span>
@@ -669,7 +681,7 @@ export default function PrView({
                       onChange={(e) => setFileFilter(e.target.value)}
                     />
                     {fileFilter && (
-                      <button className="pr-files-filter-clear" onClick={() => setFileFilter("")} title="Clear filter">
+                      <button className="pr-files-filter-clear" onClick={() => setFileFilter("")} aria-label="Clear filter" title="Clear filter">
                         ✕
                       </button>
                     )}
@@ -690,6 +702,7 @@ export default function PrView({
                             key={f.path}
                             className={`pr-file-item ${isSelected ? "selected" : ""} ${isViewed ? "viewed" : ""}`}
                             onClick={() => setSelectedFilePath(f.path)}
+                            {...buttonProps(() => setSelectedFilePath(f.path))}
                             title={f.path}
                           >
                             <input

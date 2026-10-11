@@ -60,7 +60,7 @@ export default function CreatePrModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal pr-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal pr-modal" role="dialog" aria-modal="true" aria-label="Create pull request" onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <h3 style={{ margin: 0 }}>Create {label}</h3>
           <button

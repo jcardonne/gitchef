@@ -4,6 +4,7 @@ import type { ChangesView } from "../storage";
 import { buildTree, filesIn, flattenVisible, type TreeFile, type TreeFolder, type TreeNode } from "../fileTree";
 import { nextIndex, rangeKeys } from "../changeNav";
 import { useVirtual } from "../useVirtual";
+import { buttonProps } from "../util";
 
 interface Props {
   files: FileStatus[];
@@ -199,6 +200,7 @@ function ChangeList({
         className={`file-row${selected.has(keyOf(f)) ? " selected" : ""}${recentlyMoved?.has(f.path) ? " just-moved" : ""}`}
         style={{ paddingLeft: BASE_PAD + depth * INDENT }}
         data-idx={index}
+        aria-current={selected.has(keyOf(f)) ? "true" : undefined}
         title={f.old_path ? `${f.old_path} → ${f.path}` : f.path}
         onClick={(e) => handleClick(f, index, e)}
         tabIndex={0}
@@ -243,6 +245,7 @@ function ChangeList({
                 className="tree-folder"
                 style={{ paddingLeft: BASE_PAD + r.depth * INDENT }}
                 onClick={() => toggleFolder(r.node.path)}
+                {...buttonProps(() => toggleFolder(r.node.path))}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   onFolderContext(filesIn(r.node), r.node.path);
