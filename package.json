@@ -1,6 +1,6 @@
 {
   "name": "gitchef",
-  "version": "0.43.1",
+  "version": "0.44.0",
   "description": "Open-source visual Git client",
   "license": "MIT",
   "type": "module",
