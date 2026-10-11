@@ -14,6 +14,7 @@ import Settings from "./components/Settings";
 import { getTheme, getPalette, setTheme, setPalette, type Theme, type Palette } from "./theme";
 import { useTooltips } from "./useTooltips";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /// App shell: owns the open tabs + recents, routes between the Home tab and one
@@ -117,6 +118,36 @@ export default function App() {
   closeTabRef.current = closeTab;
   const pickAndOpenRef = useRef(pickAndOpen);
   pickAndOpenRef.current = pickAndOpen;
+  const openTabRef = useRef(openTab);
+  openTabRef.current = openTab;
+
+  // `gitchef <path>` shell command -> gitchef://open?path=... (cold start + running app)
+  useEffect(() => {
+    const handle = (urls: string[] | null) => {
+      for (const raw of urls ?? []) {
+        try {
+          const u = new URL(raw);
+          const path = u.protocol === "gitchef:" && u.hostname === "open" ? u.searchParams.get("path") : null;
+          if (path) openTabRef.current(path);
+        } catch {
+          /* malformed URL, ignore */
+        }
+      }
+    };
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    getCurrent().then(handle).catch(console.error);
+    onOpenUrl(handle)
+      .then((un) => {
+        if (disposed) un();
+        else unlisten = un;
+      })
+      .catch(console.error);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   // Native macOS system menu bar actions
   useEffect(() => {

@@ -116,6 +116,19 @@ const SECTIONS: { id: Section; label: string; icon: ReactNode }[] = [
 /// and broadcast `gitchef:prefs` so already-mounted views update live.
 export default function Settings({ theme, palette, onChangeTheme, onChangePalette, onClose }: Props) {
   const [section, setSection] = useState<Section>("general");
+  const [cli, setCli] = useState<api.CliInstall | null>(null);
+  const [cliError, setCliError] = useState("");
+  useEffect(() => {
+    api.cliStatus().then(setCli).catch(() => {});
+  }, []);
+  const installCli = () =>
+    api
+      .installCli()
+      .then((r) => {
+        setCli(r);
+        setCliError("");
+      })
+      .catch((e) => setCliError(`Install failed: ${e}`));
   const [density, setDensityState] = useState(getDensity);
   const [pullDefault, setPullState] = useState(getPullDefault);
   const [sortAsc, setSortState] = useState(getSortAsc);
@@ -444,6 +457,33 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="settings-field">
+                <div className="settings-field-label"><span>Shell command</span></div>
+                <div className="settings-field-hint">Open GitChef from your terminal.</div>
+                <div className="cli-usage">
+                  <code>gitchef</code><span>Open the app</span>
+                  <code>gitchef .</code><span>Open the current folder</span>
+                  <code>gitchef ~/code/app</code><span>Open a specific folder</span>
+                </div>
+                <div className="mode-seg">
+                  <button onClick={installCli}>
+                    <span>{!cli ? "Install command" : cli.current ? "Reinstall" : "Update command"}</span>
+                  </button>
+                </div>
+                {cli && cli.current && (
+                  <div className="ai-status-box ok">✓ Installed at <code>{cli.path}</code></div>
+                )}
+                {cli && !cli.current && (
+                  <div className="ai-status-box error">⚠ Installed at <code>{cli.path}</code> but outdated. Update to apply the latest behavior.</div>
+                )}
+                {cli && !cli.onPath && (
+                  <div className="ai-status-box error">
+                    ⚠ <span><code>{cli.path.replace(/\/gitchef$/, "")}</code> is not on your PATH. Add <code>export PATH="{cli.path.replace(/\/gitchef$/, "")}:$PATH"</code> to ~/.zshrc.</span>
+                  </div>
+                )}
+                {cliError && <div className="ai-status-box error">⚠ {cliError}</div>}
               </div>
             </>
           )}

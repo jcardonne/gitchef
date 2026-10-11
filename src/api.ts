@@ -43,7 +43,14 @@ export async function pickRepoFolder(title = "Open a Git repository"): Promise<s
 // The backend is stateless: every command takes the `repo` path it acts on, so
 // open tabs never share a "current repo" (no cross-tab races).
 
-export const openRepo = (path: string) => invoke<RepoInfo>("open_repo", { path });
+export interface CliInstall {
+  path: string;
+  onPath: boolean;
+  current: boolean;
+}
+export const installCli = () => invoke<CliInstall>("install_cli");
+export const cliStatus = () => invoke<CliInstall | null>("cli_status");
+export const openRepo =(path: string) => invoke<RepoInfo>("open_repo", { path });
 export const repoStatus = (repo: string) => invoke<StatusResult>("repo_status", { repo });
 export const workStats = (repo: string) => invoke<WorkStats>("work_stats", { repo });
 export const commitGraph = (repo: string, limit = 500) =>

@@ -3840,6 +3840,27 @@ button {
   background: var(--accent);
   color: var(--on-accent);
 }
+.cli-usage {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  align-items: center;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cli-usage code,
+.ai-status-box code {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+}
+.cli-usage code {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-elev);
+  color: var(--text);
+}
 .palette-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));

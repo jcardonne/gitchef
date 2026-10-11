@@ -41,6 +41,7 @@ thiserror = "2"
 notify-debouncer-mini = "0.4"
 llama-cpp-2 = "0.1.156"
 encoding_rs = "0.8.41"
+tauri-plugin-deep-link = "2"
 
 [profile.dev]
 incremental = true

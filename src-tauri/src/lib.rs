@@ -676,6 +676,70 @@ fn ai_explain_conflict(
     ai::explain_conflict(&app, &open(&repo)?, &path, &ours, &theirs, &config)
 }
 
+/// Shell shim behind `gitchef [path]`. With a path it resolves the dir and hands
+/// it to the app through the `gitchef://` deep link (works for cold start and an
+/// already-running instance). With no argument it only launches/focuses the app.
+const CLI_SCRIPT: &str = r#"#!/bin/sh
+[ $# -eq 0 ] && exec open -b com.gitchef.app
+p=$(cd "$1" 2>/dev/null && pwd) || { echo "gitchef: no such directory: $1" >&2; exit 1; }
+e=$(printf %s "$p" | perl -pe 's/([^A-Za-z0-9_.\/-])/sprintf("%%%02X",ord($1))/ge')
+exec open "gitchef://open?path=$e"
+"#;
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliInstall {
+    path: String,
+    /// The shim's directory is on the app's `$PATH`.
+    on_path: bool,
+    /// The installed script matches the one bundled with this app version.
+    current: bool,
+}
+
+/// Candidate install dirs, in preference order.
+fn cli_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs = vec![std::path::PathBuf::from("/usr/local/bin")];
+    if let Ok(home) = std::env::var("HOME") {
+        dirs.push(std::path::PathBuf::from(home).join(".local/bin"));
+    }
+    dirs
+}
+
+fn cli_info(dir: &std::path::Path) -> CliInstall {
+    let file = dir.join("gitchef");
+    CliInstall {
+        path: file.to_string_lossy().into_owned(),
+        on_path: std::env::var_os("PATH")
+            .is_some_and(|p| std::env::split_paths(&p).any(|d| d == dir)),
+        current: std::fs::read_to_string(&file).is_ok_and(|c| c == CLI_SCRIPT),
+    }
+}
+
+/// Where the `gitchef` shell command is installed, if anywhere.
+#[tauri::command]
+fn cli_status() -> Option<CliInstall> {
+    cli_dirs().into_iter().find(|d| d.join("gitchef").is_file()).map(|d| cli_info(&d))
+}
+
+/// Install (or update) the `gitchef` shell command. Tries /usr/local/bin, falls
+/// back to ~/.local/bin.
+#[tauri::command]
+fn install_cli() -> AppResult<CliInstall> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut last_err = String::new();
+    for dir in cli_dirs() {
+        let file = dir.join("gitchef");
+        let res = std::fs::create_dir_all(&dir)
+            .and_then(|_| std::fs::write(&file, CLI_SCRIPT))
+            .and_then(|_| std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)));
+        match res {
+            Ok(()) => return Ok(cli_info(&dir)),
+            Err(e) => last_err = format!("{}: {e}", file.display()),
+        }
+    }
+    Err(AppError::Msg(last_err))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // During an interactive rebase, git re-launches THIS binary as its sequence
@@ -688,6 +752,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(watch::Watchers::default());
 
@@ -753,6 +818,8 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             open_repo,
+            install_cli,
+            cli_status,
             commit_avatars,
             repo_status,
             work_stats,
