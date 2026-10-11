@@ -22,6 +22,8 @@ pub struct RepoInfo {
     /// avatar source; None for self-hosted / unknown hosts (the UI then falls
     /// back to Gravatar).
     pub provider: Option<RemoteProvider>,
+    /// `user.email` from git config, used to tell "my" commits from others'.
+    pub user_email: Option<String>,
 }
 
 /// Whether the current branch has an upstream of the *same name* on a remote.
@@ -305,7 +307,12 @@ pub fn info(repo: &Repository) -> AppResult<RepoInfo> {
         .and_then(canonical_host)
         .as_deref()
         .and_then(provider_for);
-    Ok(RepoInfo { path, name, head, has_upstream, provider })
+    let user_email = repo
+        .config()
+        .ok()
+        .and_then(|c| c.get_string("user.email").ok())
+        .filter(|s| !s.is_empty());
+    Ok(RepoInfo { path, name, head, has_upstream, provider, user_email })
 }
 
 /// Working-tree status split into what's staged (index vs HEAD) and what's not

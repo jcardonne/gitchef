@@ -22,6 +22,10 @@ export interface RepoActions {
   run: (fn: () => Promise<void>, action?: string) => void;
   refresh: (opts?: RefreshOpts) => Promise<StatusResult>;
   notify: (msg: string, error?: boolean) => void;
+  /// Show a "Restore" strip for a discard that was backed up as a stash (sha).
+  offerDiscardRestore: (label: string, sha: string) => void;
+  /// Same strip for a deleted file backed up by delete_file_with_backup.
+  offerFileRestore: (relPath: string, backup: string) => void;
 }
 
 export const RepoContext = createContext<RepoActions | null>(null);

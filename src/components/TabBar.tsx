@@ -158,6 +158,8 @@ export default function TabBar({
     const from = flipFrom.current;
     if (from.size === 0) return; // only runs after a real reorder
     flipFrom.current = new Map();
+    // reduced motion drops transform transitions, so no transitionend would clear `flipping`
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     tabEls.current.forEach((el, path) => {
       const before = from.get(path);
       if (!before) return;

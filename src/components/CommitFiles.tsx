@@ -3,6 +3,7 @@ import type { FileDiff } from "../types";
 import { getChangesView, setChangesView, type ChangesView } from "../storage";
 import { buildTree, flattenVisible } from "../fileTree";
 import { StatusIcon, renameLabel } from "./ChangeList";
+import { buttonProps } from "../util";
 
 interface Props {
   files: FileDiff[];
@@ -54,6 +55,7 @@ export default function CommitFiles({ files, selectedPath, onSelect, onContext }
           else rowRefs.current.delete(f.path);
         }}
         className={`file-row${selectedPath === f.path ? " selected" : ""}`}
+        aria-current={selectedPath === f.path ? "true" : undefined}
         style={{ paddingLeft: BASE_PAD + depth * INDENT }}
         title={f.old_path ? `${f.old_path} → ${f.path}` : f.path}
         onClick={() => onSelect(f)}
@@ -95,6 +97,7 @@ export default function CommitFiles({ files, selectedPath, onSelect, onContext }
                   className="tree-folder"
                   style={{ paddingLeft: BASE_PAD + depth * INDENT }}
                   onClick={() => toggleFolder(node.path)}
+                  {...buttonProps(() => toggleFolder(node.path))}
                 >
                   <span className={`chevron${collapsed.has(node.path) ? "" : " open"}`}>▸</span>
                   <span className="folder-name">{node.name}</span>

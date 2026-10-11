@@ -13,7 +13,10 @@ import ShortcutsModal from "./components/ShortcutsModal";
 import Settings from "./components/Settings";
 import { getTheme, getPalette, setTheme, setPalette, type Theme, type Palette } from "./theme";
 import { useTooltips } from "./useTooltips";
+import { useModalFocus } from "./useModalFocus";
+import { applyZoom, getZoom, nextZoom, zoomAction, zoomLabel } from "./zoom";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 /// App shell: owns the open tabs + recents, routes between the Home tab and one
@@ -29,7 +32,18 @@ export default function App() {
   const [activePath, setActivePath] = useState<string | null>(session.activePath);
   const [recents, setRecents] = useState(store.getRecents());
   const closedTabs = useRef<string[]>([]); // stack of recently closed tab paths
+  const [zoomHud, setZoomHud] = useState<{ label: string; seq: number } | null>(null);
+  const zoomHudTimer = useRef<number | undefined>(undefined);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [shortcutsAtGraphKey, setShortcutsAtGraphKey] = useState(false);
+  useEffect(() => {
+    const open = (e: Event) => {
+      setShortcutsAtGraphKey((e as CustomEvent).detail === "graph-key");
+      setShortcutsOpen(true);
+    };
+    window.addEventListener("gitchef:open-shortcuts", open);
+    return () => window.removeEventListener("gitchef:open-shortcuts", open);
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -62,6 +76,12 @@ export default function App() {
 
   // App-wide custom tooltips, driven off native title attributes.
   useTooltips();
+  useModalFocus();
+  // Restore the saved interface zoom once at startup.
+  useEffect(() => {
+    const z = getZoom();
+    if (z !== 1) void applyZoom(z);
+  }, []);
 
   // Persist the session whenever tabs or focus change.
   useEffect(() => {
@@ -117,6 +137,36 @@ export default function App() {
   closeTabRef.current = closeTab;
   const pickAndOpenRef = useRef(pickAndOpen);
   pickAndOpenRef.current = pickAndOpen;
+  const openTabRef = useRef(openTab);
+  openTabRef.current = openTab;
+
+  // `gitchef <path>` shell command -> gitchef://open?path=... (cold start + running app)
+  useEffect(() => {
+    const handle = (urls: string[] | null) => {
+      for (const raw of urls ?? []) {
+        try {
+          const u = new URL(raw);
+          const path = u.protocol === "gitchef:" && u.hostname === "open" ? u.searchParams.get("path") : null;
+          if (path) openTabRef.current(path);
+        } catch {
+          /* malformed URL, ignore */
+        }
+      }
+    };
+    let unlisten: (() => void) | undefined;
+    let disposed = false;
+    getCurrent().then(handle).catch(console.error);
+    onOpenUrl(handle)
+      .then((un) => {
+        if (disposed) un();
+        else unlisten = un;
+      })
+      .catch(console.error);
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   // Native macOS system menu bar actions
   useEffect(() => {
@@ -160,7 +210,16 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
-      if (e.ctrlKey && e.key === "Tab") {
+      const zoom = zoomAction(e);
+      if (zoom) {
+        e.preventDefault();
+        const next = zoom === "reset" ? 1 : nextZoom(getZoom(), zoom === "in" ? 1 : -1);
+        void applyZoom(next);
+        // Show the new level briefly, even when a limit left it unchanged.
+        setZoomHud((h) => ({ label: zoomLabel(next), seq: (h?.seq ?? 0) + 1 }));
+        window.clearTimeout(zoomHudTimer.current);
+        zoomHudTimer.current = window.setTimeout(() => setZoomHud(null), 1200);
+      } else if (e.ctrlKey && e.key === "Tab") {
         e.preventDefault();
         cycleTab(e.shiftKey ? -1 : 1);
       } else if (mod && e.shiftKey && key === "t") {
@@ -298,7 +357,12 @@ export default function App() {
       </div>
 
       <UpdateToast status={updateStatus} />
-      {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+      {shortcutsOpen && <ShortcutsModal graphKey={shortcutsAtGraphKey} onClose={() => setShortcutsOpen(false)} />}
+      {zoomHud && (
+        <div key={zoomHud.seq} className="zoom-hud" role="status">
+          {zoomHud.label}
+        </div>
+      )}
       {cloneOpen && (
         <CloneModal
           onClose={() => setCloneOpen(false)}

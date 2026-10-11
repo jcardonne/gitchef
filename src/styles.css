@@ -55,20 +55,20 @@
   --bg-deep: #e7ebef;
   --border: #d0d7de;
   --text: #1f2328;
-  --text-dim: #656d76;
-  --accent: #117f69;
+  --text-dim: #626a73;
+  --accent: #107762;
   --on-accent: #ffffff;
-  --add: #1a7f37;
-  --mod: #b86e00;
-  --del: #cf222e;
+  --add: #197934;
+  --mod: #995b00;
+  --del: #cc222d;
   --diff-add-bg: rgba(26, 127, 55, 0.13);
   --diff-del-bg: rgba(207, 34, 46, 0.1);
-  --hunk-fg: #0969da;
+  --hunk-fg: #0965d2;
   --hunk-bg: rgba(9, 105, 218, 0.08);
-  --tab-red: #cf222e;
-  --tab-amber: #bf8700;
-  --tab-green: #1a7f37;
-  --tab-blue: #0969da;
+  --tab-red: #cc222d;
+  --tab-amber: #8a6200;
+  --tab-green: #197934;
+  --tab-blue: #0965d2;
   --tab-purple: #8250df;
   --shadow-pop: 0 12px 28px rgba(31, 35, 40, 0.16);
   --shadow-float: 0 6px 18px rgba(31, 35, 40, 0.12);
@@ -86,12 +86,12 @@
 }
 :root[data-palette="copper"][data-theme="light"] {
   --bg: #faf6f0; --bg-elev: #f3ece2; --bg-elev2: #eadfd1; --bg-deep: #e4d8c7;
-  --border: #dccfbc; --text: #2a2017; --text-dim: #6e6354;
-  --accent: #b4622a; --on-accent: #ffffff;
-  --add: #3f7a39; --mod: #9c6a12; --del: #c2483e;
+  --border: #dccfbc; --text: #2a2017; --text-dim: #675d4f;
+  --accent: #8f4e21; --on-accent: #ffffff;
+  --add: #366a32; --mod: #7f570e; --del: #a33c33;
   --diff-add-bg: rgba(63, 122, 57, 0.12); --diff-del-bg: rgba(194, 72, 62, 0.1);
-  --hunk-fg: #3f6e8c; --hunk-bg: rgba(63, 110, 140, 0.08);
-  --tab-red: #c2483e; --tab-amber: #9c6a12; --tab-green: #3f7a39; --tab-blue: #3f6e8c; --tab-purple: #8a5bb0;
+  --hunk-fg: #39637f; --hunk-bg: rgba(63, 110, 140, 0.08);
+  --tab-red: #a33c33; --tab-amber: #7f570e; --tab-green: #366a32; --tab-blue: #39637f; --tab-purple: #8a5bb0;
 }
 
 /* ===== Palette: Slate & Teal (cool, off-Primer) ===== */
@@ -106,12 +106,12 @@
 }
 :root[data-palette="slate"][data-theme="light"] {
   --bg: #fafcfc; --bg-elev: #f0f4f4; --bg-elev2: #e5eceb; --bg-deep: #dfe8e7;
-  --border: #ccd8d6; --text: #16201f; --text-dim: #5c6b69;
-  --accent: #0e7a66; --on-accent: #ffffff;
-  --add: #1a7f37; --mod: #9a6700; --del: #cf222e;
+  --border: #ccd8d6; --text: #16201f; --text-dim: #5b6967;
+  --accent: #0d7461; --on-accent: #ffffff;
+  --add: #187633; --mod: #8b5d00; --del: #c7212c;
   --diff-add-bg: rgba(26, 127, 55, 0.12); --diff-del-bg: rgba(207, 34, 46, 0.1);
-  --hunk-fg: #0e6fb8; --hunk-bg: rgba(14, 111, 184, 0.08);
-  --tab-red: #cf222e; --tab-amber: #9a6700; --tab-green: #1a7f37; --tab-blue: #0e6fb8; --tab-purple: #8250df;
+  --hunk-fg: #0d6aaf; --hunk-bg: rgba(14, 111, 184, 0.08);
+  --tab-red: #c7212c; --tab-amber: #8b5d00; --tab-green: #187633; --tab-blue: #0d6aaf; --tab-purple: #8250df;
 }
 
 /* ===== Palette: Carbon (neutral carbon + indigo) ===== */
@@ -127,11 +127,11 @@
 :root[data-palette="carbon"][data-theme="light"] {
   --bg: #fbfbfc; --bg-elev: #f1f2f5; --bg-elev2: #e7e9ee; --bg-deep: #e1e3e9;
   --border: #d1d4dc; --text: #15171c; --text-dim: #5a5f69;
-  --accent: #3b6fe0; --on-accent: #ffffff;
-  --add: #2f8f4e; --mod: #9a6a0e; --del: #d2334a;
+  --accent: #225cd8; --on-accent: #ffffff;
+  --add: #25723e; --mod: #865c0c; --del: #be2a40;
   --diff-add-bg: rgba(47, 143, 78, 0.12); --diff-del-bg: rgba(210, 51, 74, 0.1);
-  --hunk-fg: #3b6fe0; --hunk-bg: rgba(59, 111, 224, 0.08);
-  --tab-red: #d2334a; --tab-amber: #9a6a0e; --tab-green: #2f8f4e; --tab-blue: #3b6fe0; --tab-purple: #7a52d8;
+  --hunk-fg: #225cd8; --hunk-bg: rgba(59, 111, 224, 0.08);
+  --tab-red: #be2a40; --tab-amber: #865c0c; --tab-green: #25723e; --tab-blue: #225cd8; --tab-purple: #7a52d8;
 }
 :root[data-palette="basil"] {
   --bg: #0e130f; --bg-elev: #131a14; --bg-elev2: #19231b; --bg-deep: #0a0e0b;
@@ -144,12 +144,12 @@
 }
 :root[data-palette="basil"][data-theme="light"] {
   --bg: #f8faf8; --bg-elev: #eef3ef; --bg-elev2: #e3ebe5; --bg-deep: #dde7df;
-  --border: #cdd8cf; --text: #17211a; --text-dim: #5b6a5f;
-  --accent: #2f8f50; --on-accent: #ffffff;
-  --add: #1a7f37; --mod: #9a6700; --del: #c2403e;
+  --border: #cdd8cf; --text: #17211a; --text-dim: #5a695e;
+  --accent: #267341; --on-accent: #ffffff;
+  --add: #187532; --mod: #8a5c00; --del: #b43b39;
   --diff-add-bg: rgba(26, 127, 55, 0.12); --diff-del-bg: rgba(194, 64, 62, 0.1);
-  --hunk-fg: #0e7490; --hunk-bg: rgba(14, 116, 144, 0.08);
-  --tab-red: #c2403e; --tab-amber: #9a6700; --tab-green: #2f8f50; --tab-blue: #0e7490; --tab-purple: #7a52d8;
+  --hunk-fg: #0d6e89; --hunk-bg: rgba(14, 116, 144, 0.08);
+  --tab-red: #b43b39; --tab-amber: #8a5c00; --tab-green: #267341; --tab-blue: #0d6e89; --tab-purple: #7a52d8;
 }
 :root[data-palette="ube"] {
   --bg: #110e16; --bg-elev: #17131e; --bg-elev2: #1e1827; --bg-deep: #0c0a10;
@@ -163,11 +163,11 @@
 :root[data-palette="ube"][data-theme="light"] {
   --bg: #fbfaff; --bg-elev: #f2eff8; --bg-elev2: #e8e2f2; --bg-deep: #e1dbee;
   --border: #d6cce6; --text: #1c1726; --text-dim: #635a73;
-  --accent: #7c3aed; --on-accent: #ffffff;
-  --add: #1f8a4c; --mod: #9a6700; --del: #cf2e6a;
+  --accent: #7631ec; --on-accent: #ffffff;
+  --add: #196f3d; --mod: #845800; --del: #b4285c;
   --diff-add-bg: rgba(31, 138, 76, 0.12); --diff-del-bg: rgba(207, 46, 106, 0.1);
-  --hunk-fg: #3b6fe0; --hunk-bg: rgba(59, 111, 224, 0.08);
-  --tab-red: #cf2e6a; --tab-amber: #9a6700; --tab-green: #1f8a4c; --tab-blue: #3b6fe0; --tab-purple: #7c3aed;
+  --hunk-fg: #2158d1; --hunk-bg: rgba(59, 111, 224, 0.08);
+  --tab-red: #b4285c; --tab-amber: #845800; --tab-green: #196f3d; --tab-blue: #2158d1; --tab-purple: #7631ec;
 }
 
 * {
@@ -366,7 +366,7 @@ button {
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border-radius: 5px;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--text);
   font-size: 12px;
@@ -411,7 +411,7 @@ button {
   padding: 6px;
 }
 .pull-menu-head {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-dim);
@@ -422,7 +422,7 @@ button {
   align-items: center;
   gap: 8px;
   padding: 7px 8px;
-  border-radius: 5px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
 }
@@ -668,7 +668,7 @@ button {
   align-items: center;
   gap: 3px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
   padding: 1px 4px;
   border-radius: 4px;
@@ -678,7 +678,7 @@ button {
 }
 .branch-pr:hover {
   color: var(--accent);
-  background: var(--bg-elev3);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
 }
 .branch-row-right {
   display: inline-flex;
@@ -758,7 +758,7 @@ button {
   color: var(--text-dim);
 }
 .sm-badge {
-  font-size: 9px;
+  font-size: 11px;
   line-height: 1;
   padding: 2px 4px;
   border-radius: 4px;
@@ -902,7 +902,7 @@ button {
   height: 22px;
   background: transparent;
   border: none;
-  border-radius: 5px;
+  border-radius: 6px;
   color: var(--text-dim);
 }
 .search-nav:hover:not(:disabled) {
@@ -991,7 +991,7 @@ button {
   padding: 0 12px 0 0;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: color-mix(in srgb, var(--text) 72%, var(--text-dim));
@@ -1115,7 +1115,7 @@ button {
   bottom: 10px;
   left: 12px;
   width: 1px;
-  border-radius: 1px;
+  border-radius: 2px;
   background: color-mix(in srgb, var(--text-dim) 26%, transparent);
 }
 .col-resize:hover::before,
@@ -1149,11 +1149,24 @@ button {
   padding: 0 10px;
 }
 .col-date {
-  flex: 0 0 66px;
+  flex: 0 0 76px;
   font-size: 11px;
   color: var(--text-dim);
   text-align: right;
   padding: 0 10px;
+  /* "30m ago" must stay on one line, whatever width is saved for the column */
+  white-space: nowrap;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 .col-wip {
   flex: 0 0 auto;
@@ -1210,7 +1223,7 @@ button {
   /* Dark ink, not #fff: the background is an inline lane color and every lane
      in the palette is a light pastel, where white drops to ~1.8:1. */
   color: #0b0f14;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1;
 }
@@ -1244,7 +1257,7 @@ button {
   line-height: 1;
   padding: 3px 6px 3px 8px; /* icon now sits right of the text */
   border: 1px solid color-mix(in srgb, var(--lane) 15%, transparent);
-  border-radius: 3px; /* rectangular, GitKraken-style */
+  border-radius: 4px; /* rectangular, GitKraken-style */
   white-space: nowrap;
   flex: 0 0 auto;
   color: #fff;
@@ -1364,8 +1377,10 @@ button {
   height: 24px;
 }
 .row-action {
-  visibility: hidden;
+  /* dimmed at rest so the stage/unstage affordance is discoverable without hover */
+  opacity: 0.5;
   cursor: pointer;
+  transition: opacity 0.1s var(--ease);
 }
 /* Stage is an additive action -> green, filling solid on button hover. */
 .row-action.row-stage {
@@ -1378,8 +1393,10 @@ button {
   background: var(--add);
   border-color: var(--add);
 }
-.file-row:hover .row-action {
-  visibility: visible;
+.file-row:hover .row-action,
+.file-row:focus-within .row-action,
+.row-action:focus-visible {
+  opacity: 1;
 }
 .file-row:hover {
   background: var(--bg-elev2);
@@ -1432,7 +1449,7 @@ button {
 .mini-btn {
   background: var(--bg-elev2);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 6px;
   color: var(--text-dim);
   padding: 2px 8px;
   font-size: 11px;
@@ -1490,7 +1507,7 @@ button {
   flex: 0 0 auto;
   padding: 1px 6px;
   border: 1px solid transparent;
-  border-radius: 3px;
+  border-radius: 4px;
   font-size: 11px;
   font-weight: 650;
 }
@@ -1761,7 +1778,7 @@ button {
   flex: 0 0 auto;
   display: inline-flex;
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 6px;
   overflow: hidden;
 }
 .seg button {
@@ -1795,7 +1812,46 @@ button {
   color: var(--hunk-fg);
   background: var(--hunk-bg);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.diff-hunk-header.active {
+  background: color-mix(in srgb, var(--hunk-fg) 18%, transparent);
+}
+.hunk-title {
+  min-width: 0;
   overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* sticky so the actions stay visible while the diff is scrolled sideways */
+.hunk-actions {
+  position: sticky;
+  right: 12px;
+  display: inline-flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+/* inset ring: the focused diff fills its pane, so an outside ring would be clipped */
+.diff-scroll:focus-visible {
+  outline-offset: -2px;
+}
+.hunk-btn {
+  height: 16px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--hunk-fg) 45%, transparent);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 14px;
+}
+.hunk-btn:hover {
+  border-color: var(--hunk-fg);
+}
+.hunk-btn.danger {
+  color: var(--del);
 }
 /* Grow to the widest line so each row's add/del background spans the FULL
    scroll width, not just the viewport - otherwise the colour stops mid-line
@@ -1815,7 +1871,6 @@ button {
   text-align: right;
   padding-right: 8px;
   color: var(--text-dim);
-  opacity: 0.6;
   user-select: none;
 }
 .diff-line .sign {
@@ -1887,7 +1942,6 @@ button {
   text-align: right;
   padding: 0 8px;
   color: var(--text-dim);
-  opacity: 0.6;
   user-select: none;
 }
 .split-cell .code {
@@ -2025,7 +2079,7 @@ button {
   gap: 6px;
 }
 .toast-countdown-label {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-dim);
 }
 .toast-countdown-track {
@@ -2233,7 +2287,7 @@ button {
   border: 0;
   background: none;
   cursor: pointer;
-  border-radius: 7px;
+  border-radius: 6px;
   text-align: left;
 }
 .clone-repo-row:hover {
@@ -2283,7 +2337,7 @@ button {
   flex: 0 0 auto;
 }
 .clone-tag {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -2327,7 +2381,7 @@ button {
   gap: 10px;
 }
 .clone-dest-label {
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-dim);
@@ -2410,7 +2464,7 @@ button {
   width: 120px;
   background: var(--bg-elev2);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 6px;
   color: var(--text);
   padding: 4px 8px;
   font-size: 12px;
@@ -2500,7 +2554,7 @@ button {
   width: 100%;
   background: none;
   border: 0;
-  border-radius: 5px;
+  border-radius: 6px;
   padding: 3px 8px;
   cursor: pointer;
   text-align: left;
@@ -3129,7 +3183,7 @@ button {
   padding: 13px 14px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   transition: transform 0.12s var(--ease), border-color 0.12s var(--ease), background 0.12s var(--ease);
 }
@@ -3180,7 +3234,7 @@ button {
   gap: 11px;
   padding: 9px 10px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: 8px;
   margin-bottom: 3px;
   cursor: pointer;
 }
@@ -3249,33 +3303,6 @@ button {
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   flex: 0 0 auto;
-}
-.discard-all-btn {
-  width: 26px;
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 26px;
-  border: 1px solid color-mix(in srgb, var(--del) 55%, var(--border));
-  border-radius: 6px;
-  padding: 0;
-  background: color-mix(in srgb, var(--del) 10%, var(--bg-elev));
-  color: var(--del);
-}
-.discard-all-btn svg {
-  stroke: currentColor;
-  stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.discard-all-btn:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--del) 18%, var(--bg-elev));
-  border-color: var(--del);
-}
-.discard-all-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
 }
 .changes-search {
   min-width: 0;
@@ -3391,7 +3418,7 @@ button {
   padding: 11px 13px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 8px;
   box-shadow: var(--shadow-float);
   font-size: 12.5px;
   color: var(--text);
@@ -3505,7 +3532,7 @@ button {
 .shortcuts-modal {
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   width: min(880px, 92vw);
   max-height: 86vh;
   overflow-y: auto;
@@ -3588,7 +3615,7 @@ button {
   padding: 0 6px;
   background: var(--bg-elev2);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 6px;
   font-family: inherit;
   font-size: 12px;
   color: var(--text);
@@ -3624,7 +3651,6 @@ button {
 .tab-add,
 .search-nav,
 .load-more-btn,
-.discard-all-btn,
 .group-action,
 .changes-search-clear {
   transition: transform 0.08s var(--ease), background 0.12s var(--ease),
@@ -3642,14 +3668,13 @@ button {
 .tab-add:active,
 .search-nav:active:not(:disabled),
 .load-more-btn:active,
-.discard-all-btn:active:not(:disabled),
 .group-action:active,
 .changes-search-clear:active {
   transform: translateY(1px);
 }
 
 /* ---------- keyboard focus ring ---------- */
-:where(button, input, textarea, [tabindex="0"]):focus-visible {
+:where(button, input, textarea, select, summary, a[href], [role="button"], [tabindex="0"]):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -3682,13 +3707,15 @@ button {
 }
 
 /* ---------- reduced motion ---------- */
+/* Reduced motion removes movement, not feedback: transitions keep colour,
+   border, shadow and opacity changes (hover, selection, focus) but drop
+   transform, and arrivals fade instead of sliding. Loading indicators
+   (spinner, skeleton pulse, update sweep) keep running. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-property: color, background-color, border-color, box-shadow, opacity, fill, stroke !important;
     scroll-behavior: auto !important;
   }
 }
@@ -3735,7 +3762,7 @@ button {
   font-size: 11px;
   color: var(--text-dim);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: 6px;
   padding: 1px 6px;
 }
 .settings-close {
@@ -3840,6 +3867,27 @@ button {
   background: var(--accent);
   color: var(--on-accent);
 }
+.cli-usage {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  align-items: center;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.cli-usage code,
+.ai-status-box code {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+}
+.cli-usage code {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elev);
+  color: var(--text);
+}
 .palette-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(208px, 1fr));
@@ -3893,7 +3941,7 @@ button {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--text-dim) 32%, transparent);
-  border-radius: 7px;
+  border-radius: 6px;
   border: 3px solid transparent;
   background-clip: padding-box;
 }
@@ -4011,7 +4059,7 @@ button {
 .skeleton {
   display: inline-block;
   background: var(--bg-elev2);
-  border-radius: 5px;
+  border-radius: 6px;
   animation: skeleton-pulse 1.3s ease-in-out infinite;
 }
 @keyframes skeleton-pulse {
@@ -4081,6 +4129,10 @@ button {
 .graph:focus,
 .graph:focus-visible {
   outline: none;
+}
+/* keyboard focus on the graph: underline the sticky header as the active-pane cue */
+.graph:focus-visible .graph-header {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 /* ---------- density ---------- */
@@ -4369,9 +4421,9 @@ button {
 .tip-pr-branch {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text);
-  background: var(--bg-elev3);
+  background: color-mix(in srgb, var(--text) 10%, transparent);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: 4px;
   border: 1px solid var(--border);
 }
 .tip-pr-author {
@@ -4663,7 +4715,7 @@ button {
 }
 .image-side figcaption {
   flex: 0 0 auto;
-  font-size: 10px;
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-dim);
@@ -4732,7 +4784,7 @@ button {
 }
 
 .pr-kbd-badge {
-  font-size: 9px;
+  font-size: 11px;
   font-family: monospace;
   padding: 1px 4px;
   border-radius: 4px;
@@ -4756,7 +4808,7 @@ button {
   font-size: 11px;
   font-weight: 600;
   padding: 3px 9px;
-  border-radius: 12px;
+  border-radius: 10px;
   text-transform: capitalize;
   display: inline-flex;
   align-items: center;
@@ -4765,27 +4817,27 @@ button {
 }
 
 .pr-status-badge.open {
-  background: rgba(34, 197, 164, 0.16);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
-  border: 1px solid rgba(34, 197, 164, 0.35);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .pr-status-badge.merged {
-  background: rgba(187, 154, 247, 0.16);
+  background: color-mix(in srgb, var(--tab-purple) 16%, transparent);
   color: var(--tab-purple);
-  border: 1px solid rgba(187, 154, 247, 0.35);
+  border: 1px solid color-mix(in srgb, var(--tab-purple) 35%, transparent);
 }
 
 .pr-status-badge.closed {
-  background: rgba(247, 118, 142, 0.16);
+  background: color-mix(in srgb, var(--del) 16%, transparent);
   color: var(--del);
-  border: 1px solid rgba(247, 118, 142, 0.35);
+  border: 1px solid color-mix(in srgb, var(--del) 35%, transparent);
 }
 
 .pr-status-badge.draft {
-  background: rgba(139, 148, 158, 0.16);
+  background: color-mix(in srgb, var(--text-dim) 16%, transparent);
   color: var(--text-dim);
-  border: 1px solid rgba(139, 148, 158, 0.35);
+  border: 1px solid color-mix(in srgb, var(--text-dim) 35%, transparent);
 }
 
 .pr-view-title {
@@ -4828,8 +4880,8 @@ button {
 .pr-current-branch-badge {
   font-size: 11px;
   color: var(--accent);
-  background: rgba(34, 197, 164, 0.12);
-  border: 1px solid rgba(34, 197, 164, 0.25);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
   padding: 3px 8px;
   border-radius: 6px;
   font-weight: 500;
@@ -4879,7 +4931,7 @@ button {
 }
 
 .pr-merge-menu button small {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
   line-height: 1.3;
 }
@@ -4923,7 +4975,7 @@ button {
   gap: 6px;
   background: var(--bg);
   padding: 2px 8px;
-  border-radius: 12px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   font-family: monospace;
   font-size: 11px;
@@ -4981,7 +5033,7 @@ button {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
 
 .pr-tab:hover {
@@ -4995,7 +5047,7 @@ button {
 }
 
 .pr-tab-count {
-  font-size: 10px;
+  font-size: 11px;
   background: var(--bg-elev2);
   padding: 1px 6px;
   border-radius: 10px;
@@ -5032,8 +5084,8 @@ button {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
-  background: rgba(247, 118, 142, 0.12);
-  border-bottom: 1px solid rgba(247, 118, 142, 0.3);
+  background: color-mix(in srgb, var(--del) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--del) 30%, transparent);
   color: var(--del);
   font-size: 12px;
 }
@@ -5149,7 +5201,7 @@ button {
 }
 
 .pr-side-count {
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 6px;
   border-radius: 10px;
   background: var(--bg);
@@ -5189,12 +5241,12 @@ button {
 }
 
 .pr-check-icon.pass {
-  background: rgba(46, 160, 67, 0.2);
+  background: color-mix(in srgb, var(--add) 20%, transparent);
   color: var(--add);
 }
 
 .pr-check-icon.fail {
-  background: rgba(247, 118, 142, 0.2);
+  background: color-mix(in srgb, var(--del) 20%, transparent);
   color: var(--del);
 }
 
@@ -5216,7 +5268,7 @@ button {
 }
 
 .pr-check-wf {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5224,7 +5276,7 @@ button {
 }
 
 .pr-check-link-btn {
-  font-size: 10px;
+  font-size: 11px;
   padding: 2px 6px;
 }
 
@@ -5323,7 +5375,7 @@ button {
 }
 
 .pr-viewed-toggle-all-btn {
-  font-size: 10px;
+  font-size: 11px;
   background: transparent;
   border: none;
   color: var(--accent);
@@ -5447,12 +5499,12 @@ button {
 }
 
 .pr-file-status-tag {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   font-family: monospace;
   width: 16px;
   height: 16px;
-  border-radius: 3px;
+  border-radius: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5460,17 +5512,17 @@ button {
 }
 
 .pr-file-status-tag.added {
-  background: rgba(46, 160, 67, 0.2);
+  background: color-mix(in srgb, var(--add) 20%, transparent);
   color: var(--add);
 }
 
 .pr-file-status-tag.deleted {
-  background: rgba(247, 118, 142, 0.2);
+  background: color-mix(in srgb, var(--del) 20%, transparent);
   color: var(--del);
 }
 
 .pr-file-status-tag.modified {
-  background: rgba(242, 169, 59, 0.2);
+  background: color-mix(in srgb, var(--mod) 20%, transparent);
   color: var(--mod);
 }
 
@@ -5488,7 +5540,7 @@ button {
   display: inline-flex;
   gap: 4px;
   font-family: monospace;
-  font-size: 10px;
+  font-size: 11px;
   flex-shrink: 0;
 }
 
@@ -5834,7 +5886,7 @@ button {
   align-items: center;
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgba(34, 197, 164, 0.12);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
   font-family: monospace;
   font-size: 11px;
@@ -5848,7 +5900,7 @@ button {
 
 .md-issue-tag.clickable:hover {
   text-decoration: underline;
-  background: rgba(34, 197, 164, 0.22);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .md-mention {
@@ -5900,7 +5952,7 @@ button {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s var(--ease);
+  transition: color 0.15s var(--ease), background-color 0.15s var(--ease), border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), opacity 0.15s var(--ease);
   margin-left: auto;
 }
 
@@ -5929,14 +5981,14 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: 11px;
   width: 14px;
   height: 14px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.2);
   margin-left: 2px;
   line-height: 1;
-  transition: all 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
 
 .chef-ai-btn.loading:hover .chef-ai-cancel-x {
@@ -5980,7 +6032,7 @@ button {
   color: var(--text-dim);
   font-size: 11px;
   cursor: pointer;
-  transition: all 0.12s var(--ease);
+  transition: color 0.12s var(--ease), background-color 0.12s var(--ease), border-color 0.12s var(--ease), box-shadow 0.12s var(--ease), opacity 0.12s var(--ease);
 }
 
 .ai-chip:hover {
@@ -6094,12 +6146,12 @@ button {
   display: flex;
   flex-direction: column;
   padding: 14px;
-  border-radius: 9px;
+  border-radius: 8px;
   border: 1.5px solid var(--border);
   background: var(--bg-elev);
   cursor: pointer;
   text-align: left;
-  transition: all 0.15s var(--ease);
+  transition: color 0.15s var(--ease), background-color 0.15s var(--ease), border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), opacity 0.15s var(--ease);
 }
 
 .ai-provider-card:hover {
@@ -6134,12 +6186,12 @@ button {
 }
 
 .ai-badge {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 10px;
   background: var(--border);
-  color: var(--muted);
+  color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -6154,7 +6206,7 @@ button {
   padding: 16px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
-  border-radius: 9px;
+  border-radius: 8px;
 }
 
 .ai-hero-header {
@@ -6208,7 +6260,7 @@ button {
   background: var(--bg-elev);
   cursor: pointer;
   text-align: left;
-  transition: all 0.15s var(--ease);
+  transition: color 0.15s var(--ease), background-color 0.15s var(--ease), border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), opacity 0.15s var(--ease);
 }
 
 .ai-style-card:hover {
@@ -6267,7 +6319,7 @@ button {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s var(--ease);
+  transition: color 0.15s var(--ease), background-color 0.15s var(--ease), border-color 0.15s var(--ease), box-shadow 0.15s var(--ease), opacity 0.15s var(--ease);
 }
 
 .ai-subtab-btn:hover {
@@ -6322,9 +6374,9 @@ button {
 }
 
 .ai-feature-badge {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 500;
-  color: var(--muted);
+  color: var(--text-dim);
   background: color-mix(in srgb, var(--border) 60%, transparent);
   padding: 2px 7px;
   border-radius: 4px;
@@ -6353,3 +6405,152 @@ button {
 
 
 
+
+/* bare inputs that suppress the outline still need a visible keyboard focus cue */
+.branch-menu-search:focus-visible,
+.graph-search-input:focus-visible,
+.pr-files-filter-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.palette-input:focus-visible {
+  border-bottom-color: var(--accent);
+}
+
+/* reduced motion: arrivals fade instead of sliding. Must come after the original keyframes. */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(-50%); }
+    to { opacity: 1; transform: translateX(-50%); }
+  }
+  @keyframes toast-out {
+    from { opacity: 1; transform: translateX(-50%); }
+    to { opacity: 0; transform: translateX(-50%); }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes view-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes row-arrive {
+    0% { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+    100% { background: transparent; }
+  }
+}
+
+.commit-target {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.commit-target strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.toast-hint {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+/* sidebar rows sit in a scroll container that clips an outside ring */
+.branch-row:focus-visible,
+.sidebar-title:focus-visible {
+  outline-offset: -2px;
+}
+
+/* The published line: everything above it in the graph is not on a remote yet. */
+.published-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  /* 2px and --text-dim so it reads against the row separators it sits on */
+  border-top: 2px solid var(--text-dim);
+  transform: translateY(-1px);
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Transient zoom indicator. The webview zoom scales everything, so the HUD cancels
+   it with 1/--zoom and stays one size on screen at every level. */
+.zoom-hud {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px / var(--zoom, 1));
+  transform: translateX(-50%) scale(calc(1 / var(--zoom, 1)));
+  transform-origin: bottom center;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev2);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: var(--shadow-float);
+  pointer-events: none;
+  z-index: 1100;
+  animation: overlay-in 0.12s var(--ease) both;
+}
+
+/* Count of what HEAD would publish, in the Message header where it can never cover a
+   ref pill or a commit message. The header labels are uppercase; the chip is not. */
+.header-chip {
+  margin-left: 10px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elev2);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+  vertical-align: middle;
+}
+
+/* Discard all lives in the Unstaged header, set apart from Stage all by a gap and a
+   resting danger tint so it cannot be hit by muscle memory. */
+.discard-link {
+  margin-left: 10px;
+  color: var(--del);
+  border-color: color-mix(in srgb, var(--del) 45%, var(--border));
+}
+.discard-link:hover:not(:disabled) {
+  border-color: var(--del);
+}
+
+.pr-files-filter-box:focus-within {
+  border-color: var(--accent);
+}
+.diff-line.selectable:focus-visible,
+.blame-gutter.clickable:focus-visible,
+.copyable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.col-graph-key {
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.col-graph-key:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}

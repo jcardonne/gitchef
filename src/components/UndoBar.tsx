@@ -6,25 +6,36 @@ import { CloseIcon } from "../icons";
 // the two never stack. Purely presentational - the reset lives in the parent.
 interface Props {
   label: string; // e.g. "rebase onto main"
+  lead?: string; // text before the label, default "Last:"
+  actionLabel?: string; // default "Undo"
+  actionTitle?: string;
   busy: boolean;
   onUndo: () => void;
   onDismiss: () => void;
 }
 
-export default function UndoBar({ label, busy, onUndo, onDismiss }: Props) {
+export default function UndoBar({
+  label,
+  lead = "Last:",
+  actionLabel = "Undo",
+  actionTitle = "Reset to before this operation",
+  busy,
+  onUndo,
+  onDismiss,
+}: Props) {
   return (
     <div className="undo-bar">
       <span className="undo-bar-label">
-        Last: <strong>{label}</strong>
+        {lead} <strong>{label}</strong>
       </span>
       <div className="undo-bar-actions">
         <button
           className="mini-btn"
           disabled={busy}
           onClick={onUndo}
-          title="Reset to before this operation"
+          title={actionTitle}
         >
-          Undo
+          {actionLabel}
         </button>
         <button
           className="mini-btn undo-bar-dismiss"

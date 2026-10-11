@@ -61,7 +61,7 @@ export default function CommandPalette({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="command-palette" onClick={(e) => e.stopPropagation()}>
+      <div className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette" onClick={(e) => e.stopPropagation()}>
         <input
           className="palette-input"
           autoFocus

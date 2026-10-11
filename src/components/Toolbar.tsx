@@ -3,6 +3,7 @@ import type { BranchInfo, RepoInfo } from "../types";
 import { getPullDefault, setPullDefault, type PullAction } from "../storage";
 import { comboHint } from "../shortcuts";
 import { SidebarIcon } from "../icons";
+import { activateOnKey, buttonProps } from "../util";
 
 interface Props {
   repo: RepoInfo;
@@ -130,7 +131,7 @@ export default function Toolbar({
       <span className="repo-name">{repo.name}</span>
 
       <div className="branch-picker">
-        <button className="branch-trigger" onClick={() => setBranchOpen((o) => !o)}>
+        <button className="branch-trigger" aria-haspopup="menu" aria-expanded={branchOpen} onClick={() => setBranchOpen((o) => !o)}>
           <BranchIcon />
           <span className="branch-trigger-name">{repo.head ?? "—"}</span>
           <Caret />
@@ -152,6 +153,10 @@ export default function Toolbar({
                   <div
                     key={b.name}
                     className={`branch-menu-item${b.is_head ? " current" : ""}`}
+                    {...buttonProps(() => {
+                      if (!b.is_head) onCheckout(b.name);
+                      setBranchOpen(false);
+                    })}
                     onClick={() => {
                       if (!b.is_head) onCheckout(b.name);
                       setBranchOpen(false);
@@ -179,16 +184,16 @@ export default function Toolbar({
           {activeAction === "pull" ? <Spinner /> : pullDefault === "fetch" ? <FetchIcon /> : <PullIcon />}
           {pullDefault === "fetch" ? "Fetch" : "Pull"}
         </button>
-        <button className="tool-btn split-caret" disabled={busy} onClick={() => setPullOpen((o) => !o)}>
+        <button className="tool-btn split-caret" disabled={busy} aria-label="Pull options" aria-haspopup="menu" aria-expanded={pullOpen} onClick={() => setPullOpen((o) => !o)}>
           <Caret />
         </button>
         {pullOpen && (
           <>
             <div className="dropdown-backdrop" onClick={() => setPullOpen(false)} />
-            <div className="pull-menu">
+            <div className="pull-menu" role="menu">
               <div className="pull-menu-head">Default pull / fetch action</div>
               {PULL_OPTIONS.map((o) => (
-                <div key={o.key} className="pull-menu-item" onClick={() => runPull(o.key)}>
+                <div key={o.key} className="pull-menu-item" role="menuitemradio" aria-checked={pullDefault === o.key} tabIndex={0} onClick={() => runPull(o.key)} onKeyDown={activateOnKey(() => runPull(o.key))}>
                   <span className={`radio${pullDefault === o.key ? " on" : ""}`} />
                   {o.label}
                 </div>
@@ -208,19 +213,25 @@ export default function Toolbar({
           {activeAction === "push" ? <Spinner /> : <PushIcon />}
           {repo.has_upstream ? "Push" : "Publish"}
         </button>
-        <button className="tool-btn split-caret" disabled={busy} onClick={() => setPushOpen((o) => !o)}>
+        <button className="tool-btn split-caret" disabled={busy} aria-label="Push options" aria-haspopup="menu" aria-expanded={pushOpen} onClick={() => setPushOpen((o) => !o)}>
           <Caret />
         </button>
         {pushOpen && (
           <>
             <div className="dropdown-backdrop" onClick={() => setPushOpen(false)} />
-            <div className="pull-menu">
+            <div className="pull-menu" role="menu">
               <div
                 className="pull-menu-item"
+                role="menuitem"
+                tabIndex={0}
                 onClick={() => {
                   setPushOpen(false);
                   onForcePush();
                 }}
+                onKeyDown={activateOnKey(() => {
+                  setPushOpen(false);
+                  onForcePush();
+                })}
               >
                 Force push (with lease)
               </div>

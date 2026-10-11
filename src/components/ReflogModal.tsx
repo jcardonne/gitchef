@@ -36,7 +36,7 @@ export default function ReflogModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="reflog-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="reflog-modal" role="dialog" aria-modal="true" aria-label="Reflog" onClick={(e) => e.stopPropagation()}>
         <h3>HEAD reflog</h3>
         {error ? (
           <div className="reflog-empty">{error}</div>

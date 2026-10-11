@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CheckMenuItem, Menu } from "@tauri-apps/api/menu";
 import type { CommitNode, RefKind, RefLabel, WorkStats } from "../types";
-import { avatarUrl, type AvatarContext, edgePath, getLaneColors, relativeTime } from "../util";
+import { avatarUrl, type AvatarContext, edgePath, getLaneColors, relativeTime, buttonProps } from "../util";
 import { resolvedTheme } from "../theme";
+import { isMine, isMultiAuthor, publishedBoundary, staleCommitIds } from "../graphMarks";
 import { BranchIcon, HeadIcon, LocalIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
 import {
   getGraphColumnVisibility,
@@ -21,7 +22,16 @@ function readRowH(): number {
 const LANE_W = 20;
 const DOT_R = 6;
 const AVATAR_R = 10; // committer avatar disc radius (~20px, fits one lane); also drives the author-column avatar size via --avatar-d
-const PAD_X = 14;
+const PAD_X = 18; // room for a 12px avatar plus the HEAD ring at the left edge
+/// Profile picture radius in the graph itself (the author column keeps AVATAR_R).
+/// A commit is a face, so it stays big and constant: two nodes never share a row, and
+/// at the minimum pitch a neighbouring lane's line still clears the disc.
+const GRAPH_AVATAR_R = 12;
+/// Lane pitch stays at LANE_W until the lanes would need more than this many pixels,
+/// then tightens (never below MIN_PITCH) so a deep branch history cannot take the
+/// message column's width. The faces do not shrink with it.
+const LANE_BUDGET = 136;
+const MIN_PITCH = 14;
 const OVERSCAN = 8; // rows kept mounted above/below the viewport
 /// The graph's toggleable columns, in header order. Exported as the single
 /// source of truth: Settings renders the same list, and when it kept its own
@@ -93,6 +103,9 @@ interface Props {
   avatarCtx: AvatarContext;
   /// Branch names (short) with an open PR/MR - their badge shows the fork icon.
   prBranches: ReadonlySet<string>;
+  /// `user.email` from git config. With it (and more than one author in view),
+  /// commits by other people recede a little so yours read first.
+  userEmail: string | null;
 }
 
 /// Renders the commit DAG: an SVG of lanes/edges/dots on the left, aligned
@@ -119,6 +132,7 @@ export default function GraphView({
   onLoadMore,
   avatarCtx,
   prBranches,
+  userEmail,
 }: Props) {
   // Resizable column widths (persisted) + sort direction.
   const [cols, setCols] = useState(getGraphCols);
@@ -234,16 +248,26 @@ export default function GraphView({
   useEffect(() => {
     let alive = true;
     const emails = [...new Set(nodes.map((n) => n.email).filter(Boolean))];
-    Promise.all(emails.map(async (e) => [e, await avatarUrl(e, avatarCtx)] as const)).then(
-      (pairs) => {
+    // Resolve per email, flushing at most once per frame so a burst of authors
+    // re-renders the graph once, not once per face.
+    const pending = new Map<string, string>();
+    let frame = 0;
+    const flush = () => {
+      frame = 0;
+      if (alive) setAvatars((prev) => new Map([...prev, ...pending]));
+      pending.clear();
+    };
+    for (const e of emails) {
+      void avatarUrl(e, avatarCtx).then((url) => {
         if (!alive) return;
-        // Warm the browser cache so dots + row avatars don't pop in on first paint.
-        for (const [, url] of pairs) new Image().src = url;
-        setAvatars(new Map(pairs));
-      }
-    );
+        new Image().src = url; // warm the cache so the face doesn't pop in late
+        pending.set(e, url);
+        if (!frame) frame = requestAnimationFrame(flush);
+      });
+    }
     return () => {
       alive = false;
+      cancelAnimationFrame(frame);
     };
   }, [nodes, avatarCtx]);
 
@@ -268,6 +292,22 @@ export default function GraphView({
     () => nodes.find((n) => n.refs.some((r) => r.kind === "head"))?.id ?? null,
     [nodes]
   );
+
+  // HEAD's own first-parent line: the only commits besides the selection that get a
+  // relief band. Hover tracing still emboldens edges but no longer paints bands.
+  const headChain = useMemo(() => chainFrom(headId), [chainFrom, headId]);
+
+  // Status encoding on the spine: old merged branches recede, other people's
+  // commits recede when the repo has several authors, and everything not on a
+  // remote yet is drawn as a rail with dashed rings (see graphMarks.ts).
+  const stale = useMemo(() => staleCommitIds(nodes, headId, Math.floor(Date.now() / 1000)), [nodes, headId]);
+  const multiAuthor = useMemo(() => isMultiAuthor(nodes), [nodes]);
+  // Where HEAD's history stops being shared, and how many commits sit above it. Also
+  // the set of commits the graph marks as "not pushed": what pushing this branch
+  // would publish. Other branches' local-only commits are not marked, so a repo with
+  // many unpushed feature branches does not light up everywhere.
+  const published = useMemo(() => publishedBoundary(nodes, headId), [nodes, headId]);
+  const isUnpushed = (id: string) => !!published?.ids.has(id);
 
   // Which branch each commit "belongs to", so a hovered row with no ref badge can
   // show it. Tips are ordered current-branch, then locals, then remotes.
@@ -336,7 +376,9 @@ export default function GraphView({
   // than always to row 0) is what keeps it attached to HEAD in both orders.
   const wipRow = sortAsc ? displayed.length : 0;
   const offset = hasWip && !sortAsc ? 1 : 0;
-  const headIdx = sortAsc ? displayed.length - 1 : 0;
+  // The WIP node connects to HEAD, not to whichever commit happens to be newest: the
+  // topological walk can put another branch's commit first.
+  const headIdx = (headId ? index.get(headId) : undefined) ?? (sortAsc ? displayed.length - 1 : 0);
   const wipLane = displayed[headIdx]?.lane ?? 0;
   const wipColor = getCol(displayed[headIdx]?.color ?? 0);
 
@@ -420,7 +462,12 @@ export default function GraphView({
   }, [reveal?.seq]);
 
   const maxLane = nodes.reduce((m, n) => Math.max(m, n.lane), 0);
-  const graphWidth = PAD_X + (maxLane + 1) * LANE_W;
+  const laneCount = maxLane + 1;
+  const pitch = laneCount * LANE_W <= LANE_BUDGET ? LANE_W : Math.max(MIN_PITCH, Math.floor(LANE_BUDGET / laneCount));
+  const avR = GRAPH_AVATAR_R;
+  const dotR = DOT_R;
+  // The last lane's face and ring (avR + 4) must fit even when the pitch is tight.
+  const graphWidth = PAD_X + (laneCount - 1) * pitch + Math.max(pitch, avR + 4);
   // Refs now live in their own column (left of the lanes, GitKraken-style), so the
   // graph column is pure lanes/dots, auto-sized to lane depth - not resizable. The
   // refs column is resizable; the SVG is shifted right by it so lanes overlay the
@@ -428,16 +475,18 @@ export default function GraphView({
   const graphColW = graphWidth;
   const refsW = visibleCols.refs ? cols.refs ?? REFS_W_DEFAULT : 0;
   const svgLeft = refsW;
-  const authorW = cols.author ?? 150;
+  // A one-author repo repeats the same name on every row: collapse the column to the
+  // avatar. The user's saved width still applies once a second author appears.
+  const authorW = multiAuthor ? cols.author ?? 150 : 44;
   const shaW = cols.sha ?? 64;
-  const dateW = cols.date ?? 66;
+  const dateW = cols.date ?? 76;
   // Every non-shrinkable column, plus a floor for the message. The header has no
   // `overflow` so it always lays out at its intrinsic width, while `.commit-row`
   // clips at `overflow: hidden` - if `.graph` isn't at least this wide, a narrow
   // center pane leaves the header labels scrolling over blank rows with the
   // commit message gone entirely. Sizing the whole graph instead makes the
   // container scroll horizontally and keeps header and rows in lockstep.
-  const MSG_MIN_W = 120;
+  const MSG_MIN_W = 160;
   const minGraphW =
     refsW +
     (visibleCols.graph ? graphColW : 0) +
@@ -445,7 +494,7 @@ export default function GraphView({
     (visibleCols.author ? authorW : 0) +
     (visibleCols.sha ? shaW : 0) +
     (visibleCols.date ? dateW : 0);
-  const x = (lane: number) => PAD_X + lane * LANE_W;
+  const x = (lane: number) => PAD_X + lane * pitch;
 
   // Drag a header separator to resize a column (clamped, persisted on change).
   const startResize =
@@ -486,6 +535,10 @@ export default function GraphView({
     await (await Menu.new({ items })).popup();
   };
   const y = (i: number) => (i + offset) * ROW_H + ROW_H / 2;
+  // Row of the oldest unpushed commit on HEAD's line. The published line sits on its
+  // far edge (below it newest-first, above it oldest-first), hidden while a search
+  // filter punches holes.
+  const publishedRow = !filtering && published ? index.get(published.id) : undefined;
   const wipY = wipRow * ROW_H + ROW_H / 2;
 
   const scrollRowIntoView = (i: number) => {
@@ -530,6 +583,9 @@ export default function GraphView({
   // commit rows newest-first and after them oldest-first.
   const wipRowEl = (
     <div
+      id="commit-wip"
+      role="option"
+      aria-selected={workActive}
       className={`commit-row wip-row${workActive ? " selected" : ""}`}
       style={{ height: ROW_H }}
       onClick={onSelectWork}
@@ -601,17 +657,19 @@ export default function GraphView({
           <button
             className={`search-nav${filterMode ? " active" : ""}`}
             onClick={() => setFilterMode((f) => !f)}
+            aria-label="Show only matching commits"
+            aria-pressed={filterMode}
             title="Show only matching commits"
           >
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h12l-4.5 5.5V13L6.5 14.5V8.5z" /></svg>
           </button>
-          <button className="search-nav" disabled={!matchList.length} onClick={() => step(-1)} title="Previous (Shift+Enter / ⇧⌘G)">
+          <button className="search-nav" disabled={!matchList.length} onClick={() => step(-1)} aria-label="Previous match" title="Previous (Shift+Enter / ⇧⌘G)">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10l4-4 4 4" /></svg>
           </button>
-          <button className="search-nav" disabled={!matchList.length} onClick={() => step(1)} title="Next (Enter / ⌘G)">
+          <button className="search-nav" disabled={!matchList.length} onClick={() => step(1)} aria-label="Next match" title="Next (Enter / ⌘G)">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4" /></svg>
           </button>
-          <button className="search-nav" onClick={closeSearch} title="Close (Esc)">
+          <button className="search-nav" onClick={closeSearch} aria-label="Close" title="Close (Esc)">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
           </button>
         </div>
@@ -628,9 +686,30 @@ export default function GraphView({
           </div>
         )}
         {visibleCols.graph && (
-          <div className="col-graph" style={{ flex: `0 0 ${graphColW}px` }}>Graph</div>
+          <div className="col-graph" style={{ flex: `0 0 ${graphColW}px` }}>
+            Graph
+            {graphColW >= 96 && <button
+              className="col-graph-key"
+              onClick={() => window.dispatchEvent(new CustomEvent("gitchef:open-shortcuts", { detail: "graph-key" }))}
+              title="What the rings, rails and grey faces mean"
+            >
+              Key
+            </button>}
+          </div>
         )}
-        {visibleCols.message && <div className="col-msg">Message</div>}
+        {visibleCols.message && (
+          <div className="col-msg">
+            Message
+            {published && (
+              <span
+                className="header-chip"
+                title="Commits on this branch that are on no remote yet. They sit above the line in the graph."
+              >
+                {headBranch ?? "HEAD"}: {published.count} not pushed
+              </span>
+            )}
+          </div>
+        )}
         {visibleCols.author && (
           <div className="col-author" style={{ flex: `0 0 ${authorW}px` }}>
             <div
@@ -639,7 +718,7 @@ export default function GraphView({
               onClick={(e) => e.stopPropagation()}
               title="Resize author column"
             />
-            Author
+            {multiAuthor ? "Author" : ""}
           </div>
         )}
         {visibleCols.sha && (
@@ -658,6 +737,7 @@ export default function GraphView({
             className="col-date sortable"
             style={{ flex: `0 0 ${dateW}px` }}
             onClick={toggleSort}
+            {...buttonProps(toggleSort)}
             title="Sort by date"
           >
             <div
@@ -676,12 +756,14 @@ export default function GraphView({
         ref={graphRef}
         tabIndex={0}
         onKeyDown={onGraphKey}
-        role="region"
+        role="listbox"
         aria-label="Commit graph"
+        aria-activedescendant={workActive ? "commit-wip" : selectedId ? `commit-${selectedId}` : undefined}
       >
       {visibleCols.graph && (
         <svg
           className="graph-svg"
+          aria-hidden="true"
           width={graphWidth}
           height={total * ROW_H}
           style={{ left: svgLeft }}
@@ -689,6 +771,11 @@ export default function GraphView({
         {/* One horizontal transparent->color gradient per lane color, reused by
             every relief band (objectBoundingBox remaps it to each rect's box). */}
         <defs>
+          {/* Other people's / old branches' avatars lose colour, never the ring: the
+              ring is the lane identity and keeps its contrast. */}
+          <filter id="recede-gray">
+            <feColorMatrix type="saturate" values="0.15" />
+          </filter>
           {currentLaneColors.map((c, i) => (
             <linearGradient key={i} id={`band-${i}`} x1="0" y1="0" x2="1" y2="0">
               <stop offset="0" stopColor={c} stopOpacity="0" />
@@ -713,9 +800,9 @@ export default function GraphView({
           if (i + offset < vStart || i + offset > vEnd) return null;
           const cy = y(i);
           const selected = n.id === selectedId;
-          const on = active.has(n.id);
-          const x0 = x(n.lane) + AVATAR_R + 2;
-          const bandH = AVATAR_R * 2 + 2; // slim: ~ the avatar's own height
+          const on = headChain.has(n.id);
+          const x0 = x(n.lane) + avR + 2;
+          const bandH = avR * 2 + 2; // slim: ~ the avatar's own height
           const top = cy - bandH / 2;
           const col = getCol(n.color);
           const border = 4; // opaque right edge, kept just inside the SVG
@@ -734,23 +821,29 @@ export default function GraphView({
                   opacity={selected || on ? 0.9 : 0.6}
                 />
               )}
-              {/* faded fill: invisible on the left, full color at the right */}
-              <rect
-                x={x0}
-                y={top}
-                width={Math.max(0, graphWidth - x0)}
-                height={bandH}
-                fill={`url(#band-${n.color % currentLaneColors.length})`}
-                opacity={selected ? 0.32 : on ? 0.2 : 0.13}
-              />
-              <rect
-                x={graphWidth - border}
-                y={top}
-                width={border}
-                height={bandH}
-                fill={col}
-                opacity={selected ? 0.85 : on ? 0.5 : 0.32}
-              />
+              {/* faded fill: invisible on the left, full color at the right. Only the
+                  selected row and the HEAD line carry one, so the bands mark
+                  "where you are" instead of tinting every row. */}
+              {(selected || on) && (
+                <>
+                  <rect
+                    x={x0}
+                    y={top}
+                    width={Math.max(0, graphWidth - x0)}
+                    height={bandH}
+                    fill={`url(#band-${n.color % currentLaneColors.length})`}
+                    opacity={selected ? 0.32 : 0.2}
+                  />
+                  <rect
+                    x={graphWidth - border}
+                    y={top}
+                    width={border}
+                    height={bandH}
+                    fill={col}
+                    opacity={selected ? 0.85 : 0.5}
+                  />
+                </>
+              )}
             </g>
           );
         })}
@@ -770,16 +863,23 @@ export default function GraphView({
             const onSpine = firstParent && active.has(n.id) && active.has(pid);
             // Solid, full-color lanes (GitKraken); the current-branch spine just
             // reads a touch bolder rather than dimming everything else out.
+            // Not pushed yet: a wide flat rail under the line (shape, not hue, so
+            // it still reads in any palette). Old merged branches step back.
+            const thin = stale.has(n.id);
             return (
-              <path
-                key={`${n.id}-${pid}`}
-                d={d}
-                fill="none"
-                stroke={getCol(n.color)}
-                strokeWidth={onSpine ? 2.6 : firstParent ? 2 : 1.6}
-                strokeDasharray={firstParent ? undefined : "4 3"}
-                opacity={onSpine ? 1 : 0.85}
-              />
+              <g key={`${n.id}-${pid}`}>
+                {isUnpushed(n.id) && firstParent && (
+                  <path d={d} fill="none" stroke={getCol(n.color)} strokeWidth={6} strokeLinecap="round" opacity={0.28} />
+                )}
+                <path
+                  d={d}
+                  fill="none"
+                  stroke={getCol(n.color)}
+                  strokeWidth={thin ? 1.1 : onSpine ? 2.6 : firstParent ? 2 : 1.6}
+                  strokeDasharray={firstParent ? undefined : "4 3"}
+                  opacity={onSpine ? 1 : 0.85}
+                />
+              </g>
             );
           })
         )}
@@ -788,7 +888,7 @@ export default function GraphView({
           <circle
             cx={x(wipLane)}
             cy={wipY}
-            r={DOT_R}
+            r={dotR}
             fill="none"
             style={{ stroke: workActive ? "var(--text)" : wipColor }}
             strokeWidth={2}
@@ -802,11 +902,21 @@ export default function GraphView({
           const selected = n.id === selectedId;
           // Off-spine dots stay nearly solid (GitKraken keeps lanes crisp); the
           // current branch's dots are full strength so the backbone still leads.
+          const isHeadNode = n.id === headId;
+          // Ownership and age are quiet, and carried by the avatar's colour and the
+          // ring's weight rather than opacity, which cannot keep 3:1 in light themes.
+          // Never for the selected or HEAD commit.
+          const otherAuthor = multiAuthor && !!userEmail && !isMine(n, userEmail);
+          const old = stale.has(n.id);
+          const grayed = !selected && !isHeadNode && (otherAuthor || old);
           const dim = !active.has(n.id) && !selected ? 0.9 : 1;
+          // Not on any remote yet: the ring turns dashed, the same "not settled"
+          // vocabulary the WIP node uses for uncommitted work.
+          const unpushedHere = isUnpushed(n.id);
           // Stashes are not commits in the usual sense - draw them as a diamond
           // (never an avatar bubble) so they stand out as off-to-the-side state.
           if (n.refs.some((r) => r.kind === "stash")) {
-            const r = DOT_R + 2.5;
+            const r = dotR + 2.5;
             return (
               <path
                 key={n.id}
@@ -822,50 +932,97 @@ export default function GraphView({
           if (!url) {
             // No avatar yet (loading / no email): the classic colored lane dot.
             return (
-              <circle
-                key={n.id}
-                cx={cx}
-                cy={cy}
-                r={n.refs.length ? DOT_R + 1.5 : DOT_R}
-                fill={getCol(n.color)}
-                opacity={dim}
-                style={{ stroke: selected ? "var(--text)" : "var(--bg)" }}
-                strokeWidth={selected ? 2 : 1.5}
-              />
+              <g key={n.id} opacity={dim}>
+                {/* not pushed yet: a hollow dot, like the WIP node but solid-stroked */}
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={(n.refs.length ? dotR + 1.5 : dotR) - (grayed ? 1.5 : 0)}
+                  fill={unpushedHere ? "var(--bg)" : getCol(n.color)}
+                  style={{ stroke: selected ? "var(--text)" : unpushedHere ? getCol(n.color) : "var(--bg)" }}
+                  strokeWidth={selected || unpushedHere ? 2 : 1.5}
+                />
+                {isHeadNode && (
+                  <circle cx={cx} cy={cy} r={dotR + 4.5} fill="none" stroke={getCol(n.color)} strokeWidth={2} />
+                )}
+              </g>
             );
           }
           return (
             <g key={n.id} opacity={dim}>
               <clipPath id={`av-${n.id}`}>
-                <circle cx={cx} cy={cy} r={AVATAR_R} />
+                <circle cx={cx} cy={cy} r={avR} />
               </clipPath>
               {/* lane-colored backdrop shows through while the image loads / offline */}
-              <circle cx={cx} cy={cy} r={AVATAR_R} fill={getCol(n.color)} />
-              <image
-                href={url}
-                x={cx - AVATAR_R}
-                y={cy - AVATAR_R}
-                width={AVATAR_R * 2}
-                height={AVATAR_R * 2}
-                clipPath={`url(#av-${n.id})`}
-                preserveAspectRatio="xMidYMid slice"
-              />
-              {/* ring: lane color, or white when selected */}
+              <circle cx={cx} cy={cy} r={avR} fill={getCol(n.color)} />
+              {/* no usable picture: show the author's initial instead of an empty disc */}
+              {failedAvatars.has(url) && (
+                <text
+                  x={cx}
+                  y={cy}
+                  dy="0.35em"
+                  textAnchor="middle"
+                  fontSize={avR * 0.95}
+                  fontWeight={700}
+                  style={{ fill: "var(--bg)" }}
+                >
+                  {n.author.trim().charAt(0).toUpperCase() || "?"}
+                </text>
+              )}
+              {!failedAvatars.has(url) && (
+                <image
+                  href={url}
+                  x={cx - avR}
+                  y={cy - avR}
+                  width={avR * 2}
+                  height={avR * 2}
+                  clipPath={`url(#av-${n.id})`}
+                  preserveAspectRatio="xMidYMid slice"
+                  filter={grayed ? "url(#recede-gray)" : undefined}
+                  onError={() => setFailedAvatars((f) => new Set(f).add(url))}
+                />
+              )}
+              {/* ring: lane color, or white when selected; dashed when not pushed */}
               <circle
                 cx={cx}
                 cy={cy}
-                r={AVATAR_R}
+                r={avR}
                 fill="none"
                 style={{ stroke: selected ? "var(--text)" : getCol(n.color) }}
-                strokeWidth={selected ? 2 : 1.5}
+                strokeWidth={selected ? 2 : old && !isHeadNode ? 1 : 1.5}
+               
               />
+              {/* outer ring with a gap: solid = HEAD, "you are here"; dashed = not pushed
+                  yet. HEAD wins when both apply, the line and its label say the rest. */}
+              {(isHeadNode || unpushedHere) && (
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={avR + 3}
+                  fill="none"
+                  stroke={getCol(n.color)}
+                  strokeWidth={isHeadNode ? 2 : 1.5}
+                  strokeDasharray={isHeadNode ? undefined : "4 3"}
+                />
+              )}
             </g>
           );
         })}
         </svg>
       )}
 
-      <div className="graph-rows" onMouseLeave={() => setTraceId(null)}>
+      {publishedRow !== undefined && published && (
+        <>
+          {/* The count label lives in the Message header: anything laid over the rows
+              would cover ref pills or commit text. */}
+          <div
+            className="published-line"
+            aria-hidden
+            style={{ top: (publishedRow + offset + (sortAsc ? 0 : 1)) * ROW_H }}
+          />
+        </>
+      )}
+      <div className="graph-rows" role="presentation" onMouseLeave={() => setTraceId(null)}>
         <div aria-hidden style={{ height: padTop }} />
         {/* Newest-first the WIP row leads the list; oldest-first it trails it. */}
         {wipVisible && !sortAsc && wipRowEl}
@@ -881,12 +1038,11 @@ export default function GraphView({
               className={`commit-row${n.id === selectedId ? " selected" : ""}${
                 matchSet ? (matchSet.has(n.id) ? " matched" : " dimmed") : ""
               }${n.id === currentMatchId ? " match-current" : ""}`}
-              style={{
-                height: ROW_H,
-                // Checked-out branch: a thick lane-colored bar down the far left of
-                // the row marks "you are here".
-                boxShadow: n.id === headId ? `inset 3px 0 0 ${getCol(n.color)}` : undefined,
-              }}
+              id={`commit-${n.id}`}
+              role="option"
+              aria-selected={n.id === selectedId}
+              aria-label={`${n.summary}, ${n.author}${n.id === headId ? ", checked out" : ""}${isUnpushed(n.id) ? ", not pushed yet" : ""}`}
+              style={{ height: ROW_H }}
               onClick={() => onSelect(n.id)}
               onMouseEnter={() => setTraceId(n.id)}
               onContextMenu={(e) => {
@@ -948,9 +1104,13 @@ export default function GraphView({
                         onError={() => setFailedAvatars((s) => new Set(s).add(url))}
                       />
                     ))}
-                  <span className="col-author-name" title={n.email ? `${n.author} <${n.email}>` : n.author}>
-                    {n.author}
-                  </span>
+                  {multiAuthor ? (
+                    <span className="col-author-name" title={n.email ? `${n.author} <${n.email}>` : n.author}>
+                      {n.author}
+                    </span>
+                  ) : (
+                    <span className="sr-only">{n.author}</span>
+                  )}
                 </div>
               )}
               {visibleCols.sha && (

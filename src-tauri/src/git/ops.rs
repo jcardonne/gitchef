@@ -319,6 +319,12 @@ pub fn stash_drop(repo: &mut Repository, sha: &str) -> AppResult<String> {
     run_git(workdir(repo)?, &["stash", "drop", &format!("stash@{{{n}}}")])
 }
 
+/// Put a dropped stash back on the stack from its commit sha (`git stash store`).
+pub fn stash_restore(repo: &Repository, sha: &str, message: &str) -> AppResult<String> {
+    git2::Oid::from_str(sha)?; // reject anything that is not a plain object id
+    run_git(workdir(repo)?, &["stash", "store", "-m", message, sha])
+}
+
 /// Rename a stash. Git has no in-place edit, and a stash's message lives in the
 /// commit itself (the graph shows `commit.summary()`), so `git stash store -m`
 /// alone can't change what GitChef displays - and re-storing the current tip is
@@ -356,6 +362,7 @@ mod tests {
     use super::{
         amend, checkout_autostash, cherry_pick, commit, fast_forward_to, merge, pull, push,
         push_force, rebase_onto, reset_to, revert_commit, stash_all, stash_apply, stash_edit_message,
+        stash_restore,
     };
     use crate::git::run_git;
     use git2::Repository;
@@ -435,6 +442,24 @@ mod tests {
         assert!(list.contains("edited TWO"), "top stash renamed: {list}");
         assert!(list.contains("stash ONE"), "other stash must survive: {list}");
         assert_eq!(list.lines().count(), 2, "exactly two stashes remain: {list}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn stash_restore_brings_back_a_dropped_stash() {
+        let dir = tmp("stashrestore");
+        init(&dir);
+        std::fs::write(dir.join("f.txt"), "base\nchange\n").unwrap();
+        stash_all(&Repository::open(&dir).unwrap(), Some("keep this")).unwrap();
+        let sha = run_git(&dir, &["rev-parse", "stash@{0}"]).unwrap().trim().to_string();
+        run_git(&dir, &["stash", "drop"]).unwrap();
+        assert!(run_git(&dir, &["stash", "list"]).unwrap().trim().is_empty(), "stash dropped");
+
+        stash_restore(&Repository::open(&dir).unwrap(), &sha, "keep this").unwrap();
+
+        let list = run_git(&dir, &["stash", "list"]).unwrap();
+        assert!(list.contains("keep this"), "stash is back: {list}");
+        assert!(stash_restore(&Repository::open(&dir).unwrap(), "not-a-sha; rm -rf", "x").is_err());
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -101,6 +101,9 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
     <div className="modal-overlay" onClick={onClose}>
       <div
         className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chef AI download"
         style={{ width: 480, maxWidth: "92vw", padding: 22 }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -110,12 +113,11 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
               width: 32,
               height: 32,
               borderRadius: 8,
-              background: "linear-gradient(135deg, var(--accent) 0%, #a855f7 100%)",
+              background: "var(--accent)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "#fff",
-              boxShadow: "0 2px 8px rgba(168, 85, 247, 0.3)",
+              color: "var(--on-accent)",
             }}
           >
             <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
@@ -125,7 +127,7 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
           </div>
           <div>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Chef AI — 1-Click Local Assistant</h3>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>
+            <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
               Ultra-lightweight embedded model • 100% private
             </div>
           </div>
@@ -149,29 +151,29 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--muted)" }}>Model</span>
+            <span style={{ color: "var(--text-dim)" }}>Model</span>
             <span style={{ fontWeight: 600 }}>Qwen 2.5 Coder 0.5B Instruct</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--muted)" }}>Download size</span>
+            <span style={{ color: "var(--text-dim)" }}>Download size</span>
             <span>~468 MB (GGUF Q4_K_M)</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--muted)" }}>Memory footprint</span>
+            <span style={{ color: "var(--text-dim)" }}>Memory footprint</span>
             <span>&lt; 450 MB RAM (fast on any machine)</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--muted)" }}>Privacy</span>
-            <span style={{ color: "var(--green, #22c55e)", fontWeight: 600 }}>100% Offline / Zero cloud</span>
+            <span style={{ color: "var(--text-dim)" }}>Privacy</span>
+            <span style={{ color: "var(--add)", fontWeight: 600 }}>100% Offline / Zero cloud</span>
           </div>
         </div>
 
         {error && (
           <div
             style={{
-              background: "rgba(239, 68, 68, 0.1)",
-              border: "1px solid rgba(239, 68, 68, 0.3)",
-              color: "#ef4444",
+              background: "var(--diff-del-bg)",
+              border: "1px solid color-mix(in srgb, var(--del) 35%, transparent)",
+              color: "var(--del)",
               borderRadius: 6,
               padding: "8px 12px",
               fontSize: 12,
@@ -202,7 +204,7 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
                 style={{
                   height: "100%",
                   width: `${percent}%`,
-                  background: "linear-gradient(90deg, var(--accent) 0%, #a855f7 100%)",
+                  background: "var(--accent)",
                   transition: "width 0.2s ease",
                 }}
               />
@@ -212,7 +214,7 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
                 display: "flex",
                 justifyContent: "space-between",
                 fontSize: 11,
-                color: "var(--muted)",
+                color: "var(--text-dim)",
                 marginTop: 6,
               }}
             >
@@ -242,13 +244,9 @@ export default function ChefAiDownloadModal({ onClose, onSuccess }: Props) {
                 disabled={isStarting}
                 onClick={handleStartDownload}
                 style={{
-                  background: "linear-gradient(135deg, var(--accent) 0%, #a855f7 100%)",
-                  borderColor: "transparent",
-                  color: "#fff",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
-                  boxShadow: "0 2px 10px rgba(168, 85, 247, 0.35)",
                 }}
               >
                 {isStarting ? (

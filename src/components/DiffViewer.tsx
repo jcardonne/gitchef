@@ -3,10 +3,12 @@ import type { DiffLine, FileDiff } from "../types";
 import { useVirtual } from "../useVirtual";
 import { wordDiff } from "../wordDiff";
 import { langForPath, highlightTokens, composeSpans } from "../highlight";
+import { buttonProps } from "../util";
 import EmptyState, { DocIcon, BinaryIcon, CheckIcon } from "./EmptyState";
 import { useFind, scrollRowIntoView } from "../useFind";
 import FindBar from "./FindBar";
 import { renderCode } from "./CodeLine";
+import { hunkKeyAction } from "../hunkKeys";
 import type { Hit } from "../find";
 
 const ROW_H = 18; // must match .diff-line / .diff-hunk-header height in CSS
@@ -17,6 +19,11 @@ interface Props {
   // right-clicked hunk has a line selection (empty otherwise), which lets the
   // caller offer line-level stage/discard alongside the whole-hunk actions.
   onHunkMenu?: (header: string, text: string, selected: string[]) => void;
+  /// Direct hunk actions for the header buttons and the keyboard (`[` `]` `s` `d`).
+  /// `selected` is the line selection in that hunk (empty = the whole hunk).
+  onHunkAction?: (header: string, action: "stage" | "unstage" | "discard", selected: string[]) => void;
+  /// True when the diff shows staged changes (the action is then Unstage, no Discard).
+  staged?: boolean;
   /// "split" renders old|new side-by-side (read-only); "unified" (default) is the
   /// stacked view with line-level staging.
   mode?: "unified" | "split";
@@ -42,11 +49,14 @@ function lineKey(line: DiffLine): string | null {
 /// the scroll height is faked with top/bottom padding spacers. When `onHunkMenu`
 /// is set (a working-file diff), changed lines are click-selectable for
 /// line-level staging.
-export default function DiffViewer({ diff, onHunkMenu, mode = "unified", findOpen, onFindClose }: Props) {
+export default function DiffViewer({ diff, onHunkMenu, onHunkAction, staged = false, mode = "unified", findOpen, onFindClose }: Props) {
   // Line selection for partial staging, scoped to a single hunk at a time.
   const [selHunk, setSelHunk] = useState<number | null>(null);
   const [selKeys, setSelKeys] = useState<Set<string>>(new Set());
   const anchor = useRef<string | null>(null); // last single-clicked key, for shift-range
+  // The hunk the keyboard acts on: `[` / `]` move it, `s` / `d` act on it.
+  const [activeHi, setActiveHi] = useState(0);
+  const viewKey = useRef<string | null>(null);
 
   const rows = useMemo<Row[]>(() => {
     if (!diff) return [];
@@ -126,7 +136,7 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified", findOpe
         : [],
     [findOpen, list]
   );
-  const { ref, el, start, end, padTop, padBottom } = useVirtual(list.length, ROW_H, diff);
+  const { ref, el, start, end, padTop, padBottom } = useVirtual(list.length, ROW_H, diff ? `${diff.path}:${staged}` : null);
   const find = useFind(findOpen, rowCells, (row) => scrollRowIntoView(el, ROW_H, row));
 
   // Clear the line selection whenever the shown diff changes - including a
@@ -136,7 +146,22 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified", findOpe
     setSelHunk(null);
     setSelKeys(new Set());
     anchor.current = null;
+    // Staging a hunk reloads the same file's diff. Keep the keyboard on the same
+    // hunk position then, and only start over when a different file/side is shown.
+    const key = diff ? `${diff.path}:${staged}` : null;
+    const sameView = key === viewKey.current;
+    viewKey.current = key;
+    setActiveHi((h) => (sameView ? Math.min(h, Math.max(0, (diff?.hunks.length ?? 1) - 1)) : 0));
   }, [diff]);
+
+  // Virtual-row index of each hunk header, for jumping between hunks.
+  const hunkRow = useMemo(() => {
+    const m = new Map<number, number>();
+    list.forEach((r, i) => {
+      if ("hunk" in r) m.set(r.hi, i);
+    });
+    return m;
+  }, [list]);
 
   if (!diff) return <EmptyState icon={<DocIcon />} title="No file selected" hint="Pick a file from the list to see its changes." />;
   if (diff.binary) return <EmptyState icon={<BinaryIcon />} title="Binary file" hint="No text diff to show." />;
@@ -169,6 +194,24 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified", findOpe
     anchor.current = key;
   };
 
+  const canAct = !!onHunkAction && mode !== "split";
+  const actOn = (hi: number, action: "stage" | "unstage" | "discard") =>
+    onHunkAction?.(diff.hunks[hi].header, action, selHunk === hi ? [...selKeys] : []);
+  const jumpHunk = (hi: number) => {
+    setActiveHi(hi);
+    const row = hunkRow.get(hi);
+    if (row != null) scrollRowIntoView(el, ROW_H, row);
+  };
+  const onDiffKey = (e: React.KeyboardEvent) => {
+    if (!canAct || e.metaKey || e.ctrlKey || e.altKey || e.target !== e.currentTarget) return;
+    const r = hunkKeyAction(e.key, activeHi, diff.hunks.length, staged);
+    if (!r) return;
+    e.preventDefault();
+    if (r.type === "jump") jumpHunk(r.to);
+    else actOn(activeHi, r.action);
+  };
+  const selCount = (hi: number) => (selHunk === hi ? selKeys.size : 0);
+
   const openMenu = (hi: number) => {
     if (!onHunkMenu) return;
     const text = [diff.hunks[hi].header, ...diff.hunks[hi].lines.map((l) => l.origin + l.content)]
@@ -180,14 +223,21 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified", findOpe
   return (
     <div className={`diff${mode === "split" ? " split" : ""}`}>
       {findOpen && <FindBar api={find} onClose={onFindClose} />}
-      <div className="diff-scroll" ref={ref}>
+      <div
+        className="diff-scroll"
+        ref={ref}
+        tabIndex={canAct ? 0 : undefined}
+        role={canAct ? "group" : undefined}
+        aria-label={canAct ? "Diff. Press ] and [ to move between hunks, S to stage or unstage, D to discard." : undefined}
+        onKeyDown={onDiffKey}
+      >
         <div className="diff-rows" style={{ paddingTop: padTop, paddingBottom: padBottom }}>
           {list.slice(start, end).map((row, i) => {
             if ("hunk" in row) {
               return (
                 <div
                   key={start + i}
-                  className="diff-hunk-header"
+                  className={`diff-hunk-header${canAct && row.hi === activeHi ? " active" : ""}`}
                   onContextMenu={
                     menu
                       ? (e) => {
@@ -197,7 +247,31 @@ export default function DiffViewer({ diff, onHunkMenu, mode = "unified", findOpe
                       : undefined
                   }
                 >
-                  {row.hunk}
+                  <span className="hunk-title" title={row.hunk}>{row.hunk}</span>
+                  {canAct && (
+                    <span className="hunk-actions">
+                      {(() => {
+                        const n = selCount(row.hi);
+                        const what = n > 0 ? `${n} line${n === 1 ? "" : "s"}` : "hunk";
+                        return (
+                          <>
+                            <button
+                              className="hunk-btn"
+                              title={`${staged ? "Unstage" : "Stage"} ${what} (S)`}
+                              onClick={() => actOn(row.hi, staged ? "unstage" : "stage")}
+                            >
+                              {staged ? "Unstage" : "Stage"} {what}
+                            </button>
+                            {!staged && (
+                              <button className="hunk-btn danger" title={`Discard ${what} (D). A copy is kept.`} onClick={() => actOn(row.hi, "discard")}>
+                                Discard {what}
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </span>
+                  )}
                 </div>
               );
             }
@@ -257,6 +331,7 @@ function DiffRow({
     <div
       className={`diff-line ${cls}${selected ? " sel" : ""}${onClick ? " selectable" : ""}`}
       onClick={onClick}
+      {...(onClick ? buttonProps(onClick as () => void) : {})}
       onContextMenu={onContextMenu}
     >
       <span className="ln">{line.old_lineno ?? ""}</span>

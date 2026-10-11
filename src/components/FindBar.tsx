@@ -48,13 +48,13 @@ export default function FindBar({ api, onClose }: { api: FindApi; onClose: () =>
       >
         Aa
       </button>
-      <button className="search-nav" disabled={!count} onClick={() => step(-1)} title="Previous (Shift+Enter / ⇧⌘G)">
+      <button className="search-nav" disabled={!count} onClick={() => step(-1)} aria-label="Previous match" title="Previous (Shift+Enter / ⇧⌘G)">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 10l4-4 4 4" /></svg>
       </button>
-      <button className="search-nav" disabled={!count} onClick={() => step(1)} title="Next (Enter / ⌘G)">
+      <button className="search-nav" disabled={!count} onClick={() => step(1)} aria-label="Next match" title="Next (Enter / ⌘G)">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6l4 4 4-4" /></svg>
       </button>
-      <button className="search-nav" onClick={onClose} title="Close (Esc)">
+      <button className="search-nav" onClick={onClose} aria-label="Close" title="Close (Esc)">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4l-8 8" /></svg>
       </button>
     </div>

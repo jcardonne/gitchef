@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useVirtual } from "../useVirtual";
 import type { BlameHunkInfo, FileContent } from "../types";
 import EmptyState, { DocIcon, BinaryIcon } from "./EmptyState";
-import { relativeTime } from "../util";
+import { relativeTime, buttonProps } from "../util";
 import { langForPath, highlightTokens, composeSpans } from "../highlight";
 import { useFind, scrollRowIntoView } from "../useFind";
 import FindBar from "./FindBar";
@@ -71,6 +71,7 @@ export default function BlameView({
                   className={"blame-gutter" + (h ? " clickable" : "")}
                   title={h ? `${h.short_id} · ${h.author} · ${relativeTime(h.time)}` : ""}
                   onClick={h ? () => onPickCommit(h.commit_id) : undefined}
+                  {...(h ? buttonProps(() => onPickCommit(h.commit_id)) : {})}
                 >
                   {isStart && h ? (
                     <>

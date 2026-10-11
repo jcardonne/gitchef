@@ -43,7 +43,14 @@ export async function pickRepoFolder(title = "Open a Git repository"): Promise<s
 // The backend is stateless: every command takes the `repo` path it acts on, so
 // open tabs never share a "current repo" (no cross-tab races).
 
-export const openRepo = (path: string) => invoke<RepoInfo>("open_repo", { path });
+export interface CliInstall {
+  path: string;
+  onPath: boolean;
+  current: boolean;
+}
+export const installCli = () => invoke<CliInstall>("install_cli");
+export const cliStatus = () => invoke<CliInstall | null>("cli_status");
+export const openRepo =(path: string) => invoke<RepoInfo>("open_repo", { path });
 export const repoStatus = (repo: string) => invoke<StatusResult>("repo_status", { repo });
 export const workStats = (repo: string) => invoke<WorkStats>("work_stats", { repo });
 export const commitGraph = (repo: string, limit = 500) =>
@@ -195,6 +202,10 @@ export const unstagePaths = (repo: string, paths: string[]) =>
   invoke<void>("unstage_paths", { repo, paths });
 export const discardPaths = (repo: string, paths: string[]) =>
   invoke<void>("discard_paths", { repo, paths });
+/// Discard with a recoverable copy: resolves to the backup stash's sha, or null
+/// when nothing could be stashed and a plain discard ran.
+export const discardPathsWithBackup = (repo: string, paths: string[], message: string) =>
+  invoke<string | null>("discard_paths_with_backup", { repo, paths, message });
 export const ignorePath = (repo: string, pattern: string) =>
   invoke<void>("ignore_path", { repo, pattern });
 export const stashFile = (repo: string, path: string) =>
@@ -228,6 +239,20 @@ export const savePatch = (repo: string, path: string, dest: string) =>
   invoke<void>("save_patch", { repo, path, dest });
 export const deleteFile = (repo: string, path: string) =>
   invoke<void>("delete_file", { repo, path });
+/// Delete a file but keep a copy; resolves to the backup path for restoreDeletedFile.
+export const deleteFileWithBackup = (repo: string, path: string) =>
+  invoke<string>("delete_file_with_backup", { repo, path });
+/// Partial-discard safety net: snapshot before, finish after, restore to undo.
+export const snapshotFile = (repo: string, path: string) =>
+  invoke<string>("snapshot_file", { repo, path });
+export const finishSnapshot = (repo: string, path: string, backup: string) =>
+  invoke<void>("finish_snapshot", { repo, path, backup });
+export const restoreFileSnapshot = (repo: string, path: string, backup: string) =>
+  invoke<void>("restore_file_snapshot", { repo, path, backup });
+export const restoreDeletedFile = (repo: string, path: string, backup: string) =>
+  invoke<void>("restore_deleted_file", { repo, path, backup });
+export const stashRestore = (repo: string, sha: string, message: string) =>
+  invoke<string>("stash_restore", { repo, sha, message });
 export const copyText = (text: string) => invoke<void>("copy_text", { text });
 export const revealInFinder = (repo: string, path: string) =>
   invoke<void>("reveal_in_finder", { repo, path });

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import * as api from "../api";
 import type { FileHistoryEntry } from "../types";
-import { relativeTime } from "../util";
+import { relativeTime, buttonProps } from "../util";
 import { useEscape } from "../useEscape";
 
 /// Lists the commits that changed `filePath` (newest first). Picking one jumps
@@ -35,7 +35,7 @@ export default function FileHistoryModal({
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="reflog-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="reflog-modal" role="dialog" aria-modal="true" aria-label="File history" onClick={(e) => e.stopPropagation()}>
         <h3 title={filePath}>History · {filePath.split("/").pop()}</h3>
         {error ? (
           <div className="reflog-empty">{error}</div>
@@ -49,6 +49,10 @@ export default function FileHistoryModal({
               <div
                 key={e.id}
                 className="reflog-item clickable"
+                {...buttonProps(() => {
+                  onClose();
+                  onPick(e.id);
+                })}
                 onClick={() => {
                   onClose();
                   onPick(e.id);
