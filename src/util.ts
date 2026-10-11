@@ -234,3 +234,46 @@ export function resolveAuthorAvatar(author: string, ctx?: AvatarContext): string
   return KNOWN_BOT_AVATARS[base] ?? null;
 }
 
+
+/// Keyboard activation for non-button elements carrying role="button"/"menuitem".
+export const activateOnKey = (fn: () => void) => (e: { key: string; preventDefault(): void }) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fn();
+  }
+};
+
+/// One-line recovery hint for the Git failures users hit most, matched on the raw
+/// error text. Returns null when nothing recognizable matches, so the toast then
+/// shows the raw message alone.
+const GIT_ERROR_HINTS: [RegExp, string][] = [
+  [/index\.lock/i, "Another Git process is running. Wait for it to finish, or delete .git/index.lock if none is."],
+  [/would be overwritten|commit your changes or stash|local changes to the following files/i, "Commit, stash or discard your local changes first."],
+  [/CONFLICT|unmerged|merge conflict/i, "Resolve the conflicted files in the Changes pane, then continue."],
+  [/non-fast-forward|fetch first|tip of your current branch is behind|\[rejected\]/i, "The remote has newer commits. Pull or fetch first, then push again."],
+  [/authentication failed|could not read username|permission denied \(publickey\)|invalid credentials/i, "Check the credentials or SSH key for this remote."],
+  [/could not resolve host|unable to access|network is unreachable|timed out/i, "Check your network connection and try again."],
+  [/not a git repository/i, "Open a folder that contains a Git repository."],
+  [/unrelated histories/i, "These branches share no history. Merge again with --allow-unrelated-histories if that is intended."],
+  [/gpg failed to sign|failed to write commit object|signing failed/i, "Commit signing failed. Check your GPG or SSH signing key, or turn signing off for this repository."],
+  [/did not match any file|pathspec .* did not match/i, "That path or branch does not exist here. Fetch first if it is on the remote."],
+  [/cannot lock ref|unable to resolve reference/i, "A ref is locked or out of date. Fetch, then try again."],
+];
+
+export function gitErrorHint(raw: string): string | null {
+  for (const [re, hint] of GIT_ERROR_HINTS) if (re.test(raw)) return hint;
+  return null;
+}
+
+/// Button semantics for a clickable non-button element (a row, card or folder):
+/// role, focusability and Enter/Space activation. Keys from controls nested inside
+/// the element are ignored so they keep their own behavior.
+export function buttonProps(onActivate: () => void) {
+  return {
+    role: "button" as const,
+    tabIndex: 0,
+    onKeyDown: (e: { key: string; target: unknown; currentTarget: unknown; preventDefault(): void }) => {
+      if (e.target === e.currentTarget) activateOnKey(onActivate)(e);
+    },
+  };
+}

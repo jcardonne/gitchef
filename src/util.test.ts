@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { affectedPaths, avatarUrl, edgePath, isRateLimited, noreplyAvatarUrl, rateLimitBackoffMs, relativeTime, resolveAuthorAvatar } from "./util";
+import { affectedPaths, avatarUrl, edgePath, gitErrorHint, isRateLimited, noreplyAvatarUrl, rateLimitBackoffMs, relativeTime, resolveAuthorAvatar } from "./util";
 import type { FileStatus } from "./types";
 
 describe("noreplyAvatarUrl", () => {
@@ -205,5 +205,24 @@ describe("relativeTime", () => {
   // rendering. Pinned so a later refactor can't turn it into "-1m ago".
   it("treats a future timestamp as just now, never a negative age", () => {
     expect(relativeTime(now() + 3600)).toBe("just now");
+  });
+});
+
+describe("gitErrorHint", () => {
+  it("maps common git failures to a recovery hint", () => {
+    expect(gitErrorHint("error: Your local changes to the following files would be overwritten by checkout")).toMatch(/stash/);
+    expect(gitErrorHint("! [rejected] main -> main (non-fast-forward)")).toMatch(/Pull or fetch/);
+    expect(gitErrorHint("fatal: Authentication failed for 'https://github.com/x/y'")).toMatch(/credentials/);
+    expect(gitErrorHint("Unable to create '.git/index.lock': File exists.")).toMatch(/Another Git process/);
+  });
+
+  it("covers signing, pathspec and unrelated-history failures", () => {
+    expect(gitErrorHint("error: gpg failed to sign the data")).toMatch(/signing/);
+    expect(gitErrorHint("error: pathspec 'feat/x' did not match any file(s) known to git")).toMatch(/does not exist/);
+    expect(gitErrorHint("fatal: refusing to merge unrelated histories")).toMatch(/share no history/);
+  });
+
+  it("returns null for unrecognized text", () => {
+    expect(gitErrorHint("something odd happened")).toBeNull();
   });
 });

@@ -490,6 +490,41 @@ fn discard_paths(repo: String, paths: Vec<String>) -> AppResult<()> {
     files::discard_paths(&open(&repo)?, paths)
 }
 
+#[tauri::command(async)]
+fn discard_paths_with_backup(repo: String, paths: Vec<String>, message: String) -> AppResult<Option<String>> {
+    files::discard_paths_with_backup(&open(&repo)?, paths, &message)
+}
+
+#[tauri::command]
+fn delete_file_with_backup(repo: String, path: String) -> AppResult<String> {
+    files::delete_file_with_backup(&open(&repo)?, &path)
+}
+
+#[tauri::command]
+fn snapshot_file(repo: String, path: String) -> AppResult<String> {
+    files::snapshot_file(&open(&repo)?, &path)
+}
+
+#[tauri::command]
+fn finish_snapshot(repo: String, path: String, backup: String) -> AppResult<()> {
+    files::finish_snapshot(&open(&repo)?, &path, &backup)
+}
+
+#[tauri::command]
+fn restore_file_snapshot(repo: String, path: String, backup: String) -> AppResult<()> {
+    files::restore_file_snapshot(&open(&repo)?, &path, &backup)
+}
+
+#[tauri::command]
+fn restore_deleted_file(repo: String, path: String, backup: String) -> AppResult<()> {
+    files::restore_deleted_file(&open(&repo)?, &path, &backup)
+}
+
+#[tauri::command(async)]
+fn stash_restore(repo: String, sha: String, message: String) -> AppResult<String> {
+    ops::stash_restore(&open(&repo)?, &sha, &message)
+}
+
 #[tauri::command]
 fn ignore_path(repo: String, pattern: String) -> AppResult<()> {
     files::ignore_path(&open(&repo)?, &pattern)
@@ -891,6 +926,7 @@ pub fn run() {
             stage_paths,
             unstage_paths,
             discard_paths,
+            discard_paths_with_backup,
             ignore_path,
             stash_file,
             stash_apply,
@@ -899,6 +935,12 @@ pub fn run() {
             stash_edit_message,
             save_patch,
             delete_file,
+            delete_file_with_backup,
+            restore_deleted_file,
+            snapshot_file,
+            finish_snapshot,
+            restore_file_snapshot,
+            stash_restore,
             copy_text,
             reveal_in_finder,
             open_default,

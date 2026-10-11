@@ -89,7 +89,7 @@ export default function RebasePlan({ base, baseLabel, onClose, onStarted }: Prop
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal rebase-plan" onClick={(e) => e.stopPropagation()}>
+      <div className="modal rebase-plan" role="dialog" aria-modal="true" aria-label="Interactive rebase" onClick={(e) => e.stopPropagation()}>
         <h3>Rebase onto {baseLabel}</h3>
 
         {plan === null ? (

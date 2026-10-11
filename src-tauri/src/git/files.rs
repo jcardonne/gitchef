@@ -104,6 +104,34 @@ pub fn discard_paths(repo: &Repository, paths: Vec<String>) -> AppResult<()> {
     Ok(())
 }
 
+/// Discard `paths` but keep a recoverable copy: a path-scoped `git stash push
+/// --include-untracked` removes exactly the same changes a discard would (tracked
+/// edits revert, untracked files are removed) and leaves a stash behind. Returns
+/// that stash's commit sha, or None when nothing could be stashed (nothing to
+/// save, or git refused, e.g. unmerged paths) and a plain discard ran instead.
+pub fn discard_paths_with_backup(
+    repo: &Repository,
+    paths: Vec<String>,
+    message: &str,
+) -> AppResult<Option<String>> {
+    let dir = workdir(repo)?;
+    let lits: Vec<String> = paths.iter().map(|p| literal(p)).collect();
+    let mut args: Vec<&str> = vec!["stash", "push", "--include-untracked", "-m", message, "--"];
+    args.extend(lits.iter().map(String::as_str));
+    // Compare the stash tip before and after instead of matching git's (localized)
+    // "No local changes to save" text.
+    let tip = || run_git(dir, &["rev-parse", "-q", "--verify", "refs/stash"]).ok().map(|s| s.trim().to_string());
+    let before = tip();
+    if run_git(dir, &args).is_ok() {
+        let after = tip();
+        if after.is_some() && after != before {
+            return Ok(after);
+        }
+    }
+    discard_paths(repo, paths)?;
+    Ok(None)
+}
+
 // --- partial (hunk-level) staging ---
 
 /// The "-a,b +c,d" core of a hunk header, ignoring the trailing function-context
@@ -363,6 +391,109 @@ pub fn save_patch(repo: &Repository, path: &str, dest: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Delete a working-tree file but keep a copy in `.git/gitchef-trash/` (outside
+/// the work tree, so it never shows up as a change) so it can be restored.
+/// Returns the backup path. Copies older than a week are pruned on each call.
+pub fn delete_file_with_backup(repo: &Repository, path: &str) -> AppResult<String> {
+    let src = workdir(repo)?.join(path);
+    let trash = repo.path().join("gitchef-trash");
+    std::fs::create_dir_all(&trash)?;
+    prune_trash(&trash);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dest = trash.join(format!("{nanos}-{}", path.replace(['/', '\\'], "_")));
+    std::fs::copy(&src, &dest)?;
+    std::fs::remove_file(&src)?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Put a file deleted by `delete_file_with_backup` back. Refuses to overwrite an
+/// existing file and to read from anywhere but this repo's trash directory.
+pub fn restore_deleted_file(repo: &Repository, path: &str, backup: &str) -> AppResult<()> {
+    let target = workdir(repo)?.join(path);
+    if target.exists() {
+        return Err(AppError::Msg(format!("{path} already exists; not overwriting it")));
+    }
+    let trash = repo.path().join("gitchef-trash").canonicalize()?;
+    let src = Path::new(backup).canonicalize()?;
+    if !src.starts_with(&trash) {
+        return Err(AppError::Msg("backup is not in this repository's trash".into()));
+    }
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(&src, &target)?;
+    std::fs::remove_file(&src).ok();
+    Ok(())
+}
+
+fn prune_trash(trash: &Path) {
+    let week = std::time::Duration::from_secs(7 * 24 * 3600);
+    if let Ok(entries) = std::fs::read_dir(trash) {
+        for e in entries.flatten() {
+            let old = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .map(|age| age > week)
+                .unwrap_or(false);
+            if old {
+                std::fs::remove_file(e.path()).ok();
+            }
+        }
+    }
+}
+
+/// Copy a working-tree file into `.git/gitchef-trash/` before a partial (hunk or
+/// line) discard. Pair with `finish_snapshot` after the discard and
+/// `restore_file_snapshot` to undo it. Returns the backup path.
+pub fn snapshot_file(repo: &Repository, path: &str) -> AppResult<String> {
+    let src = workdir(repo)?.join(path);
+    let trash = repo.path().join("gitchef-trash");
+    std::fs::create_dir_all(&trash)?;
+    prune_trash(&trash);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dest = trash.join(format!("{nanos}-snap-{}", path.replace(['/', '\\'], "_")));
+    std::fs::copy(&src, &dest)?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+/// Record the file as it is right after the discard (`<backup>.after`), so a later
+/// restore can tell whether the file has been edited since.
+pub fn finish_snapshot(repo: &Repository, path: &str, backup: &str) -> AppResult<()> {
+    let src = workdir(repo)?.join(path);
+    std::fs::copy(src, format!("{backup}.after"))?;
+    Ok(())
+}
+
+/// Put back the file as it was before the discard. Refuses when the file changed
+/// since the discard (that would silently throw away newer edits) and when the
+/// backup is outside this repo's trash directory.
+pub fn restore_file_snapshot(repo: &Repository, path: &str, backup: &str) -> AppResult<()> {
+    let target = workdir(repo)?.join(path);
+    let trash = repo.path().join("gitchef-trash").canonicalize()?;
+    let before = Path::new(backup).canonicalize()?;
+    if !before.starts_with(&trash) {
+        return Err(AppError::Msg("backup is not in this repository's trash".into()));
+    }
+    let after = format!("{backup}.after");
+    if std::fs::read(&target)? != std::fs::read(&after)? {
+        return Err(AppError::Msg(format!(
+            "{path} changed since the discard; not restoring over newer edits"
+        )));
+    }
+    std::fs::copy(&before, &target)?;
+    std::fs::remove_file(&before).ok();
+    std::fs::remove_file(&after).ok();
+    Ok(())
+}
+
 pub fn delete_file(repo: &Repository, path: &str) -> AppResult<()> {
     std::fs::remove_file(abs(repo, path)?)?;
     Ok(())
@@ -576,7 +707,7 @@ pub fn open_difftool(repo: &Repository, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_hunk, apply_lines, discard_paths, list_tracked, stage_paths, stash_file, unstage_paths};
+    use super::{apply_hunk, apply_lines, discard_paths, discard_paths_with_backup, delete_file_with_backup, finish_snapshot, restore_deleted_file, restore_file_snapshot, snapshot_file, list_tracked, stage_paths, stash_file, unstage_paths};
     use crate::git::{diff, run_git};
     use git2::Repository;
     use std::path::{Path, PathBuf};
@@ -969,6 +1100,93 @@ mod tests {
         assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "a1\n", "a reverted to HEAD");
         assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "b1\n", "b reverted to HEAD");
         assert!(!dir.join("u.txt").exists(), "untracked file deleted");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn discard_with_backup_removes_changes_and_keeps_a_restorable_stash() {
+        let dir = tmp("discardbackup");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "a1\n").unwrap();
+        run_git(&dir, &["add", "."]).unwrap();
+        run_git(&dir, &["commit", "-m", "init"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "a2\n").unwrap(); // tracked edit
+        std::fs::write(dir.join("u.txt"), "u\n").unwrap(); // untracked
+
+        let sha = discard_paths_with_backup(&fresh(&dir), vec!["a.txt".into(), "u.txt".into()], "gitchef: test")
+            .unwrap()
+            .expect("a stash is created");
+
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "a1\n", "a reverted");
+        assert!(!dir.join("u.txt").exists(), "untracked removed");
+        let stashed = run_git(&dir, &["rev-parse", "stash@{0}"]).unwrap();
+        assert_eq!(stashed.trim(), sha, "returned sha is the new stash");
+
+        run_git(&dir, &["stash", "pop"]).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "a2\n", "edit restored");
+        assert_eq!(std::fs::read_to_string(dir.join("u.txt")).unwrap(), "u\n", "untracked restored");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn discard_with_backup_falls_back_when_nothing_to_stash() {
+        let dir = tmp("discardbackupnone");
+        Repository::init(&dir).unwrap();
+        run_git(&dir, &["config", "user.email", "t@t.t"]).unwrap();
+        run_git(&dir, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(dir.join("a.txt"), "a1\n").unwrap();
+        run_git(&dir, &["add", "."]).unwrap();
+        run_git(&dir, &["commit", "-m", "init"]).unwrap();
+        let out = discard_paths_with_backup(&fresh(&dir), vec!["a.txt".into()], "gitchef: test").unwrap();
+        assert!(out.is_none(), "no stash when the tree is clean");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn delete_with_backup_can_be_restored_and_never_overwrites() {
+        let dir = tmp("deletebackup");
+        Repository::init(&dir).unwrap();
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub/f.txt"), "keep me\n").unwrap();
+        let repo = fresh(&dir);
+
+        let backup = delete_file_with_backup(&repo, "sub/f.txt").unwrap();
+        assert!(!dir.join("sub/f.txt").exists(), "file deleted");
+
+        restore_deleted_file(&repo, "sub/f.txt", &backup).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("sub/f.txt")).unwrap(), "keep me\n");
+
+        // a second restore must not clobber the file that is now back
+        assert!(restore_deleted_file(&repo, "sub/f.txt", &backup).is_err());
+        // and a path outside the trash is rejected
+        std::fs::write(dir.join("other.txt"), "x").unwrap();
+        std::fs::remove_file(dir.join("sub/f.txt")).unwrap();
+        assert!(restore_deleted_file(&repo, "sub/f.txt", dir.join("other.txt").to_str().unwrap()).is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn file_snapshot_restores_a_partial_discard_but_not_over_newer_edits() {
+        let dir = tmp("snapshot");
+        Repository::init(&dir).unwrap();
+        std::fs::write(dir.join("f.txt"), "one\ntwo\n").unwrap();
+        let repo = fresh(&dir);
+
+        let bk = snapshot_file(&repo, "f.txt").unwrap();
+        std::fs::write(dir.join("f.txt"), "one\n").unwrap(); // the "discard"
+        finish_snapshot(&repo, "f.txt", &bk).unwrap();
+        restore_file_snapshot(&repo, "f.txt", &bk).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("f.txt")).unwrap(), "one\ntwo\n", "restored");
+
+        // second round: an edit after the discard blocks the restore
+        let bk = snapshot_file(&repo, "f.txt").unwrap();
+        std::fs::write(dir.join("f.txt"), "one\n").unwrap();
+        finish_snapshot(&repo, "f.txt", &bk).unwrap();
+        std::fs::write(dir.join("f.txt"), "one\nnew work\n").unwrap();
+        assert!(restore_file_snapshot(&repo, "f.txt", &bk).is_err());
+        assert_eq!(std::fs::read_to_string(dir.join("f.txt")).unwrap(), "one\nnew work\n", "newer edit kept");
         std::fs::remove_dir_all(&dir).ok();
     }
 

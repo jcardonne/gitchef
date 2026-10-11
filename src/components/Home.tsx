@@ -1,7 +1,7 @@
 import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import * as api from "../api";
 import type { RecentRepo } from "../storage";
-import { relativeTime } from "../util";
+import { relativeTime, buttonProps } from "../util";
 
 interface Props {
   recents: RecentRepo[];
@@ -93,6 +93,7 @@ export default function Home({ recents, onOpen, onClone, onCreate, onOpenRecent,
                 key={r.path}
                 className="recent-row"
                 onClick={() => onOpenRecent(r.path)}
+                {...buttonProps(() => onOpenRecent(r.path))}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   void showRecentMenu(r);

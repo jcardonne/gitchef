@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useEscape } from "../useEscape";
+import { activateOnKey } from "../util";
 import { PALETTES, getDensity, setDensity, type Palette, type Theme, type Density } from "../theme";
 import { getPullDefault, setPullDefault, getSortAsc, setSortAsc, getGraphColumnVisibility, setGraphColumnVisibility, getFetchIntervalMinutes, setFetchIntervalMinutes, notifyPrefs, getAiConfig, setAiConfig, type PullAction, type GraphColumnVisibility } from "../storage";
 import { SHORTCUT_SECTIONS, comboHint, keyLabel } from "../shortcuts";
@@ -532,6 +533,10 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                 <div className="ai-provider-grid">
                   <div
                     className={`ai-provider-card${aiConfig.provider === "embedded" ? " active" : ""}`}
+                    role="radio"
+                    aria-checked={aiConfig.provider === "embedded"}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.target === e.currentTarget) activateOnKey(() => updateAi({ provider: "embedded" }))(e); }}
                     onClick={() => updateAi({ provider: "embedded" })}
                   >
                     <div className="ai-provider-card-top">
@@ -546,6 +551,10 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
 
                   <div
                     className={`ai-provider-card${aiConfig.provider === "ollama" ? " active" : ""}`}
+                    role="radio"
+                    aria-checked={aiConfig.provider === "ollama"}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.target === e.currentTarget) activateOnKey(() => updateAi({ provider: "ollama", endpoint: "http://127.0.0.1:11434" }))(e); }}
                     onClick={() => updateAi({ provider: "ollama", endpoint: "http://127.0.0.1:11434" })}
                   >
                     <div className="ai-provider-card-top">
@@ -560,6 +569,10 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
 
                   <div
                     className={`ai-provider-card${aiConfig.provider === "custom" ? " active" : ""}`}
+                    role="radio"
+                    aria-checked={aiConfig.provider === "custom"}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.target === e.currentTarget) activateOnKey(() => updateAi({ provider: "custom" }))(e); }}
                     onClick={() => updateAi({ provider: "custom" })}
                   >
                     <div className="ai-provider-card-top">
@@ -590,7 +603,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                         <QwenLogo size={32} />
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 14 }}>Qwen 2.5 Coder 0.5B Instruct</div>
-                          <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "monospace" }}>
+                          <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "monospace" }}>
                             GGUF Q4_K_M • 491 MB
                           </div>
                         </div>
@@ -599,7 +612,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                         style={{
                           fontSize: 11,
                           padding: "3px 10px",
-                          borderRadius: 12,
+                          borderRadius: 10,
                           background: embeddedStatus?.installed
                             ? "color-mix(in srgb, var(--add) 18%, transparent)"
                             : isDownloading
@@ -609,7 +622,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                             ? "var(--add)"
                             : isDownloading
                             ? "var(--accent)"
-                            : "var(--muted)",
+                            : "var(--text-dim)",
                           fontWeight: 600,
                         }}
                       >
@@ -646,7 +659,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                           style={{
                             height: 6,
                             background: "var(--bg)",
-                            borderRadius: 3,
+                            borderRadius: 4,
                             overflow: "hidden",
                             marginBottom: 6,
                           }}
@@ -655,12 +668,12 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                             style={{
                               height: "100%",
                               width: `${percent}%`,
-                              background: "linear-gradient(90deg, var(--accent), #a855f7)",
+                              background: "var(--accent)",
                               transition: "width 0.2s ease",
                             }}
                           />
                         </div>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-dim)" }}>
                           <span>
                             {formatMb(embeddedProgress?.bytes_downloaded ?? 0)} MB / {formatMb(embeddedProgress?.total_bytes ?? 515000000)} MB ({percent}%)
                           </span>
@@ -909,16 +922,20 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                     <div className="ai-style-grid">
                       <div
                         className={`ai-style-card${(aiConfig.commit_style || "title_only") === "title_only" ? " active" : ""}`}
-                        onClick={() => updateAi({ commit_style: "title_only" })}
+                        role="radio"
+                    aria-checked={(aiConfig.commit_style || "title_only") === "title_only"}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.target === e.currentTarget) activateOnKey(() => updateAi({ commit_style: "title_only" }))(e); }}
+                    onClick={() => updateAi({ commit_style: "title_only" })}
                       >
                         <div className="ai-radio-dot" />
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
                             Title only (Concise)
                           </div>
-                          <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
+                          <div style={{ fontSize: 11.5, color: "var(--text-dim)", lineHeight: 1.4 }}>
                             Single conventional line under 72 characters.
-                            <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
+                            <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 11, color: "var(--text-dim)" }}>
                               feat(auth): add refresh token handling
                             </div>
                           </div>
@@ -927,16 +944,20 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
 
                       <div
                         className={`ai-style-card${aiConfig.commit_style === "title_and_body" ? " active" : ""}`}
-                        onClick={() => updateAi({ commit_style: "title_and_body" })}
+                        role="radio"
+                    aria-checked={aiConfig.commit_style === "title_and_body"}
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.target === e.currentTarget) activateOnKey(() => updateAi({ commit_style: "title_and_body" }))(e); }}
+                    onClick={() => updateAi({ commit_style: "title_and_body" })}
                       >
                         <div className="ai-radio-dot" />
                         <div>
                           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>
                             Title &amp; Description (Detailed)
                           </div>
-                          <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.4 }}>
+                          <div style={{ fontSize: 11.5, color: "var(--text-dim)", lineHeight: 1.4 }}>
                             Conventional title followed by summary bullet points.
-                            <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, color: "var(--text-dim)" }}>
+                            <div style={{ marginTop: 4, fontFamily: "monospace", fontSize: 11, color: "var(--text-dim)" }}>
                               fix(diff): handle binary files
                             </div>
                           </div>

@@ -1,8 +1,32 @@
-import { forwardRef, useMemo, useState, type ReactNode } from "react";
+import { forwardRef, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { BranchInfo, PullRequest, RemoteInfo, StashInfo, SubmoduleInfo, TagInfo, WorktreeInfo } from "../types";
-import { relativeTime, resolveAuthorAvatar, type AvatarContext } from "../util";
+import { activateOnKey, relativeTime, resolveAuthorAvatar, type AvatarContext } from "../util";
 import { getSidebarGroups, setSidebarGroups } from "../storage";
 import { CheckIcon, CloseIcon, LocalIcon, LockIcon, PullRequestIcon, RemoteIcon, StashIcon, TagIcon } from "../icons";
+
+// Keyboard access for sidebar rows. Enter/Space does what a click does, Cmd/Ctrl+Enter
+// what a double-click does, and the Menu key / Shift+F10 opens the row's context
+// menu. Keys from nested controls (the PR chip, row buttons) are ignored.
+function rowProps(onActivate?: () => void, onOpen?: () => void, onMenu?: () => void) {
+  return {
+    role: "button" as const,
+    tabIndex: 0,
+    onKeyDown: (e: KeyboardEvent<HTMLElement>) => {
+      if (e.target !== e.currentTarget) return;
+      if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+        if (onMenu) {
+          e.preventDefault();
+          onMenu();
+        }
+        return;
+      }
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      if ((e.metaKey || e.ctrlKey) && onOpen) onOpen();
+      else onActivate?.();
+    },
+  };
+}
 
 const WorktreeIcon = () => (
   <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -239,23 +263,31 @@ const Sidebar = forwardRef<HTMLDivElement, Props>(function Sidebar(
             <div
               key={b.name}
               className={`branch-row${b.is_head ? " head" : ""}${selectedCommit && selectedCommit === b.target ? " selected" : ""}`}
+              {...rowProps(
+                () => b.target && onSelectBranch(b.target),
+                () => !b.is_head && onCheckout(b.name),
+                () => onBranchMenu(b)
+              )}
               onClick={() => b.target && onSelectBranch(b.target)}
               onDoubleClick={() => !b.is_head && onCheckout(b.name)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 onBranchMenu(b);
               }}
-              title={b.upstream ? `${b.upstream}\nClick to reveal · double-click to checkout` : "Click to reveal · double-click to checkout"}
+              title={`${b.upstream ? `${b.upstream}\n` : ""}Click or Enter to reveal · double-click or Cmd/Ctrl+Enter to checkout`}
             >
               <span className="branch-name">{b.name}</span>
               {pr && (
                 <span
                   className="branch-pr"
+                  role="button"
+                  tabIndex={0}
                   title={`#${pr.number} ${pr.title}\nClick to open PR`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onOpenPr(pr);
                   }}
+                  onKeyDown={activateOnKey(() => onOpenPr(pr))}
                 >
                   <PullRequestIcon size={11} />
                   <span>#{pr.number}</span>
@@ -292,6 +324,7 @@ const Sidebar = forwardRef<HTMLDivElement, Props>(function Sidebar(
           <div
             key={b.name}
             className={`branch-row remote${selectedCommit && selectedCommit === b.target ? " selected" : ""}`}
+            {...rowProps(() => b.target && onSelectBranch(b.target), undefined, () => onBranchMenu(b))}
             title="Click to reveal in the graph"
             onClick={() => b.target && onSelectBranch(b.target)}
             onContextMenu={(e) => {
@@ -316,6 +349,7 @@ const Sidebar = forwardRef<HTMLDivElement, Props>(function Sidebar(
             <div
               key={pr.number}
               className={`branch-row pr${selectedPrNumber === pr.number ? " selected" : ""}`}
+              {...rowProps(() => onOpenPr(pr), undefined, () => onPrMenu(pr))}
               title={`#${pr.number} ${pr.title}\n${pr.branch} · @${pr.author}`}
               data-tip-kind="pr"
               data-tip-html={tipHtml}
@@ -379,7 +413,8 @@ const Sidebar = forwardRef<HTMLDivElement, Props>(function Sidebar(
           <div
             key={t.name}
             className={`branch-row tag${selectedCommit === t.target ? " selected" : ""}`}
-            title="Click to inspect · double-click to checkout"
+            {...rowProps(() => onSelectTag(t.target), () => onCheckoutTag(t.name), () => onTagMenu(t.name, t.target))}
+            title="Click or Enter to inspect · double-click or Cmd/Ctrl+Enter to checkout"
             onClick={() => onSelectTag(t.target)}
             onDoubleClick={() => onCheckoutTag(t.name)}
             onContextMenu={(e) => {
@@ -399,6 +434,7 @@ const Sidebar = forwardRef<HTMLDivElement, Props>(function Sidebar(
           <div
             key={r.name}
             className="branch-row"
+            {...rowProps(undefined, undefined, () => onRemoteMenu(r))}
             title={r.url}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -416,6 +452,7 @@ const Sidebar = forwardRef<HTMLDivElement, Props>(function Sidebar(
           <div
             key={w.path}
             className={`branch-row worktree${w.is_current ? " current" : ""}`}
+            {...rowProps(() => !w.is_current && onOpenWorktree(w.path))}
             title={w.path}
             onClick={() => !w.is_current && onOpenWorktree(w.path)}
           >
@@ -438,6 +475,7 @@ const Sidebar = forwardRef<HTMLDivElement, Props>(function Sidebar(
             <div
               key={sm.path}
               className={`branch-row submodule${sm.initialized ? "" : " uninit"}`}
+              {...rowProps(() => sm.initialized && onOpenSubmodule(sm.path), undefined, () => onSubmoduleMenu(sm))}
               title={`${sm.path}${sm.url ? ` · ${sm.url}` : ""}`}
               onClick={() => sm.initialized && onOpenSubmodule(sm.path)}
               onContextMenu={(e) => {
@@ -471,6 +509,7 @@ const Sidebar = forwardRef<HTMLDivElement, Props>(function Sidebar(
           <div
             key={s.sha}
             className={`branch-row stash${selectedCommit === s.sha ? " selected" : ""}`}
+            {...rowProps(() => onSelectStash(s.sha), undefined, () => onStashMenu(s))}
             title={s.message}
             onClick={() => onSelectStash(s.sha)}
             onContextMenu={(e) => {
@@ -512,7 +551,13 @@ function Group({
     <div className="sidebar-group">
       <div
         className="sidebar-title"
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
         onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.target === e.currentTarget) activateOnKey(onToggle)(e);
+        }}
         onContextMenu={
           onMenu
             ? (e) => {
