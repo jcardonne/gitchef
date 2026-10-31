@@ -29,6 +29,7 @@
   },
   "bundle": {
     "active": true,
+    "category": "DeveloperTool",
     "targets": "all",
     "createUpdaterArtifacts": true,
     "icon": [
