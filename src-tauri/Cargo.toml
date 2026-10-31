@@ -1,6 +1,6 @@
 [package]
 name = "gitchef"
-version = "0.44.0"
+version = "0.44.1"
 description = "Open-source visual Git client"
 authors = ["GitChef"]
 license = "MIT"
