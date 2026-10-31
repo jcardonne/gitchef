@@ -239,7 +239,7 @@ jobs:
               *.exe)       cp "$f" "dist-release/GitChef_${VERSION}_${OS}.exe" ;;
               *.msi)       cp "$f" "dist-release/GitChef_${VERSION}_${OS}.msi" ;;
               *.dmg)       cp "$f" "dist-release/GitChef_${VERSION}_${OS}.dmg" ;;
-              *.AppImage)  cp "$f" "dist-release/GitChef_${VERSION}_${OS}.AppImage" ;;
+              *.AppImage)  cp "$f" "dist-release/GitChef_${VERSION}_x86_64.AppImage" ;;
               *.deb)       cp "$f" "dist-release/GitChef_${VERSION}_${OS}.deb" ;;
             esac
           done

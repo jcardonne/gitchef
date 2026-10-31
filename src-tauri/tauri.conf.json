@@ -39,6 +39,7 @@
       "icons/icon.ico"
     ],
     "macOS": {
+      "minimumSystemVersion": "10.15",
       "dmg": {
         "windowSize": {
           "width": 660,
