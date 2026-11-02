@@ -3448,6 +3448,72 @@ button {
   100% { margin-left: 100%; }
 }
 
+/* --- one-time GitHub star nudge (same corner/elevation as the update toast) --- */
+.star-prompt {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 280px;
+  padding: 12px 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-float);
+  font-size: 12.5px;
+  color: var(--text);
+  animation: star-prompt-in 180ms ease-out;
+}
+.star-prompt-title {
+  font-weight: 600;
+}
+.star-prompt-body {
+  color: var(--text-dim);
+}
+.star-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.star-prompt-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.star-prompt-dismiss {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid transparent;
+}
+.star-prompt-dismiss:hover {
+  color: var(--text);
+}
+.star-prompt-star {
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 1px solid var(--accent);
+  font-weight: 600;
+}
+@keyframes star-prompt-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .star-prompt {
+    animation: none;
+  }
+}
+
 /* --- error toast: persistent, selectable, copyable --- */
 .toast-msg {
   -webkit-user-select: text;
