@@ -231,3 +231,13 @@ describe("star prompt", () => {
     expect(store.recordCommitForStarPrompt()).toBe(false);
   });
 });
+
+describe("star prompt with failing storage writes", () => {
+  it("never throws into the commit flow", () => {
+    localStorage.setItem = () => {
+      throw new Error("QuotaExceededError");
+    };
+    expect(store.recordCommitForStarPrompt()).toBe(false);
+    expect(() => store.retireStarPrompt()).not.toThrow();
+  });
+});

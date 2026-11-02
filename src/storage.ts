@@ -363,15 +363,26 @@ export const STAR_PROMPT_COMMITS = 5;
 /// Count a commit made in GitChef toward the star prompt. True when the prompt
 /// is due: the threshold is reached and the user hasn't answered it yet. An
 /// unanswered prompt (app quit while it showed) comes back on the next commit.
+/// Never throws: it runs inside the commit flow, and a failed write (full
+/// storage) must not turn a successful commit into an error.
 export function recordCommitForStarPrompt(): boolean {
   const state = read<{ commits?: unknown; done?: unknown }>(STAR_PROMPT_KEY, {});
   if (state?.done === true) return false;
   const commits = (typeof state?.commits === "number" ? state.commits : 0) + 1;
-  localStorage.setItem(STAR_PROMPT_KEY, JSON.stringify({ commits }));
+  try {
+    localStorage.setItem(STAR_PROMPT_KEY, JSON.stringify({ commits }));
+  } catch {
+    return false;
+  }
   return commits >= STAR_PROMPT_COMMITS;
 }
 
-/// The user starred or declined: never show the prompt again.
+/// The user starred or declined: never show the prompt again. Best-effort - if
+/// the write fails the prompt can only return after another commit.
 export function retireStarPrompt(): void {
-  localStorage.setItem(STAR_PROMPT_KEY, JSON.stringify({ done: true }));
+  try {
+    localStorage.setItem(STAR_PROMPT_KEY, JSON.stringify({ done: true }));
+  } catch {
+    // Storage full/unavailable: the prompt still closes for this session.
+  }
 }
