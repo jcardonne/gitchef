@@ -11,6 +11,7 @@ import {
   getPullDefault,
   getRightPanelWidth,
   getSidebarVisible,
+  recordCommitForStarPrompt,
   getSidebarWidth,
   setRightPanelWidth as setStoredRightPanelWidth,
   setSidebarVisible as setStoredSidebarVisible,
@@ -1114,6 +1115,7 @@ export default function RepoView({ path, isActive, overlayOpen, onLoaded, onOpen
       // before it) would now silently discard this commit - retire it.
       setUndoState(null);
       notify(`${amend ? "Amended" : "Committed"} ${sha.slice(0, 7)}`);
+      if (!amend && recordCommitForStarPrompt()) window.dispatchEvent(new Event("gitchef:star-prompt"));
       setRightTab("changes");
       const next = await refresh();
       // A committed file no longer has uncommitted changes, so its working-tree

@@ -356,3 +356,22 @@ export function setAiConfig(config: AiConfig): void {
   notifyPrefs();
 }
 
+const STAR_PROMPT_KEY = "gitchef.starPrompt";
+/// Commits made through GitChef before the one-time "star us on GitHub" prompt.
+export const STAR_PROMPT_COMMITS = 5;
+
+/// Count a commit made in GitChef toward the star prompt. True when the prompt
+/// is due: the threshold is reached and the user hasn't answered it yet. An
+/// unanswered prompt (app quit while it showed) comes back on the next commit.
+export function recordCommitForStarPrompt(): boolean {
+  const state = read<{ commits?: unknown; done?: unknown }>(STAR_PROMPT_KEY, {});
+  if (state?.done === true) return false;
+  const commits = (typeof state?.commits === "number" ? state.commits : 0) + 1;
+  localStorage.setItem(STAR_PROMPT_KEY, JSON.stringify({ commits }));
+  return commits >= STAR_PROMPT_COMMITS;
+}
+
+/// The user starred or declined: never show the prompt again.
+export function retireStarPrompt(): void {
+  localStorage.setItem(STAR_PROMPT_KEY, JSON.stringify({ done: true }));
+}

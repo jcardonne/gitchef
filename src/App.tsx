@@ -8,6 +8,7 @@ import CloneModal from "./components/CloneModal";
 import CreateModal from "./components/CreateModal";
 import RepoView from "./components/RepoView";
 import UpdateToast from "./components/UpdateToast";
+import StarPrompt from "./components/StarPrompt";
 import { runSilentUpdate, type UpdateStatus } from "./updater";
 import ShortcutsModal from "./components/ShortcutsModal";
 import Settings from "./components/Settings";
@@ -64,6 +65,19 @@ export default function App() {
   useEffect(() => {
     void runSilentUpdate(setUpdateStatus);
   }, []);
+
+  // One-time GitHub star nudge, raised by RepoView once enough commits were made.
+  const [starPromptOpen, setStarPromptOpen] = useState(false);
+  useEffect(() => {
+    const open = () => setStarPromptOpen(true);
+    window.addEventListener("gitchef:star-prompt", open);
+    return () => window.removeEventListener("gitchef:star-prompt", open);
+  }, []);
+  const closeStarPrompt = (star: boolean) => {
+    store.retireStarPrompt();
+    setStarPromptOpen(false);
+    if (star) void api.openUrl("https://github.com/jcardonne/gitchef");
+  };
 
   // Keep the clone dialog's repo lists warm so it never has to show a loading
   // spinner: fetch both forges into the cache at startup. Best-effort - a missing
@@ -357,6 +371,9 @@ export default function App() {
       </div>
 
       <UpdateToast status={updateStatus} />
+      {starPromptOpen && !updateStatus && (
+        <StarPrompt onStar={() => closeStarPrompt(true)} onDismiss={() => closeStarPrompt(false)} />
+      )}
       {shortcutsOpen && <ShortcutsModal graphKey={shortcutsAtGraphKey} onClose={() => setShortcutsOpen(false)} />}
       {zoomHud && (
         <div key={zoomHud.seq} className="zoom-hud" role="status">
