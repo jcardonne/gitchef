@@ -213,3 +213,31 @@ describe("malformed persisted values", () => {
   });
 });
 
+
+describe("star prompt", () => {
+  it("becomes due on the Nth commit and stays due until answered", () => {
+    for (let i = 1; i < store.STAR_PROMPT_COMMITS; i++) expect(store.recordCommitForStarPrompt()).toBe(false);
+    expect(store.recordCommitForStarPrompt()).toBe(true);
+    expect(store.recordCommitForStarPrompt()).toBe(true); // ignored (app quit) -> shows again
+  });
+
+  it("never comes back once retired", () => {
+    store.retireStarPrompt();
+    for (let i = 0; i < store.STAR_PROMPT_COMMITS * 2; i++) expect(store.recordCommitForStarPrompt()).toBe(false);
+  });
+
+  it("restarts the count from a corrupt stored value", () => {
+    localStorage.setItem("gitchef.starPrompt", "null");
+    expect(store.recordCommitForStarPrompt()).toBe(false);
+  });
+});
+
+describe("star prompt with failing storage writes", () => {
+  it("never throws into the commit flow", () => {
+    localStorage.setItem = () => {
+      throw new Error("QuotaExceededError");
+    };
+    expect(store.recordCommitForStarPrompt()).toBe(false);
+    expect(() => store.retireStarPrompt()).not.toThrow();
+  });
+});

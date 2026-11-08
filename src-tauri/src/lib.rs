@@ -758,6 +758,7 @@ fn cli_status() -> Option<CliInstall> {
 
 /// Install (or update) the `gitchef` shell command. Tries /usr/local/bin, falls
 /// back to ~/.local/bin.
+#[cfg(unix)]
 #[tauri::command]
 fn install_cli() -> AppResult<CliInstall> {
     use std::os::unix::fs::PermissionsExt;
@@ -773,6 +774,13 @@ fn install_cli() -> AppResult<CliInstall> {
         }
     }
     Err(AppError::Msg(last_err))
+}
+
+/// The shell command is a POSIX sh script, so it has no Windows equivalent.
+#[cfg(not(unix))]
+#[tauri::command]
+fn install_cli() -> AppResult<CliInstall> {
+    Err(AppError::Msg("the gitchef shell command is only available on macOS and Linux".into()))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

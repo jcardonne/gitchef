@@ -112,6 +112,9 @@ const SECTIONS: { id: Section; label: string; icon: ReactNode }[] = [
   { id: "about", label: "About", icon: icon(<><circle cx="8" cy="8" r="6.3" /><path d="M8 7.3v4M8 5.3h0" /></>) },
 ];
 
+// The shell command is a POSIX sh script; install_cli refuses it on Windows.
+const isWindows = navigator.platform.toLowerCase().includes("win");
+
 /// Full-page Settings view (rendered over the repo content, not a modal). Esc or
 /// the close button returns to the workspace. Behavior prefs persist to storage
 /// and broadcast `gitchef:prefs` so already-mounted views update live.
@@ -460,6 +463,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                 </div>
               </div>
 
+              {!isWindows && (
               <div className="settings-field">
                 <div className="settings-field-label"><span>Shell command</span></div>
                 <div className="settings-field-hint">Open GitChef from your terminal.</div>
@@ -486,6 +490,7 @@ export default function Settings({ theme, palette, onChangeTheme, onChangePalett
                 )}
                 {cliError && <div className="ai-status-box error">⚠ {cliError}</div>}
               </div>
+              )}
             </>
           )}
 

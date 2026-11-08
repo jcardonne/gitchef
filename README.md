@@ -50,7 +50,7 @@ Grab the latest build for your platform from the [Releases](https://github.com/j
 
 - **macOS** - `brew install --cask jcardonne/gitchef/gitchef` (see the [tap](https://github.com/jcardonne/homebrew-gitchef)), or grab `GitChef_<version>_macOS.dmg` from the [Releases](https://github.com/jcardonne/gitchef/releases) page and drag GitChef to Applications. The app isn't notarized by Apple yet, so the first launch is blocked by Gatekeeper: right-click GitChef and choose **Open** (or run `xattr -dr com.apple.quarantine /Applications/GitChef.app`).
 - **Windows** - `GitChef_<version>_Windows_setup.exe` (or the `.msi`). The installer isn't code-signed yet, so SmartScreen may warn - choose **More info -> Run anyway**.
-- **Linux** - `GitChef_<version>_Linux.AppImage` (recommended: portable, runs on most distros, and auto-updating; `chmod +x` it then run - some systems need `libfuse2`). A `.deb` is also published for Debian/Ubuntu.
+- **Linux** - `GitChef_<version>_x86_64.AppImage` (recommended: portable, runs on most distros, and auto-updating; `chmod +x` it then run - some systems need `libfuse2`). A `.deb` is also published for Debian/Ubuntu.
 
 Once installed, GitChef checks for signature-verified updates on launch and updates itself in the background. Auto-update covers the macOS, Windows, and Linux **AppImage** builds; the Linux `.deb` updates through your package manager instead.
 

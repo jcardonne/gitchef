@@ -66,7 +66,7 @@ Settings -> Secrets and variables -> Actions.
 | `TAURI_SIGNING_PRIVATE_KEY` | full contents of `~/.tauri/gitchef.key` |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the key's passphrase (empty if you kept it password-less) |
 | `CLOUDFLARE_API_TOKEN` | a Cloudflare token with **R2 read/write** on the bucket |
-| `HOMEBREW_TAP_TOKEN` | a GitHub fine-grained PAT scoped to `jcardonne/homebrew-gitchef` only, **Contents: Read and write** - optional, the `homebrew` job skips with a warning if unset |
+| `HOMEBREW_TAP_DEPLOY_KEY` | private half of a read-write SSH deploy key on `jcardonne/homebrew-gitchef` only - optional, the `homebrew` job skips with a warning if unset |
 
 **Variables:**
 
@@ -95,17 +95,17 @@ gh variable set R2_PUBLIC_URL --body "https://pub-<hash>.r2.dev"
 The `homebrew` job pushes the new version + sha256 straight to
 [`jcardonne/homebrew-gitchef`](https://github.com/jcardonne/homebrew-gitchef)
 after each release. The default `GITHUB_TOKEN` can't write to a different
-repo, and GitHub has no API to mint a PAT - this one step has to be done by
-hand, once:
+repo, so it uses a deploy key scoped to the tap. Set it up (or rotate it) once:
 
-1. GitHub -> Settings -> Developer settings -> Personal access tokens ->
-   Fine-grained tokens -> Generate new token.
-2. Repository access: **Only select repositories** -> `homebrew-gitchef`.
-3. Permissions: **Contents: Read and write**. Nothing else.
-4. `gh secret set HOMEBREW_TAP_TOKEN --body "<token>"`
+```sh
+ssh-keygen -t ed25519 -N "" -C "gitchef release homebrew bump" -f tap_key
+gh repo deploy-key add tap_key.pub --allow-write -t "gitchef release (homebrew bump)" -R jcardonne/homebrew-gitchef
+gh secret set HOMEBREW_TAP_DEPLOY_KEY -R jcardonne/gitchef < tap_key
+rm tap_key tap_key.pub
+```
 
 Without it, releases still complete normally - the job logs a warning and
-skips, and the tap just lags until the token is added.
+skips, and the tap just lags until the key is added.
 
 ---
 

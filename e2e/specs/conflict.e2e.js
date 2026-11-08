@@ -1,4 +1,5 @@
 import { createConflictRepo } from "../fixtures/repo.js";
+import { openSession } from "../fixtures/session.js";
 
 // Open a repo that is already paused mid-rebase (one conflicted file) and drive
 // the full resolution flow through the UI: banner -> per-block pick -> mark
@@ -6,30 +7,14 @@ import { createConflictRepo } from "../fixtures/repo.js";
 // because the rebase trigger lives in a native context menu the webview can't
 // click; everything AFTER the pause is what this feature owns and is tested here.
 async function openRepo(dir) {
-  await browser.execute((d) => {
-    localStorage.setItem("gitchef.session", JSON.stringify({ paths: [d], activePath: d }));
-    localStorage.setItem("gitchef.changesView", "list");
-  }, dir);
-
-  let lastErr;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    await browser.execute(() => window.location.reload());
-    await browser.pause(1500);
-    try {
-      await $(".change-list .file-row").waitForExist({ timeout: 30000 });
-      // The banner belongs to a COMPLETE load of this fixture (it is always
-      // paused mid-rebase), so wait for it here, inside the retry. Waiting in
-      // the first it() instead meant a launch that painted the file list but not
-      // yet the banner failed the whole spec rather than retrying the reload -
-      // and now that the release is gated on ci, an e2e flake silently blocks
-      // the release itself.
-      await $(".seq-banner").waitForExist({ timeout: 20000 });
-      return;
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr;
+  await openSession(dir, async () => {
+    await $(".change-list .file-row").waitForExist({ timeout: 30000 });
+    // The banner belongs to a COMPLETE load of this fixture (it is always
+    // paused mid-rebase), so wait for it inside the retry: a launch that painted
+    // the file list but not yet the banner retries the reload instead of failing
+    // the spec - and since the release is gated on ci, an e2e flake blocks it.
+    await $(".seq-banner").waitForExist({ timeout: 20000 });
+  });
 }
 
 describe("GitChef conflict resolution", () => {

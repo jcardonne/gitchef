@@ -1,4 +1,5 @@
 import { createFixtureRepo } from "../fixtures/repo.js";
+import { openSession } from "../fixtures/session.js";
 
 const COMMITS = 300;
 const FILES = 600;
@@ -36,27 +37,10 @@ const scrollToBottom = (selector) =>
 // load the history fetch occasionally stalls on a given launch, so we retry the
 // reload and wait for a *real* commit row (not just the WIP node) before failing.
 async function openFixtureRepo(dir) {
-  await browser.execute((d) => {
-    localStorage.setItem(
-      "gitchef.session",
-      JSON.stringify({ paths: [d], activePath: d })
-    );
-    localStorage.setItem("gitchef.changesView", "list");
-  }, dir);
-
-  let lastErr;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    await browser.execute(() => window.location.reload());
-    await browser.pause(1500);
-    try {
-      await $(".change-list .file-row").waitForExist({ timeout: 30000 });
-      await $(".commit-row:not(.wip-row)").waitForExist({ timeout: 30000 });
-      return;
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  throw lastErr;
+  await openSession(dir, async () => {
+    await $(".change-list .file-row").waitForExist({ timeout: 30000 });
+    await $(".commit-row:not(.wip-row)").waitForExist({ timeout: 30000 });
+  });
 }
 
 describe("GitChef virtualization", () => {
